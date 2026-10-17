@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "mode": "read-only",
+  "cleanup_performed": false,
+  "started_at_utc": "2026-10-17T13:53:14.513302+00:00",
+  "finished_at_utc": "2026-10-17T13:53:15.360348+00:00",
+  "physical": {
+    "total_bytes": 50587385856,
+    "used_bytes": 31166271488,
+    "available_bytes": 19421114368
+  },
+  "commit": {
+    "used_bytes": 61090095104,
+    "limit_bytes": 102126993408,
+    "peak_bytes": 101207535616
+  },
+  "cache": {
+    "system_cache_composite_bytes": 18661404672,
+    "standby_core_bytes": 0,
+    "standby_normal_bytes": 17080832000,
+    "standby_reserve_bytes": 349618176,
+    "modified_bytes": 134434816,
+    "free_zero_bytes": 1876582400,
+    "cache_bytes": 1203400704,
+    "system_cache_resident_bytes": 1203400704
+  },
+  "pagefile": {
+    "count": 1,
+    "total_bytes": 51539607552,
+    "used_bytes": 23025188864
+  },
+  "processes": {
+    "enumerated": 498,
+    "readable": 258,
+    "skipped": 240,
+    "top": [
+      {
+        "name": "codex.exe",
+        "working_set_bytes": 367935488
+      },
+      {
+        "name": "ChatGPT.exe",
+        "working_set_bytes": 357277696
+      },
+      {
+        "name": "explorer.exe",
+        "working_set_bytes": 355639296
+      },
+      {
+        "name": "msedgewebview2.exe",
+        "working_set_bytes": 289005568
+      },
+      {
+        "name": "QQ.exe",
+        "working_set_bytes": 221794304
+      },
+      {
+        "name": "com.docker.backend.exe",
+        "working_set_bytes": 214282240
+      },
+      {
+        "name": "Feishu.exe",
+        "working_set_bytes": 213622784
+      },
+      {
+        "name": "360se.exe",
+        "working_set_bytes": 210731008
+      },
+      {
+        "name": "Cursor.exe",
+        "working_set_bytes": 203001856
+      },
+      {
+        "name": "Feishu.exe",
+        "working_set_bytes": 197808128
+      }
+    ]
+  },
+  "estimate": {
+    "standby_repurposable_upper_bytes": 17430450176,
+    "guaranteed_additional_available_bytes": 0,
+    "basis": "0..min(sum(standby core, normal, reserve), available); already included in available. Not additional RAM. Missing standby counters => unknown. Excludes process working sets, modified pages, compression and pagefile. Non-atomic snapshot; no performance gain guaranteed."
+  },
+  "warnings": [
+    "Process ranking is incomplete: access denied, protected or exited processes were skipped."
+  ]
+}

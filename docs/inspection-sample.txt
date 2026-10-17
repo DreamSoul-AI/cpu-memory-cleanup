@@ -1,0 +1,40 @@
+Windows host memory inspection | READ ONLY | cleanup performed: NO
+UTC: 2026-10-17T13:53:14.513302+00:00 .. 2026-10-17T13:53:15.360348+00:00
+physical:
+  total_bytes: 47.113 GiB
+  used_bytes: 29.026 GiB
+  available_bytes: 18.087 GiB
+commit:
+  used_bytes: 56.895 GiB
+  limit_bytes: 95.113 GiB
+  peak_bytes: 94.257 GiB
+cache:
+  system_cache_composite_bytes: 17.380 GiB
+  standby_core_bytes: 0.000 GiB
+  standby_normal_bytes: 15.908 GiB
+  standby_reserve_bytes: 0.326 GiB
+  modified_bytes: 0.125 GiB
+  free_zero_bytes: 1.748 GiB
+  cache_bytes: 1.121 GiB
+  system_cache_resident_bytes: 1.121 GiB
+pagefile:
+  count: 1
+  total_bytes: 48.000 GiB
+  used_bytes: 21.444 GiB
+Processes by working set (shared pages included; do not sum):
+  enumerated=498 readable=258 skipped=240
+  codex.exe: 0.343 GiB
+  ChatGPT.exe: 0.333 GiB
+  explorer.exe: 0.331 GiB
+  msedgewebview2.exe: 0.269 GiB
+  QQ.exe: 0.207 GiB
+  com.docker.backend.exe: 0.200 GiB
+  Feishu.exe: 0.199 GiB
+  360se.exe: 0.196 GiB
+  Cursor.exe: 0.189 GiB
+  Feishu.exe: 0.184 GiB
+Theoretical repurposable standby:
+  upper bound: 16.233 GiB
+  guaranteed additional available: 0 bytes; actual cleanup: 0 bytes
+  0..min(sum(standby core, normal, reserve), available); already included in available. Not additional RAM. Missing standby counters => unknown. Excludes process working sets, modified pages, compression and pagefile. Non-atomic snapshot; no performance gain guaranteed.
+WARNING: Process ranking is incomplete: access denied, protected or exited processes were skipped.
