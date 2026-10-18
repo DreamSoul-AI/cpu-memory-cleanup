@@ -90,7 +90,7 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
    说明子进程确实会被回收，水位跟着使用活动走。
    22:19 单点快照里“累积不回收”的猜测不成立；单个 `server.mjs`
    能活多久仍未知（序列未记录每个成员的年龄）。
-4. (f) 成员年龄分桶：给 `scripts/tree-series.ps1` 加 `server.mjs` / `cua-repl.mjs` /
+4. （脚本部分已完成 2026-10-18 23:12：`scripts/tree-series.ps1` 每拍新增 `age_buckets` 聚合，按 `server_mjs` / `cua_repl` / `node_repl` 分 lt10m、10to60m、1to3h、gt3h、unknown 五档写进程数与私有 commit，另写各类最老年龄；补静态测试和单拍只读冒烟测试，30 测试过。60 秒 × 120 的序列 23:12:06 起在跑，写 gitignored 的 `logs\tree-series-age.jsonl`，约 01:11 结束后离线分析写入 docs/validation.md）(f) 成员年龄分桶：给 `scripts/tree-series.ps1` 加 `server.mjs` / `cua-repl.mjs` /
    `node_repl.exe` 的年龄分桶计数与私有 commit（例如 <10 分钟、10–60 分钟、
    1–3 小时、>3 小时，只写聚合），补静态测试，再在日常桌面负载下跑一段
    更长的有界序列（如 60 秒 × 120）。回答：老实例是否长期不退、

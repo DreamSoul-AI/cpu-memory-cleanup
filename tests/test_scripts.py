@@ -1,6 +1,11 @@
 """Static safety checks for helper scripts under scripts/ (read-only only)."""
 
+import json
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,6 +47,56 @@ class TreeSeriesScriptTests(unittest.TestCase):
         record = self.text[self.text.index("$rec = [ordered]@{"):self.text.index("$line = $rec")]
         for field in ("pid", "process_id", "command_line", "commandline", "path"):
             self.assertIsNone(re.search(r"\b%s\s*=" % field, record, re.I), field)
+
+
+    def test_age_buckets_are_aggregates_only(self):
+        for bucket in ("lt10m", "10to60m", "1to3h", "gt3h", "unknown"):
+            self.assertIn("'%s'" % bucket, self.text)
+        for kind in ("server_mjs", "cua_repl", "node_repl"):
+            self.assertIn("'%s'" % kind, self.text)
+        self.assertRegex(self.text, r"\$minutes -lt 10\)")
+        self.assertRegex(self.text, r"\$minutes -lt 60\)")
+        self.assertRegex(self.text, r"\$minutes -lt 180\)")
+        record = self.text[self.text.index("$rec = [ordered]@{"):self.text.index("$line = $rec")]
+        self.assertIn("age_buckets = @($ageRows)", record)
+
+
+@unittest.skipUnless(sys.platform == "win32" and shutil.which("powershell"), "Windows only")
+class TreeSeriesSmokeTest(unittest.TestCase):
+    """Runs one bounded read-only sample (CIM queries only) into a temp file."""
+
+    def test_single_sample_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "series.jsonl"
+            subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                 str(SCRIPTS / "tree-series.ps1"), "-IntervalSeconds", "5",
+                 "-Count", "1", "-JsonlPath", str(out)],
+                check=True, timeout=120, capture_output=True,
+            )
+            lines = out.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 1)
+        rec = json.loads(lines[0])
+        self.assertEqual(rec["kind"], "tree-series")
+        self.assertIsNone(rec["born_since_prev"])
+        rows = rec["codex_tree"]["age_buckets"]
+        self.assertEqual([r["kind"] for r in rows], ["server_mjs", "cua_repl", "node_repl"])
+        for row in rows:
+            for bucket in ("lt10m", "10to60m", "1to3h", "gt3h", "unknown"):
+                self.assertGreaterEqual(row[bucket]["processes"], 0)
+        by_kind = {r["kind"]: r for r in rows}
+        tree = rec["codex_tree"]
+        self.assertEqual(
+            sum(by_kind["server_mjs"][b]["processes"] for b in ("lt10m", "10to60m", "1to3h", "gt3h", "unknown")),
+            tree["server_mjs"],
+        )
+        self.assertEqual(
+            sum(by_kind["cua_repl"][b]["processes"] for b in ("lt10m", "10to60m", "1to3h", "gt3h", "unknown")),
+            tree["cua_repl"],
+        )
+        text = lines[0].lower()
+        for field in ("\"pid\"", "\"process_id\"", "\"command_line\"", "\"commandline\""):
+            self.assertNotIn(field, text)
 
 
 if __name__ == "__main__":

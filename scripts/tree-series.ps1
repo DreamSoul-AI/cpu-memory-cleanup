@@ -8,6 +8,9 @@
   -JsonlPath. Only aggregates are written: no PIDs, no command lines, no
   paths. Command lines are inspected in memory only to classify Codex
   computer-use node children (server.mjs / cua-repl.mjs) and are discarded.
+  For server.mjs, cua-repl.mjs and node_repl.exe members of the Codex tree it
+  also writes age-bucket aggregates (lt10m, 10to60m, 1to3h, gt3h, unknown):
+  process count and private commit per bucket, plus the oldest age per kind.
 
   Read-only: it never terminates, suspends, trims, flushes or reconfigures
   anything, never elevates, and never touches the page file or services.
@@ -34,6 +37,15 @@ $runId = [guid]::NewGuid().ToString()
 $anchors = @('explorer.exe', 'services.exe', 'wininit.exe', 'winlogon.exe', 'svchost.exe', 'smss.exe', 'csrss.exe', 'System', 'System Idle Process')
 $prevKeys = $null
 $prevCodexKeys = $null
+$ageBuckets = @('lt10m', '10to60m', '1to3h', 'gt3h', 'unknown')
+$ageKinds = @('server_mjs', 'cua_repl', 'node_repl')
+function Get-AgeBucket($minutes) {
+  if ($null -eq $minutes) { return 'unknown' }
+  if ($minutes -lt 10) { return 'lt10m' }
+  if ($minutes -lt 60) { return '10to60m' }
+  if ($minutes -lt 180) { return '1to3h' }
+  return 'gt3h'
+}
 
 for ($i = 1; $i -le $Count; $i++) {
   $start = Get-Date
@@ -52,7 +64,7 @@ for ($i = 1; $i -le $Count; $i++) {
   }
 
   $owners = @{}
-  $codex = @{ processes = 0; private = 0.0; ws = 0.0; byName = @{}; serverMjs = 0; serverMjsPrivate = 0.0; cuaRepl = 0; cuaReplPrivate = 0.0; oldestMinutes = $null }
+  $codex = @{ processes = 0; private = 0.0; ws = 0.0; byName = @{}; serverMjs = 0; serverMjsPrivate = 0.0; cuaRepl = 0; cuaReplPrivate = 0.0; oldestMinutes = $null; ages = @{}; kindOldest = @{} }
   $keys = New-Object 'System.Collections.Generic.HashSet[string]'
   $codexKeys = New-Object 'System.Collections.Generic.HashSet[string]'
   $totalPrivate = 0.0
@@ -81,8 +93,18 @@ for ($i = 1; $i -le $Count; $i++) {
       if (-not $codex.byName.ContainsKey($p.Name)) { $codex.byName[$p.Name] = @{ processes = 0; private = 0.0 } }
       $codex.byName[$p.Name].processes++; $codex.byName[$p.Name].private += $priv
       $cl = [string]$p.CommandLine
-      if ($p.Name -eq 'node.exe' -and $cl -match 'server\.mjs') { $codex.serverMjs++; $codex.serverMjsPrivate += $priv }
-      elseif ($p.Name -eq 'node.exe' -and $cl -match 'cua-repl\.mjs') { $codex.cuaRepl++; $codex.cuaReplPrivate += $priv }
+      $kind = $null
+      if ($p.Name -eq 'node.exe' -and $cl -match 'server\.mjs') { $codex.serverMjs++; $codex.serverMjsPrivate += $priv; $kind = 'server_mjs' }
+      elseif ($p.Name -eq 'node.exe' -and $cl -match 'cua-repl\.mjs') { $codex.cuaRepl++; $codex.cuaReplPrivate += $priv; $kind = 'cua_repl' }
+      elseif ($p.Name -eq 'node_repl.exe') { $kind = 'node_repl' }
+      if ($null -ne $kind) {
+        $kAge = $null
+        if ($p.CreationDate) { $kAge = ($start - $p.CreationDate).TotalMinutes }
+        $bk = '{0}|{1}' -f $kind, (Get-AgeBucket $kAge)
+        if (-not $codex.ages.ContainsKey($bk)) { $codex.ages[$bk] = @{ processes = 0; private = 0.0 } }
+        $codex.ages[$bk].processes++; $codex.ages[$bk].private += $priv
+        if ($null -ne $kAge -and (-not $codex.kindOldest.ContainsKey($kind) -or $kAge -gt $codex.kindOldest[$kind])) { $codex.kindOldest[$kind] = $kAge }
+      }
       if ($p.CreationDate) {
         $age = ($start - $p.CreationDate).TotalMinutes
         if ($null -eq $codex.oldestMinutes -or $age -gt $codex.oldestMinutes) { $codex.oldestMinutes = $age }
@@ -106,6 +128,15 @@ for ($i = 1; $i -le $Count; $i++) {
     [ordered]@{ name = $_.Key; processes = $_.Value.processes; private_gib = [math]::Round($_.Value.private / $GiB, 3) }
   }
 
+  $ageRows = foreach ($k in $ageKinds) {
+    $row = [ordered]@{ kind = $k; oldest_minutes = $(if ($codex.kindOldest.ContainsKey($k)) { [math]::Round($codex.kindOldest[$k], 1) } else { $null }) }
+    foreach ($bn in $ageBuckets) {
+      $e = $codex.ages[('{0}|{1}' -f $k, $bn)]
+      $row[$bn] = [ordered]@{ processes = $(if ($e) { $e.processes } else { 0 }); private_gib = $(if ($e) { [math]::Round($e.private / $GiB, 3) } else { 0.0 }) }
+    }
+    $row
+  }
+
   $rec = [ordered]@{
     kind = 'tree-series'; run_id = $runId; index = $i; count = $Count; interval_s = $IntervalSeconds
     utc = $start.ToUniversalTime().ToString('o'); local = $start.ToString('yyyy-MM-dd HH:mm:ss')
@@ -125,6 +156,7 @@ for ($i = 1; $i -le $Count; $i++) {
       born_since_prev = $codexBorn; exited_since_prev = $codexExited
       oldest_minutes = $(if ($null -ne $codex.oldestMinutes) { [math]::Round($codex.oldestMinutes, 1) } else { $null })
       by_name = @($codexNames)
+      age_buckets = @($ageRows)
     }
     top_owners = @($ownerRows)
     query_seconds = [math]::Round(((Get-Date) - $start).TotalSeconds, 2)
