@@ -80,21 +80,24 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
    分页 + 非分页池约 6.7 GiB，另有约 9.7 GiB commit 未被这些计数器归属；
    Codex 桌面应用进程树 546 个进程、私有 commit 约 9.9 GiB，其中 78 个
    computer-use `server.mjs` node 进程约 5.4 GiB，且全部是近几小时内新起的。
-3. (e) 按进程树归属的有界只读时间序列：给采样 / 分析器补父进程与按最近
-   非 shell 祖先汇总（含进程数、私有 commit），在日常桌面负载下跑一段有界序列，
-   确认或否定 Codex 子进程（尤其 `server.mjs`、`node_repl.exe`）是否持续累积、
-   增速多少。只读，不结束任何进程；即使确认累积，也只写证据交 Enmao 决定。
-   ????2026-10-18 22:30???????? `scripts/tree-series.ps1`?CIM ?? Win32_Process /
-   Win32_OperatingSystem????????? owner ???????? commit?Codex ???????
-   `server.mjs` / `cua-repl.mjs` ????????? / ?????? PID???????????????
-   ??? 60 ? ? 30 ???22:30:51 ??? 23:00 ???????????????????
-   `logs\tree-series.jsonl`?????????????? docs/validation.md?
-   22:30:37 ???Codex ?? 497 ?????? commit 9.364 GiB?`server.mjs` 68 ??4.74 GiB??
-   ????? 135 ???22:19 ????? 546 ? / 9.886 GiB / 78 ?????????????
-   ????????????????
-4. (c) 负载基线：真实实验运行时顺带跑一段有界只读序列，并与实验
+3. （已完成 2026-10-18 23:00，见 [docs/validation.md](docs/validation.md) 的 Per-owner-tree series）
+   (e) 按进程树归属的有界只读时间序列：只读脚本 `scripts/tree-series.ps1`
+   （CIM 只读 `Win32_Process` / `Win32_OperatingSystem`，每拍只写聚合，不写 PID、
+   命令行或路径，到次数即停），日常桌面负载下 60 秒 × 30 样本，
+   22:30:52–22:59:52（Asia/Shanghai）。结论：这段时间内不是单调累积。
+   Codex 子树先从 484 个进程 / 9.18 GiB 降到 401 / 7.94 GiB，再随使用回升到
+   593 / 10.69 GiB；期间新生 407 个、退出 298 个，退出多为 13 个一组，
+   说明子进程确实会被回收，水位跟着使用活动走。
+   22:19 单点快照里“累积不回收”的猜测不成立；单个 `server.mjs`
+   能活多久仍未知（序列未记录每个成员的年龄）。
+4. (f) 成员年龄分桶：给 `scripts/tree-series.ps1` 加 `server.mjs` / `cua-repl.mjs` /
+   `node_repl.exe` 的年龄分桶计数与私有 commit（例如 <10 分钟、10–60 分钟、
+   1–3 小时、>3 小时，只写聚合），补静态测试，再在日常桌面负载下跑一段
+   更长的有界序列（如 60 秒 × 120）。回答：老实例是否长期不退、
+   长期活着的部分占多少 commit。只读，不结束任何进程，只写证据。
+5. (c) 负载基线：真实实验运行时顺带跑一段有界只读序列，并与实验
    吞吐、尾延迟按 UTC 对齐；没实验时跳过本项继续下一项，不阻塞。
-5. (d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
+6. (d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
    任何清理执行；没有可重复的持续净收益就不启用清理。
 
 空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)

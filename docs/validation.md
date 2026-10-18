@@ -211,3 +211,59 @@ next read-only step. Caveats: single sample; working set includes shared
 pages; `PrivatePageCount` is commit charge, not residency; nothing here is a
 cleanup benefit, and nothing here makes terminating these processes safe or
 allowed (process termination stays a red line for this tool).
+
+## Per-owner-tree series (desktop load, read-only)
+
+Date: 2026-10-18, 22:30:52-22:59:52 Asia/Shanghai (14:30:52-14:59:52 UTC).
+Ordinary desktop load, no experimental load. `scripts/tree-series.ps1`
+(read-only CIM queries of `Win32_Process` and `Win32_OperatingSystem`),
+30 samples at 60 s intervals, `run_id` `b9132d4f-f300-4cb1-ae77-b0ab2907d320`.
+The run completed all 30 samples and stopped on its own; each query took
+0.53-0.79 s. Only aggregates were written (no PIDs, command lines or paths);
+the raw series stays in gitignored `logs\tree-series.jsonl`. Nothing was
+trimmed, flushed, terminated or reconfigured.
+
+| Metric | First 22:30:52 | Min | Median | Max | Last 22:59:52 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Codex tree processes | 484 | 401 | 457.5 | 593 | 593 |
+| Codex tree private commit GiB | 9.175 | 7.939 | 8.836 | 10.687 | 10.687 |
+| `server.mjs` node processes | 66 | 52 | 61 | 80 | 80 |
+| `server.mjs` private commit GiB | 4.601 | 3.625 | 4.324 | 5.579 | 5.579 |
+| `cua-repl.mjs` processes | 33 | 26 | 30.5 | 40 | 40 |
+| All processes | 943 | 845 | 910.5 | 1046 | 1046 |
+| Sum of process private commit GiB | 47.629 | 42.963 | 45.175 | 48.059 | 45.926 |
+| Free physical GiB (`FreePhysicalMemory`) | 7.690 | 7.073 | 9.712 | 11.712 | 9.060 |
+| Commit used GiB (limit 95.112) | 63.736 | 59.012 | 61.289 | 64.294 | 62.155 |
+
+Reading:
+
+- No monotonic accumulation in this window. The Codex tree fell from 484
+  to 401 processes (9.18 to 7.94 GiB) between 22:30 and 22:43, stayed near
+  that level until about 22:49, then rose to 593 processes (10.69 GiB) by
+  22:59. Over the run 407 tree members were born and 298 exited (net +109);
+  host-wide 460 were born and 357 exited.
+- Exits are real and mostly come in steps of 13 processes, which looks like
+  groups of child processes (shell, console host, `server.mjs`, REPL) being
+  started and reaped together per tool session. That grouping is a hunch;
+  group composition was not recorded. The 22:19 single-snapshot reading
+  ("accumulating without being reaped") is not supported by this series.
+- The level follows activity: the largest one-minute jumps were 41 births at
+  22:50 and 52 at 22:59. A least-squares slope over the run is about
+  +0.027 GiB/min of tree private commit and +0.38 `server.mjs`/min, but the
+  curve is V-shaped, so that slope is not an accumulation rate and must not
+  be extrapolated.
+- `oldest_minutes` rose exactly one minute per sample (135.4 to 164.4), so
+  at least one member lived through the whole run (probably the tree root,
+  not verified). Per-member ages were not recorded, so whether individual
+  `server.mjs` instances survive for hours is still open.
+- In this attribution the `ChatGPT.exe` owner tree contains the Codex tree;
+  it went from 508 processes / 14.75 GiB to 617 / 16.14 GiB. Separately the
+  `sesvc.exe` tree dropped from 35 processes / 7.35 GiB to 24 / 4.56 GiB
+  between 22:40:52 and 22:41:52, when free memory rose 8.95 to 11.32 GiB and
+  commit fell 62.07 to 59.46 GiB. That release was external to this tool.
+
+Caveats: 30 samples over 29 minutes under one evening's desktop use;
+`PrivatePageCount` is commit charge, not residency; `FreePhysicalMemory` is
+the WMI figure, not the PDH available counter used elsewhere in this file.
+None of these changes is a cleanup benefit, and nothing here makes
+terminating any of these processes safe or allowed.
