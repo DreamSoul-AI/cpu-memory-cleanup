@@ -152,3 +152,44 @@ experiment throughput or tail latency. No experiment-load data exists yet.
   pool counters at 22:19. Candidates (unverified): page-file-backed shared
   sections, page tables, kernel stacks. Needs RAMMap or a dedicated counter.
 - Behaviour under real experiment load is unknown. (backlog item 5)
+
+
+## 6. Note 2026-10-18 late: Enmao's 360-style goal, and the decision needed
+
+Enmao clarified (2026-10-18 23:44 Asia/Shanghai) that the product goal he
+has in mind is a 360-style one-click memory releaser (acceleration-ball
+style), and asked whether GitHub already has such projects. The fresh survey
+is in github_survey.md, section "Fresh re-check 2026-10-18". Headlines:
+
+- Yes, GitHub has many such tools (memreduct ~10.9k stars, WinMemoryCleaner
+  ~5.2k stars, plus newer Rust ones). Their release mechanisms are all the
+  same small set: purge standby, empty working sets, flush modified list,
+  trim file cache. None releases commit. The only mechanism that releases
+  commit is ending processes, which is what 360 publicly evidences
+  (user-chosen programs) and what this repo's red lines forbid the tool to do.
+- On this host's evidence (commit 64.7/95.1 GiB from ~1000 processes, standby
+  only ~6.7 GiB under pressure, low hard faults), a standby/working-set
+  releaser would mostly improve the displayed free number, not headroom,
+  and may cost refaults. This does not refute Enmao's goal; it reframes it:
+  a faithful 360 clone would be a cosmetic releaser here, while the
+  effective 360-like action (closing heavy trees) stays human-driven (M1).
+
+Decision Enmao needs to make before any code crosses the read-only red line:
+
+1. Mechanism choice, explicitly one of: (a) stay read-only M0/M1 (report +
+   human closes apps); (b) cosmetic releaser (standby purge and/or working-
+   set trim) knowing the expected benefit is a prettier number, to be proven
+   or refuted by A/B; (c) a targeted working-set trim on self-owned test
+   processes only, as an isolated experiment.
+2. Explicit go-ahead that implementing and running the chosen mechanism is
+   authorised, superseding the current "no cleanup implementation/execution"
+   red line for that mechanism only. Process termination, service stops,
+   settings/page-file changes and auto-elevation stay forbidden regardless.
+3. A/B validation plan agreed in advance, per section 4: same load with and
+   without, repeated; report available, commit, hard faults / pages input,
+   disk I/O, experiment throughput and p95/p99 latency, and cold-cache
+   recovery cost. A run that only shows Free rising is a failed validation,
+   not a success.
+
+Until Enmao makes that decision, M0 remains the direction and nothing in
+this note or the survey is an implementation authorisation.

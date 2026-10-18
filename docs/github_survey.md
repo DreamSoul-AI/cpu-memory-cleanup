@@ -78,3 +78,86 @@ Sordum 官网直接说明 EmptyWorkingSet 与周期 / 排除配置，足以证�
 5. 有界只读采样与 JSONL 日志已经实现，可记录 Available、commit、硬缺页和磁盘 I/O。实验吞吐与尾延迟仍须由实验自身记录并按 UTC 对齐。有真实压力和可重复对照净收益后，才讨论隔离测试环境中的单项候选。没有实现或授权任何清理执行，等 Enmao 审阅后另定。
 
 相关：[基础机制与红线](research.md)、[360 专项调研](360_memory_cleanup.md)。
+
+
+## Fresh re-check 2026-10-18 (360-style one-click releaser goal)
+
+Date: 2026-10-18 (Asia/Shanghai). Method: `gh repo view` / `gh search repos`
+and `gh search code` as diaoenmao on DreamSoulDEM, plus source reading of
+shallow clones in C:\Temp\gh-survey-20261018 (read only; nothing was run, no
+cleanup API was called). This section extends, and where noted corrects, the
+2026-10-17 survey above. Stars / pushed-at are as of 2026-10-18 evening
+Asia/Shanghai (GitHub timestamps are UTC).
+
+### Verified candidates (fresh)
+
+| Repo | Stars | Last push (UTC) | Licence (repo metadata / files) | Language | Verified mechanism (source evidence) |
+| --- | ---: | --- | --- | --- | --- |
+| henrypp/memreduct | 10858 | 2026-10-07 | GPL-3.0 | C | Native memory lists via NtSetSystemInformation(SystemMemoryListInformation): working sets, standby, low-priority standby, modified; plus system file cache / page combining. Prior survey: src/main.c, -clean / -clean:full, threshold+interval+cooldown. Mechanism unchanged in this re-check; HEAD source not re-read line-by-line. |
+| IgorMundstein/WinMemoryCleaner | 5167 | 2025-12-19 | GPL-3.0 | C# | Same native lists; per-process EmptyWorkingSet when an exclusion list is given, otherwise global MemoryEmptyWorkingSets (prior survey: src/Service/ComputerService.cs). Timer/threshold/service modes in README. |
+| winsiderss/systeminformer | 16268 | 2026-10-18 | MIT (repo) | C | Observation plus native memory-list commands (memlists.c / phnt ntexapi.h, prior survey). Not a one-click cleaner; reference for classification and status handling, not a fork target for a releaser. |
+| Y-ASLant/MemoryCleaner | 44 | 2026-10-12 | MIT (LICENSE file and Cargo.toml) | Rust | NEW in this survey. src/optimize.rs calls NtSetSystemInformation for EmptyWorkingSets, FlushModifiedList, PurgeStandbyList, PurgeLowPriorityStandbyList, system file cache and combined pages; src/win32/process.rs uses K32EmptyWorkingSet per process. Tray GUI, auto UAC elevation (README_EN FAQ). Its TerminateProcess use is kill_process_by_name("explorer.exe") in icon_cache.rs - an icon-cache helper, NOT a memory-release feature; do not cite it as process-killing cleanup. |
+| nusu-github/WinMemClean | 0 | 2026-08-08 | MIT OR Apache-2.0 (LICENSE-MIT + LICENSE-APACHE files, Cargo.toml; corrects the 2026-10-17 note that licence text was unverified) | Rust | Now source-verified. crates/winmemclean-core: README table and lib.rs/nt.rs show NtSetSystemInformation memory-list commands (working set, modified, standby, low-priority standby, file cache, combined pages, registry cache) and per-process EmptyWorkingSet when exclusions given (process.rs). CLI + optional Windows service; /Auto default 15 min / 80% load, excludes freeze-prone standby/modified purge unless /AllowFreezeProne. No tray by default. |
+| H3d9/memory_cleaner | 375 | 2022-10-01 | GPL-3.0 | C++ | Chinese Memory Cleaner remake. memclean/win32utility.cpp: per-process EmptyWorkingSet, MemoryEmptyWorkingSets, MemoryPurgeStandbyList, MemoryFlushModifiedList, SystemFileCacheInformation, SystemCombinePhysicalMemoryInformation via NtSetSystemInformation. Stale since 2022; description claims it replicates the closed original's internal logic - that provenance claim is unverified. |
+| fafalone/MemListMgr | 26 | 2024-06-30 | MIT | VB6 | Smallest direct native-call demo (prior survey: modMemListMgr.twin): standby / low-priority standby / working set / modified / file cache, separate commands. Old VB6 codebase. |
+| middaysan/windows-ram-cleaner | 9 | 2025-07-30 | UNVERIFIED: README claims MIT but there is no LICENSE file and GitHub licenseInfo is null - do not treat as MIT-licensed code | Go | internal/windows_api/actions.go: MemoryPurgeStandbyList via NtSetSystemInformation(SystemMemoryListInformation=0x50), SetProcessWorkingSetSize(-1,-1) and EmptyWorkingSet per process. Tray app, admin required, 65% threshold in tooltip.go. Mechanism verified; licence is not. |
+| luojia65/memory_free_windows | 4 | 2018-11-04 | none shown | Rust | Anti-pattern, do not use: allocates ~75% of RAM to force others out, sleeps, drops it, and reports the delta as freed (src/main.rs; README says "for fun"). This pressures the pagefile and other processes; it releases no commit belonging to anyone else. |
+| stefanpejcic/EmptyStandbyList | 92 | 2024-10-08 | none | Batchfile | Binary wrapper only (EmptyStandbyList.exe + bat/cmd/task XML: workingsets, modifiedpagelist, standbylist, priority0standbylist). No source for the EXE; not reusable code. Same conclusion as 2026-10-17. |
+
+### Checked and NOT found as open source on GitHub
+
+- Wagnardsoft ISLC (Intelligent Standby List Cleaner): `gh api users/wagnardsoft/repos` returns 404 and no official repo was found. Search hits such as zeptotherapistbend/ISLC (7 stars, licence "Other", no primary language, description is a download/install guide) are unofficial download-guide mirrors with no verifiable source. ISLC's real mechanism (timer/threshold purge of standby list, from its official site description) is therefore UNVERIFIED from source in this survey.
+- Sordum Reduce Memory: no official GitHub repo found (`gh search repos "Reduce Memory sordum"` empty). It remains sordum.org freeware, v1.7 changelog 2024-11-27, documented EmptyWorkingSet use on the vendor page (prior survey). Not forkable code.
+- Microsoft Sysinternals RAMMap: not GitHub open source; official distribution is the Sysinternals download page only. Its Empty menu is a reference for categories, not reusable code.
+- wj32 original EmptyStandbyList: only wrapper/fork repos and download links were found (e.g. duducorvao/EmptyStandbyListTimer points to wj32.org); no original source repo or licence verified.
+- Chinese 360-style clones: `gh search repos` for the Chinese terms for memory release / one-click acceleration found no Windows 360-style one-click RAM releaser clone with source. Hits were Android cleaners, a 360 acceleration-ball animation demo (Mario0o/Animation360, Java, 8 stars, 2016, UI only), Tencent lemon-cleaner (macOS/Objective-C, disk cleaning), and the H3d9 remake above. Speculation that a ready-made 360 clone exists on GitHub is not supported by this search.
+
+### Per-mechanism verdict for THIS machine
+
+Measured here (docs/mitigation-design.md, 2026-10-18): 47.1 GiB RAM, commit
+limit 95.1 GiB; desktop pressure commit median 64.70 GiB, standby median
+6.73 GiB (idle 18.54 GiB), available median 8.23 GiB, largest single process
+under 2 GiB, ~1000 processes, hard-fault median low (pages input/s 52.5).
+
+| Mechanism | Releases commit? | What it actually does here | Cost | Verdict for this host |
+| --- | --- | --- | --- | --- |
+| Purge standby (all or priority-0) | No | Turns up to ~6.7 GiB of standby into free under pressure; Available = standby + free + zero, so new Available is ~0. The number that visibly moves is Free, not usable headroom. | Cold file cache, later disk re-reads | Cosmetic for this host. Reject as the headline 360 effect. |
+| EmptyWorkingSet, all processes (MemoryEmptyWorkingSets or per-process loop) | No | Evicts resident pages to standby/modified; working-set and "In use" numbers can fall without any allocation being freed. Dirty pages must be written before reuse. | Refaults across ~1000 processes when touched again; latency jitter | Cosmetic plus harmful risk. Already rejected in mitigation-design.md; this survey does not change that. |
+| EmptyWorkingSet, single self-owned test process only | No (for that process's allocation) | Same eviction, contained to one test target | Refaults in that process only | Only candidate worth an isolated A/B if Enmao ever authorises execution research; not a system releaser. |
+| Flush modified page list | No | Writes dirty pages out; modified list was ~0.12 GiB at 22:19 | Disk writes, I/O contention | Negligible target here. Reject. |
+| System file cache trim / registry cache / page combining | No | Cache bookkeeping; no evidence of a cache problem on this host | Cache cold start; combining costs CPU | Reject on current evidence. |
+| Terminate selected processes (what 360 publicly evidences: closing user-chosen programs) | YES - the only one that does | Frees that tree's private commit and working set. On this host the big lever is whole trees (e.g. Codex desktop tree ~8-12.5 GiB private), not any single process (<2 GiB) | Lost work / unsaved state if done by a tool | Effective but forbidden for this tool by red line. The lawful 360-like equivalent here is M1: the report names the tree, the human closes it in its own UI. |
+| Allocate-and-release pressure (luojia65 style) | No | Forces paging of other processes, then frees its own allocation | Thrashing, pagefile pressure, can OOM bystanders | Reject outright; never implement. |
+| Read-only pressure report (current M0) | No, by design | Names which owner trees grew when headroom crosses a threshold | None to the system | Keep as the default until Enmao decides otherwise. |
+
+Blunt summary: every open-source "one-click RAM release" mechanism above
+except process termination only moves pages between lists. On a host whose
+problem is commit (64.7/95.1 GiB) from process breadth, with standby already
+down to ~6.7 GiB and low hard faults, a standby/working-set releaser would
+make the free-memory number prettier and the machine, if anything, slightly
+slower afterwards. That is a testable claim, not a certainty - section 4 of
+mitigation-design.md defines the A/B that could refute it (hard faults,
+pages input, disk I/O, throughput, p95/p99 latency; not the free number).
+
+### Licence / reuse conclusion (updated)
+
+- Legally borrowable code, if code were ever wanted: MemListMgr (MIT, but
+  VB6), WinMemClean (MIT OR Apache-2.0, Rust, 0 stars, service mode we do
+  not want), Y-ASLant/MemoryCleaner (MIT, Rust, but tray GUI + auto-elevate
+  + explorer-kill helper we do not want). Taking any of them still means
+  taking their execution model, not just an API call.
+- GPL-3.0 (memreduct, WinMemoryCleaner, H3d9): readable for mechanism facts;
+  copying/translating code into this repo would impose GPL obligations on
+  distribution. This private repo has no licence decision yet; do not import
+  GPL code casually.
+- No licence / binary only / unverified: stefanpejcic wrappers, middaysan
+  (README-claimed MIT, no LICENSE file), luojia65, Sordum freeware, ISLC.
+  Not reusable as source.
+- Recommendation: do NOT fork a cleaner. If Enmao authorises a releaser at
+  all, borrow the mechanism (documented Windows API facts, which are not
+  copyrightable expression) and write a small single-mechanism version inside
+  this repo's existing ctypes allowlist architecture, behind the gates in
+  mitigation-design.md section 4. Until then keep M0 read-only.
+
+Nothing in this section authorises implementation or execution. No candidate
+tool was run; no EmptyStandbyList, purge, trim or kill was executed.
