@@ -39,9 +39,17 @@ class TreeSeriesScriptTests(unittest.TestCase):
             )
             self.assertRegex(self.text, pattern)
 
-    def test_only_reads_cim(self):
+    def test_only_reads_cim_and_optional_pdh(self):
         classes = set(re.findall(r"Get-CimInstance -ClassName (\w+)", self.text))
         self.assertEqual(classes, {"Win32_Process", "Win32_OperatingSystem"})
+        # Get-Counter is read-only PDH; required for residual fields, fail-soft in script.
+        self.assertIn("Get-Counter", self.text)
+        self.assertIn("commit_residual", self.text)
+        for field in (
+            "process_private_gib", "paged_pool_gib", "nonpaged_pool_gib",
+            "system_driver_gib", "residual_gib", "residual_pct_of_commit",
+        ):
+            self.assertIn(field, self.text)
 
     def test_record_has_no_pid_or_command_line_fields(self):
         record = self.text[self.text.index("$rec = [ordered]@{"):self.text.index("$line = $rec")]
@@ -97,6 +105,29 @@ class TreeSeriesSmokeTest(unittest.TestCase):
         text = lines[0].lower()
         for field in ("\"pid\"", "\"process_id\"", "\"command_line\"", "\"commandline\""):
             self.assertNotIn(field, text)
+        # Commit residual block: present; numeric or null (fail-soft on PDH).
+        self.assertIn("commit_residual", rec)
+        cr = rec["commit_residual"]
+        for key in (
+            "process_private_gib", "paged_pool_gib", "nonpaged_pool_gib",
+            "system_driver_gib", "residual_gib", "residual_pct_of_commit",
+        ):
+            self.assertIn(key, cr)
+            val = cr[key]
+            self.assertTrue(val is None or isinstance(val, (int, float)), key)
+        # process_private_gib falls back to CIM private sum, so should be a number.
+        self.assertIsInstance(cr["process_private_gib"], (int, float))
+        self.assertGreaterEqual(cr["process_private_gib"], 0)
+        if cr["residual_gib"] is not None:
+            host = rec["host"]
+            expected = (
+                host["commit_used_gib"]
+                - cr["process_private_gib"]
+                - cr["paged_pool_gib"]
+                - cr["nonpaged_pool_gib"]
+                - cr["system_driver_gib"]
+            )
+            self.assertAlmostEqual(cr["residual_gib"], expected, places=2)
 
 
 if __name__ == "__main__":

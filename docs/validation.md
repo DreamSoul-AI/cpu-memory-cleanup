@@ -307,3 +307,17 @@ Reading:
 Caveats: two single snapshots on one evening; counters are read at slightly
 different instants; the residual is inferred by subtraction, not measured.
 It is not reclaimable memory and not a cleanup target by itself.
+
+## Per-beat commit residual fields (script)
+
+As of 2026-10-18 23:50 Asia/Shanghai, `scripts/tree-series.ps1` records a
+read-only `commit_residual` object on every beat when PDH counters succeed:
+`process_private_gib` (PDH `\Process(_Total)\Private Bytes`, else CIM
+`private_sum_gib`), `paged_pool_gib`, `nonpaged_pool_gib`,
+`system_driver_gib`, `residual_gib`, and `residual_pct_of_commit`.
+Formula: `residual_gib = commit_used_gib - process_private_gib -
+paged_pool_gib - nonpaged_pool_gib - system_driver_gib` (same subtraction as
+the Commit residual re-check above). Counter failures set the pool/driver/
+residual fields to null and do not abort the series. The age-bucket series
+started at 23:12 (run_id `f813ba37`) does **not** include these fields; use
+them on the next series after that run finishes.

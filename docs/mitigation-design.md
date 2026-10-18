@@ -27,6 +27,11 @@ None of the runs had experimental (training / evaluation) load.
 | Per-owner-tree series | 22:30:52-22:59:52 | daily desktop | 30 x 60 s | Codex tree 401-593 processes, 7.94-10.69 GiB private; 407 born, 298 exited; not monotonic |
 | Age-bucket series, first sample only | 23:12:06 | daily desktop | 1 of 120 x 60 s | Codex tree 687 processes, 12.50 GiB private; `server.mjs` 92 (6.41 GiB): 20 under 10 min, 50 at 10-60 min, 22 at 1-3 h, 0 over 3 h |
 
+Note (2026-10-18 23:50 Asia/Shanghai): later tree-series runs will also emit a
+per-beat read-only `commit_residual` object (private + pools + driver vs commit)
+so the ~9 GiB unattributed commit can be tracked over time. The in-flight
+age-bucket series (run_id f813ba37) does not include it.
+
 What this supports:
 
 - **The pressure is commit and breadth, not cache.** Between idle and desktop

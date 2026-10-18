@@ -12,6 +12,14 @@
   also writes age-bucket aggregates (lt10m, 10to60m, 1to3h, gt3h, unknown):
   process count and private commit per bucket, plus the oldest age per kind.
 
+  Each beat also records a read-only commit residual block when PDH counters
+  are available: process_private_gib (PDH Process(_Total) Private Bytes, else
+  the CIM private_sum_gib), paged_pool_gib, nonpaged_pool_gib,
+  system_driver_gib, residual_gib and residual_pct_of_commit. Formula:
+  residual_gib = commit_used_gib - process_private_gib - paged_pool_gib -
+  nonpaged_pool_gib - system_driver_gib. Get-Counter failures set those
+  fields to null and do not abort the series.
+
   Read-only: it never terminates, suspends, trims, flushes or reconfigures
   anything, never elevates, and never touches the page file or services.
   It stops after -Count samples; it is not a service. If writing the log
@@ -121,6 +129,41 @@ for ($i = 1; $i -le $Count; $i++) {
   }
   $prevKeys = $keys; $prevCodexKeys = $codexKeys
 
+  # Read-only PDH commit residual (fail soft: null fields if counters unavailable).
+  # Formula: residual = commit_used - process_private - paged_pool - nonpaged_pool - system_driver
+  # (same sources as docs/validation.md Commit residual re-check).
+  $commitUsedGib = [math]::Round(([double]$os.TotalVirtualMemorySize - [double]$os.FreeVirtualMemory) * 1024 / $GiB, 3)
+  $processPrivateGib = [math]::Round($totalPrivate / $GiB, 3)
+  $pagedPoolGib = $null
+  $nonpagedPoolGib = $null
+  $systemDriverGib = $null
+  $residualGib = $null
+  $residualPct = $null
+  try {
+    $counterPaths = @(
+      '\Memory\Pool Paged Bytes',
+      '\Memory\Pool Nonpaged Bytes',
+      '\Memory\System Driver Total Bytes',
+      '\Process(_Total)\Private Bytes'
+    )
+    $samples = (Get-Counter -Counter $counterPaths -ErrorAction Stop).CounterSamples
+    $byLeaf = @{}
+    foreach ($s in $samples) {
+      $leaf = (($s.Path -split '\\')[-1]).ToLowerInvariant()
+      $byLeaf[$leaf] = [double]$s.CookedValue
+    }
+    if ($byLeaf.ContainsKey('pool paged bytes')) { $pagedPoolGib = [math]::Round($byLeaf['pool paged bytes'] / $GiB, 3) }
+    if ($byLeaf.ContainsKey('pool nonpaged bytes')) { $nonpagedPoolGib = [math]::Round($byLeaf['pool nonpaged bytes'] / $GiB, 3) }
+    if ($byLeaf.ContainsKey('system driver total bytes')) { $systemDriverGib = [math]::Round($byLeaf['system driver total bytes'] / $GiB, 3) }
+    if ($byLeaf.ContainsKey('private bytes')) { $processPrivateGib = [math]::Round($byLeaf['private bytes'] / $GiB, 3) }
+  } catch {
+    # Counter set missing or transient PDH error: omit residual fields, keep series going.
+  }
+  if ($null -ne $pagedPoolGib -and $null -ne $nonpagedPoolGib -and $null -ne $systemDriverGib) {
+    $residualGib = [math]::Round($commitUsedGib - $processPrivateGib - $pagedPoolGib - $nonpagedPoolGib - $systemDriverGib, 3)
+    if ($commitUsedGib -gt 0) { $residualPct = [math]::Round(100.0 * $residualGib / $commitUsedGib, 1) }
+  }
+
   $ownerRows = $owners.GetEnumerator() | Sort-Object { $_.Value.private } -Descending | Select-Object -First $TopOwners | ForEach-Object {
     [ordered]@{ owner = $_.Key; processes = $_.Value.processes; private_gib = [math]::Round($_.Value.private / $GiB, 3) }
   }
@@ -143,10 +186,18 @@ for ($i = 1; $i -le $Count; $i++) {
     host = [ordered]@{
       total_gib = [math]::Round([double]$os.TotalVisibleMemorySize * 1024 / $GiB, 3)
       free_gib = [math]::Round([double]$os.FreePhysicalMemory * 1024 / $GiB, 3)
-      commit_used_gib = [math]::Round(([double]$os.TotalVirtualMemorySize - [double]$os.FreeVirtualMemory) * 1024 / $GiB, 3)
+      commit_used_gib = $commitUsedGib
       commit_limit_gib = [math]::Round([double]$os.TotalVirtualMemorySize * 1024 / $GiB, 3)
     }
     processes = $procs.Count; private_sum_gib = [math]::Round($totalPrivate / $GiB, 3)
+    commit_residual = [ordered]@{
+      process_private_gib = $processPrivateGib
+      paged_pool_gib = $pagedPoolGib
+      nonpaged_pool_gib = $nonpagedPoolGib
+      system_driver_gib = $systemDriverGib
+      residual_gib = $residualGib
+      residual_pct_of_commit = $residualPct
+    }
     born_since_prev = $born; exited_since_prev = $exited
     codex_tree = [ordered]@{
       processes = $codex.processes; private_gib = [math]::Round($codex.private / $GiB, 3)
