@@ -12,6 +12,12 @@
 > free number alone is never claimed as a benefit ? benefit must survive
 > the refault A/B in docs/mitigation-design.md section 7. All other modes
 > remain read-only and still reject `--execute` / `--clean`.
+>
+> **Privilege update (2026-10-19, Asia/Shanghai):** Enmao authorised that an
+> explicit `--release` may enable `SeProfileSingleProcessPrivilege` in the
+> tool's own token **only if the token already holds it**, and must disable it
+> again immediately after the release calls (`cpu_memory_cleanup/privscope.py`).
+> No UAC elevation, no new privileges, no other token or process touched.
 
 Windows CPU / 主机 RAM 安全巡检工具。长期目标是为实验机器提供有证据、可预览、可追溯的周期性内存维护；**当前阶段是一次性只读巡检，外加有界只读采样，没有任何清理执行能力**。
 

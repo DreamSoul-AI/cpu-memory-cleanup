@@ -8,15 +8,18 @@ v1 covers only:
   - MemoryEmptyWorkingSets (2)
   - MemoryPurgeStandbyList (4)
 No process is terminated, no per-process handle is opened, no setting /
-pagefile / registry value is changed, and no privilege is requested or
-elevation attempted. If the caller's token lacks the required privilege
-the NTSTATUS is reported plainly and the caller fails gracefully.
+pagefile / registry value is changed, and no elevation is attempted.
+Authorised 2026-10-19: for a live release only, SeProfileSingleProcessPrivilege
+is enabled in the tool's own token when it is already held, and disabled again
+immediately after the NT calls (see privscope.py). If the token does not hold
+it, the NTSTATUS is reported plainly and the caller fails gracefully.
 Tests must inject a fake nt_call and must never call the real one.
 """
 
 import ctypes as c
 from ctypes import wintypes as w
 from datetime import datetime, timezone
+import contextlib
 import sys
 
 SYSTEM_MEMORY_LIST_INFORMATION = 80
@@ -95,7 +98,7 @@ def _deltas(before, after):
     return out
 
 
-def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn=None):
+def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn=None, privilege_scope=None):
     """Run the authorised release once. All NT access is injectable.
 
     Returns a plain dict; NT / privilege failures are recorded, not raised.
@@ -109,10 +112,20 @@ def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn
         nt_call = _default_nt_call
         if preflight_fn is None:
             from .privcheck import check as preflight_fn
+        if privilege_scope is None:
+            from .privscope import scoped_enable as privilege_scope
     preflight = preflight_fn() if preflight_fn is not None else None
     started = datetime.now(timezone.utc).isoformat()
     before_report = snapshot_fn()
     actions = []
+    scope = privilege_scope() if privilege_scope is not None else contextlib.nullcontext(None)
+    with scope as privilege:
+        _run_actions(selected, nt_call, actions)
+    after_report = snapshot_fn()
+    return _finish(what, started, before_report, after_report, actions, preflight, privilege)
+
+
+def _run_actions(selected, nt_call, actions):
     for key, name, command in selected:
         try:
             status = nt_call(command)
@@ -126,7 +139,9 @@ def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn
             actions.append({"what": key, "mechanism": name, "command": command,
                             "ntstatus": None, "ntstatus_hex": None, "ntstatus_name": None,
                             "ok": False, "error": f"{type(exc).__name__}: {exc}"})
-    after_report = snapshot_fn()
+
+
+def _finish(what, started, before_report, after_report, actions, preflight, privilege):
     before, after = _summary(before_report), _summary(after_report)
     performed = any(a["ok"] for a in actions)
     warnings = [
@@ -136,7 +151,13 @@ def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn
     ]
     if not performed:
         warnings.append("No release action succeeded; see actions[].ntstatus / error. No elevation was attempted.")
-    if preflight is not None and preflight.get("ready") is False:
+    if privilege is not None:
+        if privilege.get("restored") is False:
+            warnings.append("Privilege could not be disabled again after the release: " + str(privilege.get("restore_error")))
+        if privilege.get("error"):
+            warnings.append("Privilege enable failed (" + privilege["error"] + "), so 0xC0000061 is expected. "
+                            "The tool never adds a privilege the token does not hold and never elevates.")
+    elif preflight is not None and preflight.get("ready") is False:
         missing = ", ".join(x["name"] for x in preflight.get("privileges", []) if not x["enabled"])
         warnings.append(f"Pre-flight: {missing} not enabled in this token, so 0xC0000061 is expected. "
                         "The tool does not enable or request privileges.")
@@ -145,7 +166,7 @@ def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn
         "cleanup_performed": performed,
         "started_at_utc": started, "finished_at_utc": datetime.now(timezone.utc).isoformat(),
         "before": before, "after": after, "deltas": _deltas(before, after),
-        "preflight": preflight, "actions": actions, "warnings": warnings,
+        "preflight": preflight, "privilege_scope": privilege, "actions": actions, "warnings": warnings,
     }
 
 
@@ -166,6 +187,9 @@ def format_release(record):
         states = ", ".join(f"{x['name']}={'enabled' if x['enabled'] else ('held-disabled' if x['held'] else 'not-held')}"
                            for x in pre.get("privileges", []))
         lines.append(f"pre-flight: {states or pre.get('error') or 'unavailable'}")
+    if record.get("privilege_scope") is not None:
+        from .privscope import describe
+        lines.append("privilege: " + describe(record["privilege_scope"]))
     for action in record["actions"]:
         if action["error"]:
             lines.append(f"  {action['what']} ({action['mechanism']}, command {action['command']}): FAILED {action['error']}")

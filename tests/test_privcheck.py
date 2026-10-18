@@ -21,7 +21,8 @@ class PrivilegePreflightTests(unittest.TestCase):
         rec = pc.check(query=lambda: [(NAME, 0), ("SeChangeNotifyPrivilege", 3)])
         self.assertEqual(rec["privileges"], [{"name": NAME, "held": True, "enabled": False, "enabled_by_default": False}])
         self.assertIs(rec["ready"], False)
-        self.assertIn("expect NTSTATUS 0xC0000061", pc.format_check(rec))
+        self.assertIn("held but disabled", pc.format_check(rec))
+        self.assertIs(rec["ready_with_scoped_enable"], True)
 
     def test_enabled_is_ready(self):
         rec = pc.check(query=lambda: [(NAME, pc.SE_PRIVILEGE_ENABLED | pc.SE_PRIVILEGE_ENABLED_BY_DEFAULT)])

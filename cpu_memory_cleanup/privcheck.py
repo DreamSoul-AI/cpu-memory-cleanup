@@ -89,6 +89,9 @@ def check(query=None, required=REQUIRED):
             "enabled_by_default": bool(present and attrs & SE_PRIVILEGE_ENABLED_BY_DEFAULT),
         })
     record["ready"] = all(p["enabled"] for p in record["privileges"])
+    # Authorised 2026-10-19: a live --release enables an already-held privilege for the
+    # release calls only (privscope.py), so "held" is enough for a live release to work.
+    record["ready_with_scoped_enable"] = all(p["held"] for p in record["privileges"])
     return record
 
 
@@ -100,7 +103,15 @@ def format_check(record):
         state = "enabled" if p["enabled"] else ("held but disabled" if p["held"] else "not held")
         lines.append(f"  {p['name']}: {state}")
     ready = record.get("ready")
-    lines.append("live --release expected to work: " + ("unknown" if ready is None else ("yes" if ready else
-                 "no (expect NTSTATUS 0xC0000061 STATUS_PRIVILEGE_NOT_HELD)")))
+    scoped = record.get("ready_with_scoped_enable")
+    if ready is None:
+        verdict = "unknown"
+    elif ready:
+        verdict = "yes (already enabled)"
+    elif scoped:
+        verdict = "yes (held but disabled; --release enables it only for the release calls, then disables it)"
+    else:
+        verdict = "no (not held; expect NTSTATUS 0xC0000061 STATUS_PRIVILEGE_NOT_HELD; the tool will not elevate)"
+    lines.append("live --release expected to work: " + verdict)
     lines.append(record["note"])
     return "\n".join(lines)

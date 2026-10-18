@@ -536,3 +536,44 @@ is commit charge, not residency, so it does not say how much a trim would
 free; `FreePhysicalMemory` is the WMI figure, not the PDH available counter;
 per-process identities were not recorded, so "the same 8 survivors" is not
 established. Nothing here makes terminating any process safe or allowed.
+
+## 2026-10-19 01:40-01:50 (Asia/Shanghai): scoped privilege enable for --release (no live release yet)
+
+Enmao authorised on 2026-10-19 that an explicit `--release` may enable
+`SeProfileSingleProcessPrivilege` in the tool's own token only while the
+release calls run, and only if the token already holds it; it must be
+disabled again immediately afterwards. No UAC elevation, no process killing,
+no system-setting change.
+
+What changed:
+- New `cpu_memory_cleanup/privscope.py`: `scoped_enable()` opens the tool's
+  own token, enables that one privilege, yields, and disables it again in a
+  `finally` (also when an NT call raises). If the privilege was already
+  enabled it is left as found. If the token does not hold it,
+  `AdjustTokenPrivileges` reports ERROR_NOT_ALL_ASSIGNED; this is recorded,
+  not retried, and the NT calls still report their NTSTATUS.
+- `perform_release` wraps the NT calls in that scope for a live release only;
+  an injected `nt_call` (tests) never touches the token. The record gains a
+  `privilege_scope` field and the text report a `privilege:` line.
+- `--release-preflight` (still a read-only TOKEN_QUERY) adds
+  `ready_with_scoped_enable` (= held). `--ab-protocol` now blocks only when
+  the privilege is not held, not when it is merely disabled.
+- 13 new mock tests (122 total, all pass). Source tests pin the new module
+  to the current process's own token and this single privilege name, and
+  keep `release.py` / `privcheck.py` free of `AdjustTokenPrivileges`.
+
+Real reads at about 01:46 (nothing enabled, nothing released):
+`--release-preflight` reports the privilege held but disabled, so a live
+release is now expected to work. `--ab-protocol` dry-run is BLOCKED only by
+the read-only residual tree series (`logs/tree-series-residual.jsonl`, still
+being written, scheduled to end about 02:04).
+
+Context for the coming A/B (one read-only desktop snapshot, 01:38, not an
+experiment): available 4.42 GiB of 47.11 GiB, committed 66.92 GiB, standby
+(normal priority) 3.44 GiB, modified 0.06 GiB. Available has fallen steadily
+from about 10 GiB at 01:06 during the residual series; the series records
+this, and it is a baseline for the A/A windows, not a claim of anything.
+
+Next: once the residual series has ended and been analysed offline, run the
+documented `--ab-protocol --ab-live` (AA,AB,AA,AB, about 40 min) and record
+the verdict against the A/A noise ceiling. No benefit is claimed yet.

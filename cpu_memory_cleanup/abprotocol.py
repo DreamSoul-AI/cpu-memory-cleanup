@@ -5,8 +5,9 @@ nothing. Only with ``live=True`` does it sample, and only at the start of a B
 window does it call the existing ``perform_release`` once. Guards stop the run
 before any sampling or release when a read-only ``scripts/tree-series.ps1``
 log is still being written (so the release cannot contaminate that series) or
-when the read-only token pre-flight says the needed privilege is not enabled
-(the tool never enables or requests privileges, and never elevates). A release
+when the read-only token pre-flight says the needed privilege is not held
+(a held-but-disabled privilege is enabled by the release itself only for the
+release calls, authorised 2026-10-19; the tool never elevates). A release
 that does not succeed stops the protocol; it is reported, not retried.
 No process is killed, no service stopped, no setting / pagefile / registry
 value changed. All OS access is injectable; tests never touch the real calls.
@@ -82,10 +83,10 @@ def check_guards(log_dir, preflight_fn=None, now=None):
                         "); wait for it to end so a release cannot contaminate it")
     if pre is None or pre.get("error"):
         blockers.append("privilege pre-flight unavailable: " + str((pre or {}).get("error")))
-    elif pre.get("ready") is False:
-        missing = ", ".join(p["name"] for p in pre.get("privileges", []) if not p.get("enabled"))
-        blockers.append(f"{missing} not enabled in this token, so the release would return 0xC0000061; "
-                        "the tool does not enable or request privileges")
+    elif pre.get("ready_with_scoped_enable", pre.get("ready")) is False:
+        missing = ", ".join(p["name"] for p in pre.get("privileges", []) if not p.get("held"))
+        blockers.append(f"{missing or 'required privilege'} not usable by this token, so the release would return "
+                        "0xC0000061; the tool never adds privileges or elevates")
     return {"busy_series": busy, "preflight": pre, "blockers": blockers, "ok": not blockers}
 
 

@@ -172,7 +172,7 @@ def main(argv=None):
     parser.add_argument("--release-what", choices=RELEASE_WHATS, default=None,
                         help="with --release: working-set, standby, or both (default: both, the one-click behaviour)")
     parser.add_argument("--release-preflight", action="store_true",
-                        help="read-only: report whether the token already has the privilege --release needs enabled; "
+                        help="read-only: report whether the token holds / has enabled the privilege --release needs; "
                              "changes nothing and enables nothing")
     parser.add_argument("--top", type=positive_int, default=10, help="process count when ranking is enabled (default: 10)")
     parser.add_argument("--sample", action="store_true",
@@ -212,7 +212,7 @@ def main(argv=None):
                              "(prints the plan and guards, samples nothing, releases nothing)")
     parser.add_argument("--ab-live", action="store_true",
                         help="with --ab-protocol: actually sample, releasing once before each B window; refuses "
-                             "while a tree-series log is being written or the privilege pre-flight is not ready")
+                             "while a tree-series log is being written or the token does not hold the needed privilege")
     parser.add_argument("--ab-pattern", help="with --ab-protocol: comma list of AA/AB pairs (default AA,AB,AA,AB)")
     parser.add_argument("--ab-interval", type=float, help="with --ab-protocol: seconds between samples (default 10)")
     parser.add_argument("--ab-count", type=int, help="with --ab-protocol: samples per window (default 30)")
