@@ -348,8 +348,10 @@ authorisation (see mitigation-design.md section 7).
 Status: **PENDING**. No live release was run at implementation time,
 because the 60 s x 120 age-bucket series (run_id f813ba37) was still
 running until ~01:11 Asia/Shanghai 2026-10-19 and a release would
-contaminate it. The 5-minute patrol should run, only after confirming
-that series has ended:
+contaminate it. A second read-only 60 s x 120 commit-residual series
+(run_id f9059e66, `logs/tree-series-residual.jsonl`) runs until ~02:04
+Asia/Shanghai 2026-10-19 and must not be contaminated either. The 5-minute
+patrol should run, only after confirming both series have ended:
 
 ```powershell
 Set-Location D:\GitHub\DreamSoul\cpu-memory-cleanup

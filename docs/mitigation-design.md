@@ -268,6 +268,10 @@ on the free number:
 Do NOT run any live release before the 60 s x 120 age-bucket series
 (run_id f813ba37, `logs/tree-series-age.jsonl`) ends (~01:11 Asia/Shanghai
 2026-10-19); a system-wide trim / purge would contaminate that evidence.
+The same applies to the 60 s x 120 commit-residual series (run_id
+f9059e66, `logs/tree-series-residual.jsonl`, started 00:04:56) which ends
+~02:04 Asia/Shanghai 2026-10-19: wait until both series have ended (check
+that neither sampling process is still running) before window A starts.
 
 1. Window A (control): bounded read-only sampling, no release, e.g.
    `python -m cpu_memory_cleanup --sample --interval 10 --count 90 --jsonl logs/ab-A.jsonl`
