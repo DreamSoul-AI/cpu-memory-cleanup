@@ -399,3 +399,25 @@ shell used for this project's checks (read-only token query, nothing enabled):
 expected to fail with 0xC0000061 until Enmao decides whether the tool may enable that
 already-held privilege in its own token. No release was run; both read-only series
 (age f813ba37, residual f9059e66) were left undisturbed. 90 tests pass.
+
+## A/A null calibration of the comparator (2026-10-19 00:24 Asia/Shanghai)
+
+Why: before any live A/B, the comparator's refault-spike rule must be checked against natural
+desktop noise with **no release in either window**; otherwise an ordinary burst in B could be
+misread as release cost (or a quiet B as benefit).
+
+- Smoke (labelled: daily desktop load, no experiment load, no release, 2 windows x 3 samples at
+  2 s, 00:23:49-00:23:57 Asia/Shanghai, temp files only): `--ab-compare` verdict `cosmetic`, no
+  spike flagged. Level deltas were tiny (available tail -0.03 GiB, commit +0.04 GiB), but refault
+  means moved a lot with no release at all: pages_input/s 1.7 -> 44.5, page_reads/s 1.0 -> 3.2,
+  disk read 0.11 -> 0.24 MB/s. So short windows are noisy, the absolute floors in the spike rule
+  are doing real work, and a single A/B pair is weak evidence. 3 samples per window is far too few
+  to conclude anything; this only shows the pipeline runs end to end on real records.
+- Running (read-only, bounded): two back-to-back windows `--sample --interval 10 --count 30`
+  writing gitignored `logs/aa-A1.jsonl` and `logs/aa-A2.jsonl` (started 00:24:13, ends about
+  00:34 Asia/Shanghai), same shape as the planned A/B windows but shorter. Result to be added
+  here: `--ab-compare logs/aa-A1.jsonl logs/aa-A2.jsonl` should NOT say benefit or spike; if it
+  does, thresholds must be revised before the live A/B, not after.
+- Proposed rule (not yet adopted): run at least one A/A pair right before each live A/B and report
+  the A/A refault spread alongside the A/B result, so a release-induced spike is judged against
+  same-evening noise.

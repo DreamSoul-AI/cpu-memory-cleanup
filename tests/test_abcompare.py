@@ -27,6 +27,15 @@ def window(n=9, **kw):
 
 
 class ABCompareTests(unittest.TestCase):
+    def test_null_aa_noise_is_not_flagged_as_spike_or_benefit(self):
+        # Shape of the 2026-10-19 00:23 A/A smoke (no release in either window, 3 x 2 s each):
+        # pages_input mean 1.7 vs 44.5 is natural desktop noise and must not read as refault cost.
+        a = window(available_gib=8.91, commit_gib=61.36, standby_gib=8.09, reads=1.0, inputs=1.7, disk=1.1e5)
+        b = window(available_gib=8.89, commit_gib=61.39, standby_gib=8.09, reads=3.2, inputs=44.5, disk=2.4e5)
+        r = abcompare.compare(a, b)
+        self.assertEqual(r["verdict"], "cosmetic")
+        self.assertFalse(r["cleanup_performed"])
+
     def test_sustained_gain_without_spike_is_benefit(self):
         r = abcompare.compare(window(available_gib=8), window(available_gib=10))
         self.assertEqual(r["verdict"], "benefit-for-this-workload")
