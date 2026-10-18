@@ -154,3 +154,60 @@ transitions at or above 1 GiB. Headline full-run medians: available
 89 samples (first sample null). The large transitions around 20:11-20:14
 Asia/Shanghai were an external release, not a cleanup benefit of this tool.
 Unit tests grew from 15 to 22 with `tests/test_analysis.py`.
+
+## Memory gap cross-check (desktop pressure, read-only)
+
+Date: 2026-10-18 22:19:39 Asia/Shanghai. One point-in-time snapshot under
+ordinary desktop load, no experimental load. Sources: PDH `\Memory\*`
+counters, `Win32_OperatingSystem`, and `Win32_Process` (`WorkingSetSize`,
+`PrivatePageCount`, `ParentProcessId`, `CreationDate`; command lines were
+reduced to script basenames and not stored). All queries were read-only;
+nothing was trimmed, flushed, terminated or reconfigured. A Task Manager /
+RAMMap GUI comparison was not done in this round (no interactive operator);
+it stays optional.
+
+| Item | GiB |
+| --- | ---: |
+| Installed / visible physical | 47.112 |
+| Available (standby normal 6.641 + reserve 0.872 + core 0.000, free & zero 0.343) | 7.856 |
+| Physical in use (total - available) | ~39.26 |
+| Commit used / limit (page file usage 27.0 %) | 64.600 / 95.112 |
+| Paged pool (resident 3.036) | 3.845 |
+| Nonpaged pool | 2.898 |
+| System cache resident | 1.242 |
+| Driver resident | 0.035 |
+| Modified list | 0.120 |
+| Sum of process private commit, 1012 processes | 48.113 |
+| Sum of process working sets (double-counts shared pages) | 42.822 |
+
+Where the gap sits (largest single process ~1.8 GiB vs ~39 GiB in use and
+64.6 GiB commit):
+
+- It is breadth, not one big process: 1012 processes. Process private commit
+  explains ~48.1 of 64.6 GiB commit; paged + nonpaged pool add ~6.7 GiB
+  (~54.9 total). The remaining ~9.7 GiB is not attributed by these counters;
+  likely candidates are page-file-backed shared sections (Chromium / Electron
+  shared memory), page tables and kernel stacks. Unverified: needs RAMMap or a
+  dedicated counter.
+- Physical: kernel-side resident (paged resident + nonpaged + system cache +
+  drivers + modified) is ~7.35 GiB, leaving ~31.9 GiB resident for processes.
+  This is inferred by subtraction, not measured directly.
+- Grouped by name (sums, for accounting only): node.exe x124 7.115 GiB
+  private, ChatGPT.exe x23 6.781, 360se.exe x22 5.184, Figma.exe x11 2.910,
+  Feishu.exe x14 2.256, Cursor.exe x16 1.946, codex.exe x11 1.898.
+- Grouped by owner tree: all descendants of `codex.exe` (Codex desktop) are
+  546 processes with 9.886 GiB private commit (working-set sum 16.1 GiB,
+  overcounted): 123 node.exe (6.987 GiB), 118 node_repl.exe, 206 conhost.exe,
+  78 cmd.exe, 11 codex.exe. 78 of the node.exe run the Codex computer-use
+  runtime `cua_node\...\server.mjs` via cmd.exe (5.445 GiB private), 39 run
+  `cua-repl.mjs` (0.788 GiB). Every one started within the last ~6 h, 87 of
+  124 node.exe within the last hour, about 14 new `server.mjs` per 10 minutes
+  between 22:00 and 22:20.
+
+Reading: the pattern is consistent with Codex child processes accumulating
+without being reaped, and it matches the evening drop of available memory,
+but one snapshot does not prove a leak; a bounded per-tree time series is the
+next read-only step. Caveats: single sample; working set includes shared
+pages; `PrivatePageCount` is commit charge, not residency; nothing here is a
+cleanup benefit, and nothing here makes terminating these processes safe or
+allowed (process termination stays a red line for this tool).

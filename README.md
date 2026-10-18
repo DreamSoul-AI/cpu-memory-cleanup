@@ -74,13 +74,19 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
    所有者（同名多进程分开看；working set 含共享页，不相加、不当可回收量）。
    2026-10-18 晚间桌面应用本身已使可用内存约由 24 GiB 降到 10 GiB，
    这就是可用压力，不必只等实验负载。
-2. (b) 一次人工交叉核对：同一时刻把一次性巡检快照与任务管理器 /
-   RAMMap（若可用）对照，把差异写进 `docs/validation.md`。
-   重点核对桌面压力下最大单进程不到 2 GiB、已用物理内存约 39 GiB、
-   commit 约 64.7 GiB 之间的缺口落在哪里（全部进程、内核分页 / 非分页池、驱动等），仍只读。
-3. (c) 负载基线：真实实验运行时顺带跑一段有界只读序列，并与实验
+2. （已完成 2026-10-18 22:19，计数器级只读交叉核对，见 [docs/validation.md](docs/validation.md)
+   的 Memory gap cross-check；任务管理器 / RAMMap 人工对照未做，保留为可选）(b) 结论：
+   缺口来自进程数量而不是单个大进程。1012 个进程私有 commit 合计约 48.1 GiB，
+   分页 + 非分页池约 6.7 GiB，另有约 9.7 GiB commit 未被这些计数器归属；
+   Codex 桌面应用进程树 546 个进程、私有 commit 约 9.9 GiB，其中 78 个
+   computer-use `server.mjs` node 进程约 5.4 GiB，且全部是近几小时内新起的。
+3. (e) 按进程树归属的有界只读时间序列：给采样 / 分析器补父进程与按最近
+   非 shell 祖先汇总（含进程数、私有 commit），在日常桌面负载下跑一段有界序列，
+   确认或否定 Codex 子进程（尤其 `server.mjs`、`node_repl.exe`）是否持续累积、
+   增速多少。只读，不结束任何进程；即使确认累积，也只写证据交 Enmao 决定。
+4. (c) 负载基线：真实实验运行时顺带跑一段有界只读序列，并与实验
    吞吐、尾延迟按 UTC 对齐；没实验时跳过本项继续下一项，不阻塞。
-4. (d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
+5. (d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
    任何清理执行；没有可重复的持续净收益就不启用清理。
 
 空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)
