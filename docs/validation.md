@@ -828,3 +828,53 @@ occasions, 10 s samples. Background bursts are real (the A/A ceiling and
 the hot A window of pair 4 are in the table so a single spike is not
 mistaken for the release). Nothing here makes terminating a process safe
 or allowed. No benefit is claimed.
+
+## Standby purge alone (daily desktop load, 2026-10-19 06:16-06:55 Asia/Shanghai)
+
+The section above judged both mechanisms from one combined `both` release.
+This run is only `MemoryPurgeStandbyList`.
+
+Scope: daily desktop load, no experimental load. `--ab-what standby`,
+pattern `AA,AB,AA,AB`, 8 windows × 30 samples × 10 s. 06:16:53–06:55:37
+Asia/Shanghai (22:16:53–22:55:37 UTC). Gitignored
+`logs/ab-live-20261019-standby/`. Detached `Start-Process` under WmiPrvSE.
+Before the start, no `tree-series` or `--ab-protocol` process was running;
+the newest `logs/tree-series*.jsonl` write was 02:03:59. Guards ok.
+`release_what: standby`. Both releases (06:31:26 and 06:50:47) are a single
+action, `STATUS_SUCCESS (0x00000000)`. No working-set call. Modified list
+moved +0.14 GiB and +0.15 GiB, not a working-set dump. On both releases the
+token already had `SeProfileSingleProcessPrivilege` enabled, so the scope
+left it as found.
+
+A/A ceiling (largest excess ratio of the two null pairs; neither null pair
+tripped the raw spike rule): page reads 0.17, pages input 0.34, disk read
+0.22.
+
+| | AB pair 2 (after 06:31 purge) | AB pair 4 (after 06:50 purge) |
+| --- | --- | --- |
+| Immediate standby | 16.91 → 0 GiB | 6.97 → 0 GiB |
+| Immediate available | 20.54 → 20.78 GiB (+0.24) | 17.20 → 17.51 GiB (+0.30) |
+| Immediate free-and-zero | 3.63 → 20.78 GiB | 10.23 → 17.51 GiB |
+| Immediate commit | 63.21 → 63.15 GiB | 65.70 → 65.51 GiB |
+| Page reads /s, mean A → B | 126 → 416, excess 2.15, beyond ceiling | 97 → 303, excess 2.02, beyond ceiling |
+| Pages input /s | 2888 → 4379, excess 1.00, not a spike | 845 → 2700, excess 2.05, beyond ceiling |
+| Disk read | 11.8 → 17.7 MB/s, excess 0.77, not a spike | 3.4 → 11.0 MB/s, excess 1.06, beyond ceiling |
+| Disk write mean (max) | 4.0 MB/s (20 MB/s) | 1.6 MB/s (3.9 MB/s) |
+| Commit median B−A | +0.33 GiB | +1.74 GiB |
+| Available, last-third median B−A | −0.33 GiB | −1.49 GiB |
+| Standby median B−A | −12.63 GiB | −4.72 GiB |
+
+Tool verdict for both AB pairs: `cosmetic-or-harmful`. The first 10 s after
+the 06:31 purge: 1888 page reads/s, 26304 pages input/s, 106 MB/s disk
+read, 3 MB/s disk write. Standby rebuilt only to about 4.0 GiB by the end
+of that window (from 0) and to about 2.0 GiB after the second purge.
+Available did not stay up.
+
+Verdict for standby purge alone, on this desktop load:
+**cosmetic-or-harmful**. The purge turns standby into free. Available,
+which already included that standby, moves by about 0.3 GiB at the call
+and is lower by the end of the B window. Commit does not fall. Hard faults
+exceed the A/A ceiling on both pairs, and the second pair also exceeds it
+on pages input and disk reads. Disk writes stay in the same few-MB/s band
+as the no-release windows. No benefit is claimed. This is not an
+experiment-load result.
