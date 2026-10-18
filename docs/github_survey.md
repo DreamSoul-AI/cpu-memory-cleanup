@@ -75,6 +75,6 @@ Sordum 官网直接说明 EmptyWorkingSet 与周期 / 排除配置，足以证�
 2. 参考 Mem Reduct 的冷却 / 日志设计及 WinMemoryCleaner 的动作入口划分；不在本项目许可证未明确、合规义务未处理时直接引入 GPL 派生代码。学习 Windows API 事实和高层思路，与复制可受保护的实现表达不同；改语言不是规避许可的方法。
 3. 没有许可证的仓库、来源不明的 EXE、freeware 产品不作为可直接复用源码。[GitHub 官方许可说明](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)说明，未授予许可证不等于允许复制、分发或制作派生作品。本轮没有作出对任意代码的完整法律或来源审计。
 4. 无论许可证是否允许，本工具都不采用杀进程、停服务、改关键配置 / 页面文件、自动提权、驱动清压缩、全局组合清理或固定周期无条件清理。按名字排除 Python 不足以保护训练 / 评测，全局 standby 清理也会影响实验缓存。
-5. 下一步仍应是有界只读采样与 JSONL 日志，建立 Available、commit、缺页、I/O、吞吐与尾延迟基线；有真实压力和可重复对照净收益后，才讨论隔离测试环境中的单项候选。没有实现或授权任何清理执行，等 Enmao 审阅后另定。
+5. 有界只读采样与 JSONL 日志已经实现，可记录 Available、commit、硬缺页和磁盘 I/O。实验吞吐与尾延迟仍须由实验自身记录并按 UTC 对齐。有真实压力和可重复对照净收益后，才讨论隔离测试环境中的单项候选。没有实现或授权任何清理执行，等 Enmao 审阅后另定。
 
 相关：[基础机制与红线](research.md)、[360 专项调研](360_memory_cleanup.md)。

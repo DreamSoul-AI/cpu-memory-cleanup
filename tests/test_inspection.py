@@ -123,6 +123,8 @@ class InspectionTests(unittest.TestCase):
              patch.object(api, "read_processes", side_effect=OSError("processes denied")):
             report = api.snapshot()
         self.assertEqual(report["physical"]["used_bytes"], 60 * 4096)
+        self.assertEqual(report["schema_version"], 1)
+        self.assertNotIn("rates", report)
         self.assertFalse(report["cleanup_performed"])
         self.assertIsNone(report["estimate"]["standby_repurposable_upper_bytes"])
         self.assertIsNone(report["pagefile"])
@@ -160,6 +162,208 @@ class InspectionTests(unittest.TestCase):
         self.assertTrue(all(value is None for value in values.values()))
         self.assertEqual(len(warnings), len(api.COUNTERS))
         self.assertEqual(closed, [1])
+
+    def test_series_flags_rejected_before_inspection(self):
+        rejected = (
+            ["--execute"], ["--clean"], ["--sample"],
+            ["--sample", "--interval", "1"],
+            ["--sample", "--interval", "1", "--count", "2"],
+            ["--interval", "1", "--count", "2", "--json"],
+            ["--with-processes"],
+            ["--sample", "--interval", "0.5", "--count", "1", "--json"],
+            ["--sample", "--interval", "1", "--count", str(api.MAX_SAMPLE_COUNT + 1), "--json"],
+            ["--sample", "--interval", "nan", "--count", "1", "--json"],
+        )
+        for args in rejected:
+            with self.subTest(args=args), patch("cpu_memory_cleanup.__main__.snapshot") as snap, \
+                    patch("cpu_memory_cleanup.__main__.iter_snapshots") as series:
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as exc:
+                    main(args)
+                self.assertEqual(exc.exception.code, 2)
+                snap.assert_not_called()
+                series.assert_not_called()
+
+    def test_bounded_series_sleeps_between_starts_and_closes_query(self):
+        sessions = []
+
+        class FakeSession:
+            def __init__(self, include_rates=False):
+                self.include_rates = include_rates
+                self.ready = False
+                self.closed = 0
+                sessions.append(self)
+
+            def open(self, warnings):
+                self.ready = True
+                warnings.append("pdh opened")
+                return True
+
+            def close(self):
+                self.closed += 1
+                self.ready = False
+
+        class Clock:
+            def __init__(self):
+                self.now = 0
+
+            def __call__(self):
+                return self.now
+
+        clock = Clock()
+        sleeps = []
+
+        def sleeper(delay):
+            sleeps.append(delay)
+            clock.now += delay
+
+        def fake_snapshot(*args, **kwargs):
+            self.assertIs(kwargs["session"], sessions[0])
+            self.assertFalse(kwargs["include_processes"])
+            return {"schema_version": 1, "mode": "read-only", "cleanup_performed": False, "warnings": ["tick"]}
+
+        with patch.object(api, "CounterSession", FakeSession), \
+                patch.object(api, "snapshot", side_effect=fake_snapshot):
+            reports = list(api.iter_snapshots(3, 5, include_processes=False, sleeper=sleeper, clock=clock))
+        self.assertEqual(sleeps, [5, 5])
+        self.assertEqual(sessions[0].closed, 1)
+        self.assertTrue(sessions[0].include_rates)
+        self.assertEqual([item["series"]["index"] for item in reports], [0, 1, 2])
+        self.assertEqual(len({item["series"]["run_id"] for item in reports}), 1)
+        self.assertEqual(len(reports[0]["series"]["run_id"]), 32)
+        self.assertEqual(reports[0]["schema_version"], 2)
+        self.assertEqual(reports[0]["warnings"], ["pdh opened", "tick"])
+        self.assertEqual(reports[1]["warnings"], ["tick"])
+        self.assertFalse(any(item["series"]["process_ranking"] for item in reports))
+
+    def test_overrun_does_not_burst(self):
+        class FakeSession:
+            def __init__(self, include_rates=False):
+                self.ready = True
+                self.closed = 0
+
+            def open(self, warnings):
+                return True
+
+            def close(self):
+                self.closed += 1
+
+        class Clock:
+            def __init__(self):
+                self.now = 0
+
+            def __call__(self):
+                return self.now
+
+        clock = Clock()
+        sleeps = []
+
+        def fake_snapshot(*args, **kwargs):
+            clock.now += 10
+            return {"schema_version": 1, "cleanup_performed": False, "warnings": []}
+
+        with patch.object(api, "CounterSession", FakeSession), \
+                patch.object(api, "snapshot", side_effect=fake_snapshot):
+            reports = list(api.iter_snapshots(2, 5, sleeper=lambda delay: sleeps.append(delay), clock=clock))
+        self.assertEqual(sleeps, [])
+        self.assertTrue(reports[1]["warnings"][0].startswith("Previous interval overrun"))
+
+    def test_rate_counters_are_null_until_the_next_sample(self):
+        if api.sys.platform != "win32":
+            self.skipTest("Windows DLL loader required")
+        closed = []
+        double_reads = {"n": 0}
+
+        def open_query(source, context, query):
+            query._obj.value = 7
+            return 0
+
+        def add(query, path, context, counter):
+            counter._obj.value = 3
+            return 0
+
+        def get_value(handle, flags, kind, value):
+            if flags == api.PDH_FMT_DOUBLE:
+                double_reads["n"] += 1
+                if double_reads["n"] <= len(api.RATE_COUNTERS):
+                    value._obj.CStatus = api.PDH_CSTATUS_INVALID_DATA
+                    return api.PDH_INVALID_DATA
+                value._obj.CStatus = 0
+                value._obj.value.doubleValue = 1.5
+                return 0
+            value._obj.CStatus = 0
+            value._obj.value.largeValue = 10
+            return 0
+
+        dll = SimpleNamespace(PdhOpenQueryW=open_query, PdhAddEnglishCounterW=add,
+                              PdhCollectQueryData=lambda query: 0, PdhGetFormattedCounterValue=get_value,
+                              PdhCloseQuery=lambda query: closed.append(query.value) or 0)
+        warnings = []
+        with patch.object(api.c, "WinDLL", return_value=dll), \
+                patch.object(api, "bind", side_effect=lambda dll, name, *args: getattr(dll, name)):
+            session = api.CounterSession(include_rates=True)
+            self.assertTrue(session.open(warnings))
+            first_capacity, first_rates = session.collect(warnings)
+            second_warnings = []
+            second_capacity, second_rates = session.collect(second_warnings)
+            session.close()
+        self.assertEqual(closed, [7])
+        self.assertTrue(all(value == 10 for value in first_capacity.values()))
+        self.assertTrue(all(value is None for value in first_rates.values()))
+        self.assertEqual(len(warnings), len(api.RATE_COUNTERS))
+        self.assertTrue(all("next sample" in warning for warning in warnings))
+        self.assertEqual(second_warnings, [])
+        self.assertTrue(all(value == 1.5 for value in second_rates.values()))
+        self.assertTrue(all(value == 10 for value in second_capacity.values()))
+
+    def test_jsonl_write_failure_stops_and_closes(self):
+        produced = {"n": 0}
+        closed = {"series": 0, "handle": 0}
+
+        def series(*args, **kwargs):
+            produced["n"] += 1
+            yield {"cleanup_performed": False, "warnings": [], "series": {"index": 0, "count": 2, "interval_seconds": 1},
+                   "physical": {"available_bytes": 1}, "commit": {"used_bytes": 1}, "rates": {}}
+            produced["n"] += 1
+            yield {"cleanup_performed": False}
+
+        class Series:
+            def __iter__(self):
+                return series()
+
+            def close(self):
+                closed["series"] += 1
+
+        class Handle:
+            def write(self, data):
+                raise OSError("disk full")
+
+            def flush(self):
+                pass
+
+            def close(self):
+                closed["handle"] += 1
+
+        with patch("cpu_memory_cleanup.__main__.iter_snapshots", return_value=Series()), \
+                patch("pathlib.Path.is_dir", return_value=True), \
+                patch("builtins.open", return_value=Handle()):
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = main(["--sample", "--interval", "1", "--count", "2", "--jsonl", "logs/series.jsonl"])
+        self.assertEqual(code, 1)
+        self.assertIn("disk full", err.getvalue())
+        self.assertIn("after 0 records", err.getvalue())
+        self.assertEqual(produced["n"], 1)
+        self.assertEqual(closed, {"series": 1, "handle": 1})
+
+    def test_missing_jsonl_directory_does_not_sample(self):
+        with patch("cpu_memory_cleanup.__main__.iter_snapshots") as series:
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                code = main(["--sample", "--interval", "1", "--count", "1",
+                             "--jsonl", "does-not-exist-sample-dir/out.jsonl"])
+        self.assertEqual(code, 1)
+        self.assertIn("does not exist", err.getvalue())
+        series.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -52,3 +52,93 @@ These tests cover guardrails and failure handling, not a general security proof.
 Not checked: administrator cleanup operations, other Windows builds, 32-bit Python,
 long-term performance, or manual comparison against RAMMap. Read-only inspection
 itself has small CPU/RAM overhead. Protected processes remain skipped.
+
+## Bounded read-only series
+
+Date: 2026-10-18 (06:35 Asia/Shanghai). Same machine and Python as above.
+No elevation, no cleanup tool, and no other process or setting was changed.
+
+```powershell
+python -m unittest discover -s tests -v
+python -m cpu_memory_cleanup --sample --interval 1 --count 2 --jsonl logs\series.jsonl
+python -m cpu_memory_cleanup --json --top 1
+```
+
+All 15 unit tests passed in 0.010s. The two-sample series and the one-shot JSON
+inspection both exited 0. The series is saved as [series-sample.jsonl](series-sample.jsonl).
+Both lines share `run_id` `90e5adce4c8c4c8290d7dd4f5e9f1de4`. Process ranking was off.
+`cleanup_performed` is false and guaranteed additional available RAM is 0 on both lines.
+
+| Sample | Available GiB | Commit used GiB | Page reads/s | Pages input/s | Disk read B/s | Disk write B/s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1, started 2026-10-17T22:35:05.452596+00:00 | 2.549 | 66.518 | null | null | null | null |
+| 2, finished 2026-10-17T22:35:06.453852+00:00 | 2.679 | 66.392 | 7.998 | 22.994 | 118751 | 5904775 |
+
+The first sample has four warnings, one per rate counter, because PDH has no previous
+interval yet. The second sample has no warnings. `page_reads_per_sec` counts disk read
+operations that satisfy hard faults; it is not a one-to-one fault count.
+`pages_input_per_sec` is the corresponding page count. This pair of samples only
+checks that the series starts, stops, and emits rates. It is not an experiment-load
+baseline and does not measure throughput or tail latency.
+
+## Idle baseline (no experimental load)
+
+Date: 2026-10-18, 20:09:23-20:24:13 Asia/Shanghai (12:09:23-12:24:13 UTC).
+Same machine and Python as above. No experimental workload was intentionally
+started for this run. This is an idle baseline only; it is not a baseline
+under experimental load and does not measure throughput or tail latency.
+No elevation, no cleanup tool, and no other process or setting was changed
+by this tool. Every record has `cleanup_performed: false`.
+
+The truncated run from the 07:06 Asia/Shanghai shutdown (76 records) was
+discarded and deleted first; this run started from an empty file.
+
+```powershell
+python -m unittest discover -s tests -v
+python -m cpu_memory_cleanup --sample --interval 10 --count 90 --jsonl logs\idle-baseline.jsonl
+python -m cpu_memory_cleanup --execute
+python -m cpu_memory_cleanup --clean
+```
+
+All 15 unit tests passed in 0.012s before the run. `--execute` and `--clean`
+were both rejected as unrecognized arguments (exit 2) before any inspection.
+The series completed all 90 samples, exited 0, and stopped on its own.
+All 90 lines share `run_id` `e33ec090ffe6444b921596ba8e98bb8c`.
+The raw series stays in gitignored `logs\idle-baseline.jsonl`; it is not
+committed. There were 4 warnings in total, all on the first sample (one per
+rate counter, no previous PDH interval yet), and 0 overrun warnings.
+
+| Metric (90 samples; rates on 89) | Min | Median | Max |
+| --- | ---: | ---: | ---: |
+| Available GiB | 1.445 | 27.144 | 34.988 |
+| Commit used GiB | 43.527 | 46.463 | 62.756 |
+| Standby total (core+normal+reserve) GiB | 1.200 | 18.536 | 28.332 |
+| Page reads/sec | 1.400 | 26.800 | 3444.141 |
+| Pages input/sec | 3.800 | 144.500 | 31742.669 |
+| Disk read bytes/sec | 90108 | 621773 | 129319763 |
+| Disk write bytes/sec | 298195 | 1224329 | 1946843849 |
+
+This run was not homogeneous, so the full-range table must not be read as a
+steady idle level. For roughly the first 20 samples available RAM stayed
+near 1.4-2.1 GiB with commit near 61-63 GiB; around 20:11 Asia/Shanghai the
+modified list briefly reached about 22 GiB and available RAM then rose,
+with commit falling to about 44-47 GiB by about 20:14. That release was
+external to this tool (it performed no cleanup on any record); the process
+responsible was not identified because process ranking was off. The last
+60 samples (31-90) are the steadier portion:
+
+| Metric (samples 31-90; rates on 60) | Min | Median | Max |
+| --- | ---: | ---: | ---: |
+| Available GiB | 25.839 | 27.151 | 33.061 |
+| Commit used GiB | 43.556 | 46.445 | 47.348 |
+| Standby total GiB | 17.562 | 18.536 | 20.002 |
+| Page reads/sec | 1.400 | 8.700 | 726.695 |
+| Pages input/sec | 3.800 | 46.101 | 31742.669 |
+| Disk read bytes/sec | 90108 | 202726 | 129319763 |
+| Disk write bytes/sec | 298195 | 1026258 | 6988843 |
+
+Even in the steadier portion there are short rate spikes, so medians, not
+maxima, describe the idle level. Standby remains part of available RAM;
+guaranteed additional available RAM and actual cleanup are both still 0.
+A changing number alone is not evidence of cleanup benefit, and this idle
+run gives no reason to authorize any cleanup action.
