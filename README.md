@@ -33,6 +33,11 @@ python -m cpu_memory_cleanup --sample --interval 10 --count 360 --jsonl logs\ser
 # 离线分析已有 JSONL（纯文件解析，不巡检、不调用系统接口）：
 python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl
 python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
+
+# 只读压力报告（不做任何动作；阈值是提案）：离线评估已有 tree-series 日志，
+# 或有界跟随另一个窗口里 scripts\tree-series.ps1 正在追加的日志：
+python -m cpu_memory_cleanup --pressure logs\tree-series.jsonl
+python -m cpu_memory_cleanup --pressure-follow logs\tree-series.jsonl --polls 30 --poll-interval 60
 ```
 
 文本以 GiB 显示，JSON 容量为整数 bytes，速率为每秒浮点数，缺失指标为 null；0 是实际取得的零。退出码 0 表示本次巡检或整段采样完成（可能有缺失指标，须读 warnings），1 表示核心 API、平台或日志写入错误，2 表示参数错误。采样期间数据持续变化，不是原子快照。`--top` 排名只覆盖可读取的进程，同名项对应不同进程；working set 含共享页，不能相加或当成可回收量。
@@ -100,7 +105,7 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
 6. （初稿完成 2026-10-18 23:30，见 [docs/mitigation-design.md](docs/mitigation-design.md)；第 4 项年龄分桶序列结束后据结果修订）(d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
    任何清理执行；没有可重复的持续净收益就不启用清理。初稿结论：压力来自 commit 与进程数量，
    不是缓存；清 standby、修剪工作集等不符合现有证据，均不采用或推迟。
-7. （离线评估部分已完成 2026-10-18 23:24：`python -m cpu_memory_cleanup --pressure <tree-series JSONL>`，阈值可配（`--free-below-gib` / `--commit-above-pct` / `--sustain`，默认值只是提案），只读文件、不做任何动作；新增 10 个测试，共 40 测试过；结果见 [docs/mitigation-design.md](docs/mitigation-design.md) 第 3 节。剩余：实时有界模式（复用 tree-series 采样边采边报））(g) 只读压力报告（方案文档 M0）：复用有界采样与 `scripts/tree-series.ps1` 的聚合，
+7. （已完成；离线评估部分 2026-10-18 23:24 完成：`python -m cpu_memory_cleanup --pressure <tree-series JSONL>`，阈值可配（`--free-below-gib` / `--commit-above-pct` / `--sustain`，默认值只是提案），只读文件、不做任何动作；新增 10 个测试，共 40 测试过；结果见 [docs/mitigation-design.md](docs/mitigation-design.md) 第 3 节。实时有界模式已完成 2026-10-18 23:34：`python -m cpu_memory_cleanup --pressure-follow <tree-series JSONL> --polls N --poll-interval S` 只读跟随另一个进程正在追加的 tree-series 日志（每轮只以 rb 打开这一个文件，不采样、不调用系统接口、不做任何动作，到轮数即停），逐拍报阈值状态，连续达标时报一次哪些进程树在增长；新增 13 个测试，共 53 测试过；对正在跑的 age 序列实跑 2 轮×61 秒，读到 22 拍、0 告警。本项全部完成）(g) 只读压力报告（方案文档 M0）：复用有界采样与 `scripts/tree-series.ps1` 的聚合，
    按阈值（可配置，如可用内存低、commit 接近上限且连续多拍）输出哪些进程树在增长；
    只写 stdout / JSONL，不做任何动作、不常驻；补阈值单元测试与静态白名单测试。
 

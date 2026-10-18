@@ -100,8 +100,31 @@ experiment throughput or tail latency. No experiment-load data exists yet.
   proposal thresholds, so no episode is reported. This says the desktop was
   not at the proposed alarm level in those windows; it is not a cleanup
   result and not a threshold calibration.
-- Remaining for backlog item 7: a live bounded mode that reports while the
-  tree-series sampler runs, still stopping after the requested count.
+
+### 3.2 Status: live bounded follow built (23:34 Asia/Shanghai)
+
+- `python -m cpu_memory_cleanup --pressure-follow <tree-series JSONL>
+  --polls N --poll-interval S` follows a log that `scripts/tree-series.ps1`
+  is appending in another window. It reads the file from the start, then
+  only newly appended complete lines; it opens that one file read-only
+  ("rb") once per poll, does no sampling of its own, makes no process or
+  memory API calls and takes no action. It stops after N polls
+  (1..10000, 1..3600 s apart) or if the file shrinks.
+- Per sample it prints free GiB, commit percent and the breach streak; when
+  the streak first reaches `--sustain` it prints one alert with the owner
+  trees that grew since the sample before the streak (same rules as 3.1).
+  A new run_id resets the streak. Thresholds remain proposals.
+- Code: breach tracking in `pressure.LiveTracker`, file following in
+  `cpu_memory_cleanup/follow.py`; 13 new tests (streak / alert-once,
+  run reset, partial-line and shrink handling, bounds, CLI flag rules, a
+  static check that `follow.py` has exactly one `open(path, "rb")` and no
+  write or process calls); 53 tests pass.
+- Live smoke run 23:33:05-23:34:06 against the running 120-sample age
+  series (everyday desktop, 60 s interval, not experiment load): 2 polls
+  61 s apart read 22 samples including one appended during the follow;
+  0 alerts at default thresholds. Not a cleanup result.
+- Backlog item 7 is complete. M0 is therefore usable by hand; it is still
+  not a background service and does not run on its own.
 
 ## 4. Gates before any action-taking option (unchanged in spirit from README)
 

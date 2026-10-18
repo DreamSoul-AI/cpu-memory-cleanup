@@ -167,3 +167,57 @@ def format_report(report):
             if ep["owner_growth"]["entered_top_list"]:
                 lines.append("    entered top list: " + ", ".join(ep["owner_growth"]["entered_top_list"]))
     return "\n".join(lines)
+
+
+class LiveTracker:
+    """Incremental, read-only breach tracking over a growing tree-series log.
+
+    Alerts once per episode, on the sample where the breach streak reaches
+    ``sustain``. A new run_id resets the streak. Takes no action.
+    """
+
+    def __init__(self, free_below_gib=DEFAULT_FREE_BELOW_GIB,
+                 commit_above_pct=DEFAULT_COMMIT_ABOVE_PCT, sustain=DEFAULT_SUSTAIN):
+        if not isinstance(sustain, int) or isinstance(sustain, bool) or sustain < 1:
+            raise ValueError("sustain must be an integer of at least 1")
+        self.free_below_gib = free_below_gib
+        self.commit_above_pct = commit_above_pct
+        self.sustain = sustain
+        self.run_id = None
+        self.previous = None
+        self.baseline = None
+        self.streak = 0
+        self.samples = 0
+        self.alerts = 0
+
+    def thresholds(self):
+        return {"free_below_gib": self.free_below_gib, "commit_above_pct": self.commit_above_pct,
+                "sustain_samples": self.sustain, "status": "proposal"}
+
+    def feed(self, record):
+        if not isinstance(record, dict) or record.get("kind") != "tree-series":
+            return None
+        run_id = record.get("run_id")
+        if self.samples == 0 or run_id != self.run_id:
+            self.run_id, self.previous, self.baseline, self.streak = run_id, None, None, 0
+        view = sample_view(record)
+        reasons = breach_reasons(view, self.free_below_gib, self.commit_above_pct)
+        self.samples += 1
+        if reasons:
+            if self.streak == 0:
+                self.baseline = self.previous if self.previous is not None else view
+            self.streak += 1
+        else:
+            self.streak = 0
+        pct = view["commit_pct"]
+        event = {"kind": "pressure-sample", "run_id": run_id, "local": view["local"],
+                 "free_gib": view["free_gib"],
+                 "commit_pct": round(pct, 1) if pct is not None else None,
+                 "reasons": reasons, "streak": self.streak, "alert": self.streak == self.sustain}
+        if event["alert"]:
+            self.alerts += 1
+            event["growth_baseline"] = ("first breaching sample" if self.baseline is view
+                                        else "previous sample")
+            event["owner_growth"] = owner_growth(self.baseline, view)
+        self.previous = view
+        return event

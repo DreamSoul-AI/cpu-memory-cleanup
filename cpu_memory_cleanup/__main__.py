@@ -5,7 +5,9 @@ import sys
 
 from .analysis import format_summary, summarize_file
 from .pressure import (DEFAULT_COMMIT_ABOVE_PCT, DEFAULT_FREE_BELOW_GIB, DEFAULT_SUSTAIN,
-                       evaluate_file, format_report)
+                       LiveTracker, evaluate_file, format_report)
+from .follow import (MAX_POLL_SECONDS, MAX_POLLS, MIN_POLL_SECONDS, follow_file, format_event,
+                     format_follow_summary)
 from .windows import (MAX_INTERVAL_SECONDS, MAX_SAMPLE_COUNT, MIN_INTERVAL_SECONDS,
                       iter_snapshots, snapshot)
 
@@ -68,6 +70,24 @@ def interval_seconds(text):
     if value != value or value in (float("inf"), float("-inf")) or not MIN_INTERVAL_SECONDS <= value <= MAX_INTERVAL_SECONDS:
         raise argparse.ArgumentTypeError(f"must be {MIN_INTERVAL_SECONDS}..{MAX_INTERVAL_SECONDS} seconds")
     return value
+
+
+def poll_count(text):
+    value = int(text)
+    if not 1 <= value <= MAX_POLLS:
+        raise argparse.ArgumentTypeError(f"must be 1..{MAX_POLLS}")
+    return value
+
+
+def poll_seconds(text):
+    value = float(text)
+    if value != value or not MIN_POLL_SECONDS <= value <= MAX_POLL_SECONDS:
+        raise argparse.ArgumentTypeError(f"must be {MIN_POLL_SECONDS}..{MAX_POLL_SECONDS} seconds")
+    return value
+
+
+def compact(record):
+    return json.dumps(record, ensure_ascii=True, separators=(",", ":"))
 
 
 def rate_text(value):
@@ -149,9 +169,37 @@ def main(argv=None):
                         help=f"--pressure threshold proposal for commit percent of limit (default {DEFAULT_COMMIT_ABOVE_PCT})")
     parser.add_argument("--sustain", type=positive_int,
                         help=f"--pressure consecutive samples needed for an episode (default {DEFAULT_SUSTAIN})")
+    parser.add_argument("--pressure-follow", type=Path, metavar="JSONL",
+                        help="bounded read-only follow of a tree-series JSONL another process is appending; "
+                             "requires --polls and --poll-interval; takes no action")
+    parser.add_argument("--polls", type=poll_count, help=f"--pressure-follow poll count (1..{MAX_POLLS})")
+    parser.add_argument("--poll-interval", type=poll_seconds,
+                        help=f"--pressure-follow seconds between polls ({MIN_POLL_SECONDS}..{MAX_POLL_SECONDS})")
     args = parser.parse_args(argv)
     threshold_flags = (args.free_below_gib is not None or args.commit_above_pct is not None
                        or args.sustain is not None)
+    if args.pressure_follow is not None:
+        if (args.pressure is not None or args.analyze is not None or args.sample or args.interval is not None
+                or args.count is not None or args.jsonl is not None or args.with_processes):
+            parser.error("--pressure-follow cannot be combined with --pressure, --analyze, --sample, "
+                         "--interval, --count, --jsonl or --with-processes")
+        if args.polls is None or args.poll_interval is None:
+            parser.error("--pressure-follow requires both --polls and --poll-interval")
+        try:
+            tracker = LiveTracker(
+                free_below_gib=DEFAULT_FREE_BELOW_GIB if args.free_below_gib is None else args.free_below_gib,
+                commit_above_pct=DEFAULT_COMMIT_ABOVE_PCT if args.commit_above_pct is None else args.commit_above_pct,
+                sustain=DEFAULT_SUSTAIN if args.sustain is None else args.sustain)
+            render_event = compact if args.json else format_event
+            summary = follow_file(args.pressure_follow, args.polls, args.poll_interval, tracker,
+                                  lambda event: print(render_event(event), flush=True))
+        except (OSError, ValueError) as exc:
+            emit_failure(args.json, f"Pressure follow failed: {exc}")
+            return 1
+        print(compact(summary) if args.json else format_follow_summary(summary), flush=True)
+        return 0
+    if args.polls is not None or args.poll_interval is not None:
+        parser.error("--polls and --poll-interval require --pressure-follow")
     if args.pressure is not None:
         if (args.analyze is not None or args.sample or args.interval is not None or args.count is not None
                 or args.jsonl is not None or args.with_processes):
@@ -168,7 +216,7 @@ def main(argv=None):
         print(json.dumps(report, indent=2, ensure_ascii=True) if args.json else format_report(report))
         return 0
     if threshold_flags:
-        parser.error("--free-below-gib, --commit-above-pct and --sustain require --pressure")
+        parser.error("--free-below-gib, --commit-above-pct and --sustain require --pressure or --pressure-follow")
     if args.analyze is not None:
         if args.sample or args.interval is not None or args.count is not None or args.jsonl is not None or args.with_processes:
             parser.error("--analyze cannot be combined with --sample, --interval, --count, --jsonl or --with-processes")
