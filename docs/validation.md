@@ -577,3 +577,153 @@ this, and it is a baseline for the A/A windows, not a claim of anything.
 Next: once the residual series has ended and been analysed offline, run the
 documented `--ab-protocol --ab-live` (AA,AB,AA,AB, about 40 min) and record
 the verdict against the A/A noise ceiling. No benefit is claimed yet.
+
+## Commit-residual tree series, complete (daily desktop load, read-only)
+
+Scope: daily desktop load, no experimental load, 60 s interval, 120 samples,
+2026-10-19 00:05-02:04 Asia/Shanghai. Precise beats: 00:04:56 to 02:03:57
+(16:04:56-18:03:57 UTC). `scripts/tree-series.ps1`, 120/120 samples,
+`run_id` `f9059e66-54f9-4a8a-a809-8616dd0e3ee0`, raw log in gitignored
+`logs/tree-series-residual.jsonl`. Last write 02:03:59. Checked at 05:01
+on 2026-10-19: no `tree-series` sampling process was still running (the
+only long-lived `python.exe` / `pwsh.exe` pair was an unrelated localhost
+file server started 2026-10-18 21:04). Analysed offline the same morning
+with `--tree-summary`, `--pressure`, and a one-off read of that JSONL.
+No release, trim, purge, termination or setting change during or after
+the run. The age-bucket series (run_id f813ba37) overlapped this one until
+01:11:07.
+
+`--tree-summary` (read-only, actions taken: no):
+
+| Metric | First 00:04:56 | Min | Median | Max | Last 02:03:57 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Host free GiB (`FreePhysicalMemory`) | 10.168 | 3.447 | 8.567 | 10.663 | 7.145 |
+| Host commit used GiB (limit 95.112) | 59.432 | 58.756 | 61.762 | 68.290 | 63.697 |
+| Processes | 696 | 669 | 830 | 1019 | 858 |
+| Codex tree processes | 247 | 226 | 383 | 563 | 403 |
+| Codex tree private commit GiB | 5.426 | 4.458 | 7.467 | 11.924 | 7.918 |
+| `server.mjs` processes / private GiB | 30 / 2.092 | 28 / 1.953 | - | 78 / 5.439 | 54 / 3.772 |
+| `server.mjs` older than 3 h | 12 / 0.838 | 8 / 0.561 | - | 16 / 1.118 | 16 / 1.118 |
+| `cua_repl` older than 3 h | 6 / 0.121 | 4 / 0.080 | - | 8 / 0.161 | 8 / 0.161 |
+| `node_repl` older than 3 h | 18 / 0.096 | 12 / 0.069 | - | 23 / 0.117 | 23 / 0.117 |
+| Commit residual GiB | 8.466 | 8.466 | 9.668 | 10.232 | 9.837 |
+| Residual, percent of commit | 14.2 | 14.1 | - | 16.4 | 15.4 |
+
+Codex tree births 773, exits 617 (net +156, matching 247 to 403). Host
+process births 1153, exits 991. Pearson of residual GiB vs process count,
+from the tool: 0.487. From the same JSONL: Codex-tree private vs host
+commit r = 0.881; PDH process private vs host commit r = 0.994; PDH
+process private vs host free r = -0.991.
+
+`--pressure` at the proposed thresholds (free < 4 GiB or commit > 85% for
+3 samples): 5 breaching samples, one episode, 2026-10-19 01:42:57 to
+01:46:57, reason `free_below` only. Min free in the episode 3.447 GiB,
+max commit 71.8% (the 85% line was never crossed). The tool's growth line
+for that episode is ChatGPT.exe +0.823 GiB versus the sample before the
+streak. That line is only the last few minutes; the drop below started
+earlier, and is attributed in the next paragraph.
+
+### What took host free from ~8 GiB at 01:22 to ~3.7 GiB at 01:45
+
+The series does not record the PDH available counter. The figures that
+match this drop are `host.free_gib`, Win32 `FreePhysicalMemory`: 8.272 GiB
+at 01:22:57 and 3.748 GiB at 01:45:57 (the trough is 3.447 GiB at 01:44:57,
+commit 68.290 GiB). Over that 23 minutes free fell 4.524 GiB and commit
+rose 5.485 GiB (62.244 to 67.729). PDH process private rose 5.151 GiB
+(44.924 to 50.075). The unattributed residual rose 0.227 GiB (9.691 to
+9.918) and the two pools together about 0.11 GiB. The free drop is the
+commit rise, and the commit rise is process private commit. The residual
+did not take it. This series does not record standby, so the ~1 GiB by
+which the commit rise exceeds the free fall is not split out here.
+
+Top-10 owners present in both of those samples (private commit):
+
+| Owner | 01:22:57 | 01:45:57 | Delta |
+| --- | ---: | ---: | ---: |
+| ChatGPT.exe | 391 proc / 12.930 GiB | 560 / 16.932 | +169 / +4.002 GiB |
+| of which Codex subtree | 367 / 6.766 | 535 / 9.950 | +168 / +3.184 GiB |
+| sesvc.exe | 23 / 6.051 | 27 / 6.883 | +4 / +0.832 GiB |
+| Feishu.exe | 14 / 2.515 | 15 / 2.956 | +1 / +0.441 GiB |
+| Grok Bot.exe | 9 / 1.003 | 11 / 1.122 | +2 / +0.119 GiB |
+| Cursor, Figma, Weixin, Steam, Razer, svchost | (all in both top-10 lists) | | each within 0.03 GiB |
+
+The ten owner deltas sum to about +5.4 GiB against the PDH private rise of
++5.15 GiB, so an owner outside the top 10 is not required to explain the
+drop. ChatGPT.exe is about four fifths of it. Inside that owner, the
+Codex subtree is +3.184 GiB, and `node.exe` is +2.403 GiB of that (81
+processes / 4.562 GiB to 121 / 6.965). `server.mjs` went from 50 / 3.486
+to 74 / 5.161. Its buckets older than 1 h held 1.676 GiB at 01:22 and
+1.675 GiB at 01:45; the whole +1.675 GiB of `server.mjs` private landed in
+members younger than 60 minutes (the 10-60 min bucket went from 0 to 32
+processes / 2.228 GiB). Members older than 3 h, all three kinds together,
+held 0.877 GiB at 01:22 and 1.054 GiB at 01:45, against a tree of 6.766
+then 9.950 GiB. They did not take the free memory.
+
+The first minute is a different mix. From 01:22:57 to 01:23:57 free fell
+1.414 GiB and commit rose 1.471 GiB while the Codex tree did not move
+(+0.025 GiB, 0 processes born or exited). In that minute `sesvc.exe` rose
+0.701 GiB (23 to 26 processes) and the ChatGPT owner rose 0.763 GiB with
+only 0.025 GiB inside the `codex.exe` subtree, so about 0.74 GiB sat in
+ChatGPT.exe or its non-Codex children. After 01:23 the further ChatGPT
+growth (13.693 to 16.932 GiB, +3.239) is the Codex tree (6.791 to 9.950,
++3.159), mostly those young `node.exe` / `server.mjs` members.
+
+By 02:03:57 the same desktop had given most of it back with no action from
+this tool: free 7.145 GiB, commit 63.697 GiB, ChatGPT.exe 428 processes /
+13.631 GiB, Codex tree 403 / 7.918 GiB. The largest one-minute free drop
+in the whole run that was not this window was 1.437 GiB at 00:53:56, with
+the Codex tree flat; that minute is not broken out by owner here.
+
+One beat is not a sustained peak. At 01:39:57 the Codex tree's CIM private
+reads 11.924 GiB and ChatGPT.exe 19.045 GiB, which is the max in the table
+above, because four `python.exe` in the tree summed to 2.604 GiB for that
+sample only (one `python.exe` / 0.013 GiB on the samples either side).
+PDH `\Process(_Total)\Private Bytes` stayed 49.525 GiB that minute (49.426
+the minute before, 49.858 the minute after) and free only moved 4.366 to
+4.121 GiB. The sustained tree peak is the 01:43-01:44 samples, about
+10.33 GiB, not 11.92.
+
+### Effect on mitigation-design.md open questions
+
+- Backlog item 4 (do hour-scale `server.mjs` / REPL members hold a
+  meaningful share?). The age-bucket series already answered this for the
+  overlapping evening. This run confirms it on the next two hours and does
+  not change the answer. Oldest age advanced 229.3 to 340.0 minutes, one
+  minute per sample, for all three kinds, so at least one member of each
+  kind lived through the run. The >3 h count is not immortal: `server.mjs`
+  older than 3 h fell 12 to 8 by 00:48, then rose 8 to 16 by 01:58 as
+  younger members crossed the line. Together the >3 h members held between
+  0.877 and 1.396 GiB. At the free trough they held 1.054 GiB of a 10.325
+  GiB tree. The memory that moved was young.
+- The ~9 GiB unattributed commit (section 5, second bullet; the 23:38
+  re-check asked whether it moves with process count). Across 120 samples
+  it stayed in an 8.466-10.232 GiB band, 14.1-16.4% of commit, and drifted
+  up about 1.4 GiB. Pearson vs process count is 0.487. Over the same run
+  PDH process private tracked commit almost 1:1 (r = 0.994) and tracked
+  free in the opposite direction (r = -0.991), and it accounted for the
+  01:22-01:45 swing while the residual moved 0.23 GiB. So the residual is
+  real and mostly not the thing that takes and returns host free under
+  this desktop load. What it is made of (page-file-backed shared sections,
+  page tables, kernel stacks) is still not separated; RAMMap was not run.
+  It is still not a cleanup target.
+- Backlog item 5 (experiment load) is untouched. This is one desktop
+  session. No throughput or tail-latency claim follows from it.
+
+What this means for the release button, same limit as the age-bucket
+series: the headroom that disappeared was commit charged by live
+processes, chiefly young Codex `node.exe` / `server.mjs` members plus one
+`sesvc.exe` step and a smaller Feishu step, and those processes released
+it themselves by 02:04. A working-set empty or a standby purge does not
+reduce commit charge. Whether the >3 h members (still about 1.1-1.4 GiB
+private) are holding cold pages is still the question the live A/B has to
+answer from refaults, pages input and disk I/O, not from the free number.
+The proposed pressure line did fire (free under 4 GiB for 5 minutes) and
+cleared on its own within about 15 minutes. No benefit is claimed from
+this series.
+
+Caveats: one desktop session, 60 s resolution; `PrivatePageCount` is
+commit charge, not residency; `host.free_gib` is WMI free, not PDH
+available; top-10 owners omit anyone who never entered that list;
+per-process identities are not recorded, so "the same survivor" is only
+supported for the age of the oldest member, not for a named PID. Nothing
+here makes terminating any process safe or allowed.
