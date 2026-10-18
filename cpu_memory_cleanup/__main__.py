@@ -4,6 +4,8 @@ import json
 import sys
 
 from .analysis import format_summary, summarize_file
+from .pressure import (DEFAULT_COMMIT_ABOVE_PCT, DEFAULT_FREE_BELOW_GIB, DEFAULT_SUSTAIN,
+                       evaluate_file, format_report)
 from .windows import (MAX_INTERVAL_SECONDS, MAX_SAMPLE_COUNT, MIN_INTERVAL_SECONDS,
                       iter_snapshots, snapshot)
 
@@ -44,6 +46,13 @@ def positive_int(text):
     value = int(text)
     if value < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
+    return value
+
+
+def finite_float(text):
+    value = float(text)
+    if value != value or value in (float("inf"), float("-inf")):
+        raise argparse.ArgumentTypeError("must be a finite number")
     return value
 
 
@@ -132,7 +141,34 @@ def main(argv=None):
                         help="include working-set ranking on every sample (slower; off by default)")
     parser.add_argument("--analyze", type=Path, metavar="JSONL",
                         help="offline summary of an existing --sample JSONL log; read-only file parsing, no inspection")
+    parser.add_argument("--pressure", type=Path, metavar="JSONL",
+                        help="offline read-only pressure report over a scripts/tree-series.ps1 JSONL log; takes no action")
+    parser.add_argument("--free-below-gib", type=finite_float,
+                        help=f"--pressure threshold proposal for free memory (default {DEFAULT_FREE_BELOW_GIB})")
+    parser.add_argument("--commit-above-pct", type=finite_float,
+                        help=f"--pressure threshold proposal for commit percent of limit (default {DEFAULT_COMMIT_ABOVE_PCT})")
+    parser.add_argument("--sustain", type=positive_int,
+                        help=f"--pressure consecutive samples needed for an episode (default {DEFAULT_SUSTAIN})")
     args = parser.parse_args(argv)
+    threshold_flags = (args.free_below_gib is not None or args.commit_above_pct is not None
+                       or args.sustain is not None)
+    if args.pressure is not None:
+        if (args.analyze is not None or args.sample or args.interval is not None or args.count is not None
+                or args.jsonl is not None or args.with_processes):
+            parser.error("--pressure cannot be combined with --analyze, --sample, --interval, --count, --jsonl or --with-processes")
+        try:
+            report = evaluate_file(
+                args.pressure,
+                free_below_gib=DEFAULT_FREE_BELOW_GIB if args.free_below_gib is None else args.free_below_gib,
+                commit_above_pct=DEFAULT_COMMIT_ABOVE_PCT if args.commit_above_pct is None else args.commit_above_pct,
+                sustain=DEFAULT_SUSTAIN if args.sustain is None else args.sustain)
+        except (OSError, ValueError) as exc:
+            emit_failure(args.json, f"Pressure report failed: {exc}")
+            return 1
+        print(json.dumps(report, indent=2, ensure_ascii=True) if args.json else format_report(report))
+        return 0
+    if threshold_flags:
+        parser.error("--free-below-gib, --commit-above-pct and --sustain require --pressure")
     if args.analyze is not None:
         if args.sample or args.interval is not None or args.count is not None or args.jsonl is not None or args.with_processes:
             parser.error("--analyze cannot be combined with --sample, --interval, --count, --jsonl or --with-processes")

@@ -100,7 +100,7 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
 6. （初稿完成 2026-10-18 23:30，见 [docs/mitigation-design.md](docs/mitigation-design.md)；第 4 项年龄分桶序列结束后据结果修订）(d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
    任何清理执行；没有可重复的持续净收益就不启用清理。初稿结论：压力来自 commit 与进程数量，
    不是缓存；清 standby、修剪工作集等不符合现有证据，均不采用或推迟。
-7. (g) 只读压力报告（方案文档 M0）：复用有界采样与 `scripts/tree-series.ps1` 的聚合，
+7. （离线评估部分已完成 2026-10-18 23:24：`python -m cpu_memory_cleanup --pressure <tree-series JSONL>`，阈值可配（`--free-below-gib` / `--commit-above-pct` / `--sustain`，默认值只是提案），只读文件、不做任何动作；新增 10 个测试，共 40 测试过；结果见 [docs/mitigation-design.md](docs/mitigation-design.md) 第 3 节。剩余：实时有界模式（复用 tree-series 采样边采边报））(g) 只读压力报告（方案文档 M0）：复用有界采样与 `scripts/tree-series.ps1` 的聚合，
    按阈值（可配置，如可用内存低、commit 接近上限且连续多拍）输出哪些进程树在增长；
    只写 stdout / JSONL，不做任何动作、不常驻；补阈值单元测试与静态白名单测试。
 

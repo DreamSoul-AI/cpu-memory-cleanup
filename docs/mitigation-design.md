@@ -82,6 +82,27 @@ experiment throughput or tail latency. No experiment-load data exists yet.
 - Tests: static allowlist tests (no write / terminate / trim calls), threshold
   logic unit tests on recorded JSONL, single-sample read-only smoke test.
 
+### 3.1 Status: offline evaluator built (23:24 Asia/Shanghai)
+
+- `python -m cpu_memory_cleanup --pressure <tree-series JSONL>` evaluates
+  recorded `scripts/tree-series.ps1` logs. Pure file parsing, no OS calls,
+  no actions. Options: `--free-below-gib`, `--commit-above-pct`,
+  `--sustain`; defaults (4 GiB, 85 %, 3 samples) are the proposals above.
+- `free_gib` is Win32_OperatingSystem FreePhysicalMemory as recorded by the
+  script; commit percent is used / limit. Owner growth compares only owners
+  present in both samples' top lists (absent means unknown, not zero).
+- 10 new unit tests (sustain logic, end-of-file episodes, missing values,
+  run separation, CLI flag rules, no-OS-call static check); 40 tests pass.
+- Applied to the two everyday-desktop series (not experiment load, 60 s
+  interval): 22:30:52-22:59:52 (30 samples) min free 7.073 GiB, max commit
+  67.6 %; 23:12:06-23:24:06 (first 13 of 120 samples, run still going)
+  min free 6.403 GiB, max commit 68.9 %. No sample crossed the default
+  proposal thresholds, so no episode is reported. This says the desktop was
+  not at the proposed alarm level in those windows; it is not a cleanup
+  result and not a threshold calibration.
+- Remaining for backlog item 7: a live bounded mode that reports while the
+  tree-series sampler runs, still stopping after the requested count.
+
 ## 4. Gates before any action-taking option (unchanged in spirit from README)
 
 1. Evidence: an experiment-load baseline aligned in UTC with experiment
