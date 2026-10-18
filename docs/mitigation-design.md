@@ -1,0 +1,110 @@
+# Mitigation design (evidence-based, not implemented)
+
+Date: 2026-10-18 (Asia/Shanghai). Status: **design and validation gates only**.
+Nothing in this document is implemented, and nothing here authorizes running
+any cleanup action. The tool still has no cleanup function and rejects
+`--execute` / `--clean`. Red lines in the README stay in force for every
+option below: no process termination, no service stops, no system setting or
+page-file changes, no automatic elevation.
+
+This is a draft. It will be revised when the 120-sample age-bucket series
+(backlog item 4, running until about 01:11 Asia/Shanghai on 2026-10-19) and an
+experiment-load baseline (backlog item 5) are available.
+
+## 1. Evidence so far (labelled)
+
+All figures come from the committed records in [validation.md](validation.md),
+[idle-baseline-summary.md](idle-baseline-summary.md) and
+[desktop-pressure-summary.md](desktop-pressure-summary.md). Same host:
+47.1 GiB physical RAM, commit limit 95.1 GiB, Windows 11 build 26200.
+None of the runs had experimental (training / evaluation) load.
+
+| Source | Window (Asia/Shanghai, 2026-10-18) | Load | Samples x interval | Key medians / values |
+| --- | --- | --- | --- | --- |
+| Idle baseline, steady part | 20:14-20:24 | idle desktop | 60 x 10 s (samples 31-90) | available 27.15 GiB, commit 46.45 GiB, standby 18.54 GiB, pages input/s 46.1 |
+| Desktop pressure | 21:59-22:14 | daily desktop | 90 x 10 s | available 8.23 GiB (min 6.37), commit 64.70 GiB, standby 6.73 GiB, pages input/s 52.5 (p95 about 5187) |
+| Memory gap cross-check | 22:19:39 | daily desktop | 1 snapshot | 1012 processes; private commit sum 48.1 GiB; paged + nonpaged pool 6.7 GiB; about 9.7 GiB of 64.6 GiB commit unattributed; largest single process about 1.8 GiB |
+| Per-owner-tree series | 22:30:52-22:59:52 | daily desktop | 30 x 60 s | Codex tree 401-593 processes, 7.94-10.69 GiB private; 407 born, 298 exited; not monotonic |
+| Age-bucket series, first sample only | 23:12:06 | daily desktop | 1 of 120 x 60 s | Codex tree 687 processes, 12.50 GiB private; `server.mjs` 92 (6.41 GiB): 20 under 10 min, 50 at 10-60 min, 22 at 1-3 h, 0 over 3 h |
+
+What this supports:
+
+- **The pressure is commit and breadth, not cache.** Between idle and desktop
+  pressure, commit rose by about 18 GiB and standby shrank from about 18.5 to
+  about 6.7 GiB. Standby is already part of available memory, and under
+  pressure there is little of it left. Purging standby would mostly turn
+  cached file pages into free pages and add disk reads later; it cannot lower
+  commit.
+- **No continuous paging was observed.** Hard-fault medians under desktop
+  pressure were low (pages input/s median 52.5) with short bursts. The host
+  was short on headroom, not thrashing, in these windows.
+- **No single process explains it.** The largest process is under 2 GiB.
+  About a thousand processes share the load; the biggest owner tree is the
+  ChatGPT / Codex desktop tree (Codex subtree about 7.9-12.5 GiB private
+  across the series), followed by trees such as `sesvc.exe`, Figma, Weixin,
+  Feishu, Cursor and Steam at about 2-5.5 GiB each (23:12:06 sample).
+- **Codex child processes are reaped, but the level follows activity.** The
+  30-sample series showed births and exits in groups, with no member of the
+  `server.mjs` population older than about 3 h in the first age-bucket sample.
+  Whether long-lived instances hold a meaningful share is the open question
+  for backlog item 4.
+- **Large drops seen so far were external.** The 20:11-20:14 release in the
+  idle baseline and the `sesvc.exe` tree drop at 22:41 were not caused by
+  this tool. A falling number is not a cleanup benefit.
+
+What it does not support: any claim that a system-level cleanup would improve
+experiment throughput or tail latency. No experiment-load data exists yet.
+
+## 2. Options considered
+
+| Option | Mechanism | Fits the evidence? | Decision |
+| --- | --- | --- | --- |
+| M0. Read-only pressure report | Bounded read-only sampling plus owner-tree attribution; prints when available memory or commit headroom crosses a threshold, and which owner trees grew | Yes: it addresses the real driver (many user processes) by telling the user what grew | **Proposed next step** (backlog item 7), still read-only |
+| M1. User-driven app hygiene | User closes idle sessions / apps through their own UI, guided by M0 output | Yes: the controllable lever is app-level process count | Documentation only; the tool never closes anything |
+| M2. Purge low-priority (priority 0) standby | Native memory-list command, needs a privileged token | Weak: standby is small exactly when pressure is high; does not lower commit | **Deferred.** Only reconsider with experiment-load evidence, in an isolated environment, with explicit approval from Enmao |
+| Full standby purge | Same, all priorities | No: larger cold-cache cost, same lack of commit benefit | Rejected |
+| Working-set trimming (targeted or global) | `EmptyWorkingSet` / quota changes | No: does not release commit, adds hard faults | Rejected (red line) |
+| System file cache trim, modified-list flush | Native privileged commands | No evidence of a cache or modified-list problem (modified list 0.12 GiB at 22:19) | Rejected (red line) |
+| Terminate processes, stop services, change page file or settings, auto-elevate | n/a | n/a | Forbidden regardless of evidence |
+
+## 3. M0 sketch (read-only, not yet built)
+
+- Reuse the existing bounded sampler and `scripts/tree-series.ps1`
+  aggregation; no new system interfaces beyond read-only PDH / PSAPI / CIM.
+- Report, per sample: available, commit used / limit, hard-fault rates, and
+  the top owner trees by private commit with their change since the previous
+  sample. Only aggregates; no PIDs, command lines or paths.
+- Thresholds are configuration, not hard-coded claims. Example values to
+  evaluate (proposals, not findings): available under 4 GiB, or commit above
+  85 % of the limit, sustained for 3 consecutive samples.
+- Output goes to stdout / JSONL only. No notifications that act, no
+  background service, stops after the requested count like the sampler.
+- Tests: static allowlist tests (no write / terminate / trim calls), threshold
+  logic unit tests on recorded JSONL, single-sample read-only smoke test.
+
+## 4. Gates before any action-taking option (unchanged in spirit from README)
+
+1. Evidence: an experiment-load baseline aligned in UTC with experiment
+   throughput and tail latency, showing a host-memory-related slowdown.
+2. Isolation: the candidate is first tried on an isolated test environment,
+   never first on the experiment machine.
+3. A/B: repeated with / without runs under the same load; report available,
+   commit, hard faults, disk I/O, throughput and p95 / p99 latency, plus the
+   cold-cache recovery cost. No enable without repeatable sustained net
+   benefit.
+4. Safety mechanics in place first: default dry-run, explicit single-run
+   entry point, before / after logs with log failure blocking execution,
+   cooldown and rate limit, stop on failure with no fallback to a more
+   aggressive action, and no reliance on process names to protect
+   experiments.
+5. Approval: Enmao reviews the evidence, mechanism and risk write-up before
+   any privileged code is written.
+
+## 5. Open questions
+
+- Age-bucket series: do any `server.mjs` / REPL instances survive for hours,
+  and what share of private commit do they hold? (backlog item 4)
+- About 9.7 GiB of commit was not attributed by process private commit and
+  pool counters at 22:19. Candidates (unverified): page-file-backed shared
+  sections, page tables, kernel stacks. Needs RAMMap or a dedicated counter.
+- Behaviour under real experiment load is unknown. (backlog item 5)
