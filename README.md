@@ -108,6 +108,13 @@ python -m cpu_memory_cleanup --pressure-follow logs\tree-series.jsonl --polls 30
 7. （已完成；离线评估部分 2026-10-18 23:24 完成：`python -m cpu_memory_cleanup --pressure <tree-series JSONL>`，阈值可配（`--free-below-gib` / `--commit-above-pct` / `--sustain`，默认值只是提案），只读文件、不做任何动作；新增 10 个测试，共 40 测试过；结果见 [docs/mitigation-design.md](docs/mitigation-design.md) 第 3 节。实时有界模式已完成 2026-10-18 23:34：`python -m cpu_memory_cleanup --pressure-follow <tree-series JSONL> --polls N --poll-interval S` 只读跟随另一个进程正在追加的 tree-series 日志（每轮只以 rb 打开这一个文件，不采样、不调用系统接口、不做任何动作，到轮数即停），逐拍报阈值状态，连续达标时报一次哪些进程树在增长；新增 13 个测试，共 53 测试过；对正在跑的 age 序列实跑 2 轮×61 秒，读到 22 拍、0 告警。本项全部完成）(g) 只读压力报告（方案文档 M0）：复用有界采样与 `scripts/tree-series.ps1` 的聚合，
    按阈值（可配置，如可用内存低、commit 接近上限且连续多拍）输出哪些进程树在增长；
    只写 stdout / JSONL，不做任何动作、不常驻；补阈值单元测试与静态白名单测试。
+8. （第一点已完成 2026-10-18 23:39，见 [docs/validation.md](docs/validation.md) 的 Commit residual re-check）(h) 未归属 commit 的只读归因：
+   22:19 快照里约 9.7 GiB commit 不能由进程私有 commit 与分页 / 非分页池解释。
+   23:38:55（Asia/Shanghai，日常桌面负载、单点）复测仍约 9.28 GiB（占 commit 15.8%），
+   而进程数由 1012 降到 769、进程私有 commit 由 48.11 降到 42.49 GiB；
+   GPU 共享内存只有 0.279 GiB，可排除。下一步：age 序列结束后，给
+   `scripts/tree-series.ps1` 每拍加只读的 commit 残差字段（commit 减进程私有合计、
+   分页池、非分页池），看它是否随进程数变化；RAMMap 人工对照仍可选。只读，不做任何动作。
 
 空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)
 （空闲基线、非实验负载；其中约 20:11（Asia/Shanghai）的释放来自外部，

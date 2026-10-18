@@ -267,3 +267,43 @@ Caveats: 30 samples over 29 minutes under one evening's desktop use;
 the WMI figure, not the PDH available counter used elsewhere in this file.
 None of these changes is a cleanup benefit, and nothing here makes
 terminating any of these processes safe or allowed.
+
+## Commit residual re-check (desktop load, read-only)
+
+Date: 2026-10-18 23:38:55 Asia/Shanghai. One point-in-time snapshot under
+ordinary desktop load, no experimental load, taken while the age-bucket tree
+series (backlog item 4) was running. Sources: PDH via `Get-Counter`
+(`\Memory\*`, `\Process(_Total)\Private Bytes`, `\GPU Adapter Memory(*)`,
+`\GPU Process Memory(*)`) and `Win32_Process.PrivatePageCount`. All queries
+were read-only; nothing was trimmed, flushed, terminated or reconfigured.
+
+| Item | GiB |
+| --- | ---: |
+| Commit used / limit | 58.861 / 95.112 |
+| Process private commit, `\Process(_Total)\Private Bytes` | 42.488 |
+| Same, summed over 769 `Win32_Process` rows | 42.489 |
+| Paged pool | 4.178 |
+| Nonpaged pool | 2.904 |
+| System driver total | 0.014 |
+| Unattributed (commit - private - pools - driver) | ~9.28 (15.8 % of commit) |
+| GPU shared (system-memory) usage, all adapters | 0.279 |
+| GPU dedicated usage, all adapters (VRAM, not host commit) | 3.682 |
+| Available (PDH) | 11.390 |
+
+Reading:
+
+- The residual is ~9.28 GiB, close to the ~9.74 GiB at 22:19:39 (previous
+  section) although the process count fell 1012 to 769 and process private
+  commit fell 48.11 to 42.49 GiB. With two points only, this suggests that
+  most of the residual does not track process count; it is not established.
+- GPU shared usage is 0.279 GiB, so GPU driver allocations in system memory
+  do not explain the residual.
+- Remaining candidates are unchanged: page-file-backed shared sections
+  (Chromium / Electron shared memory), page tables and kernel stacks. These
+  counters cannot separate them. Next read-only step: record the residual per
+  beat in the tree series to see whether it moves with process count; a
+  RAMMap comparison stays optional and manual.
+
+Caveats: two single snapshots on one evening; counters are read at slightly
+different instants; the residual is inferred by subtraction, not measured.
+It is not reclaimable memory and not a cleanup target by itself.
