@@ -142,3 +142,15 @@ maxima, describe the idle level. Standby remains part of available RAM;
 guaranteed additional available RAM and actual cleanup are both still 0.
 A changing number alone is not evidence of cleanup benefit, and this idle
 run gives no reason to authorize any cleanup action.
+
+## Offline analyzer and idle summary
+
+Date: 2026-10-18 (Asia/Shanghai). `python -m cpu_memory_cleanup --analyze
+logs\idle-baseline.jsonl` (pure file parsing, no OS calls) reproduces the
+committed summary in [idle-baseline-summary.md](idle-baseline-summary.md):
+90 samples, 4 warnings (all first-tick rate warnings), 0 overruns, 12
+transitions at or above 1 GiB. Headline full-run medians: available
+27.144 GiB, commit used 46.463 GiB, standby total 18.536 GiB; rates on
+89 samples (first sample null). The large transitions around 20:11-20:14
+Asia/Shanghai were an external release, not a cleanup benefit of this tool.
+Unit tests grew from 15 to 22 with `tests/test_analysis.py`.

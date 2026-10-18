@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import sys
 
+from .analysis import format_summary, summarize_file
 from .windows import (MAX_INTERVAL_SECONDS, MAX_SAMPLE_COUNT, MIN_INTERVAL_SECONDS,
                       iter_snapshots, snapshot)
 
@@ -129,7 +130,19 @@ def main(argv=None):
     parser.add_argument("--jsonl", type=Path, help="append one JSON object per line; parent directory must exist")
     parser.add_argument("--with-processes", action="store_true",
                         help="include working-set ranking on every sample (slower; off by default)")
+    parser.add_argument("--analyze", type=Path, metavar="JSONL",
+                        help="offline summary of an existing --sample JSONL log; read-only file parsing, no inspection")
     args = parser.parse_args(argv)
+    if args.analyze is not None:
+        if args.sample or args.interval is not None or args.count is not None or args.jsonl is not None or args.with_processes:
+            parser.error("--analyze cannot be combined with --sample, --interval, --count, --jsonl or --with-processes")
+        try:
+            summary = summarize_file(args.analyze)
+        except (OSError, ValueError) as exc:
+            emit_failure(args.json, f"Analysis failed: {exc}")
+            return 1
+        print(json.dumps(summary, indent=2, ensure_ascii=True) if args.json else format_summary(summary))
+        return 0
     series_flags = args.interval is not None or args.count is not None or args.jsonl is not None or args.with_processes
     if args.sample:
         if args.interval is None or args.count is None:

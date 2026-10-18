@@ -29,6 +29,10 @@ python -m cpu_memory_cleanup --json | Out-File -Encoding utf8 logs\snapshot.json
 # 有界只读序列。必须同时给出间隔和次数；至少保留 JSONL 或 --json。
 # 间隔 1..3600 秒，次数 1..10000。到次数即停止，不是后台服务。
 python -m cpu_memory_cleanup --sample --interval 10 --count 360 --jsonl logs\series.jsonl
+
+# 离线分析已有 JSONL（纯文件解析，不巡检、不调用系统接口）：
+python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl
+python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
 ```
 
 文本以 GiB 显示，JSON 容量为整数 bytes，速率为每秒浮点数，缺失指标为 null；0 是实际取得的零。退出码 0 表示本次巡检或整段采样完成（可能有缺失指标，须读 warnings），1 表示核心 API、平台或日志写入错误，2 表示参数错误。采样期间数据持续变化，不是原子快照。`--top` 排名只覆盖可读取的进程，同名项对应不同进程；working set 含共享页，不能相加或当成可回收量。
@@ -57,4 +61,26 @@ python -m cpu_memory_cleanup --sample --interval 10 --count 360 --jsonl logs\ser
 - [360 专项调研](docs/360_memory_cleanup.md)：官方资料确认加速球具有关闭进程的能力；具体是否修剪工作集、清 standby 及各自贡献比例仍未证实。standby 已计入 Available；工作集修剪不释放应用 commit，并会带来重新调页代价。绝不能结束任何进程，尤其训练 / 评测 / Python 进程。
 - [GitHub 同类项目调研](docs/github_survey.md)：优先参考 System Informer 的分类和状态处理、MemListMgr 的单项动作拆分，以及 Mem Reduct 的冷却 / 日志思路；源码事实、README 声称、维护日期限制和许可证分别标注。尚未引入任何上游清理实现，也不采用自动提权或全局组合清理。
 - 主机侧 Available、commit、硬缺页和磁盘 I/O 已能写入 JSONL。下一步是在实验负载下采样，并把实验吞吐、尾延迟按 UTC 对齐；再决定是否有必要进入隔离环境的执行验证。清理执行阶段等待 Enmao 审阅后另定，不能将文档中的候选视为执行授权。
-- 远程为私有仓库 DreamSoul-AI/cpu-memory-cleanup（不加 CI）。GitHub `master` 停在 `6314b9d`；之后的本地提交须先在汇报中给出改动摘要，经 Enmao 同意后再推送。
+- 远程为私有仓库 DreamSoul-AI/cpu-memory-cleanup（不加 CI）。2026-10-18 已推送采样、空闲基线、离线分析器与本待办；以 `git ls-remote origin master` 与本地 HEAD 一致为准，不再等待逐次推送确认。
+
+## 有序待办（5 分钟例行按此推进，不空等）
+
+例行每轮取本清单第一个未完成项推进；没有实验负载不是停工理由，
+(c) 只在真实实验恰好运行时顺带做。全部只读，不实现清理执行。
+
+1. (a) 日常桌面压力下的有界 `--with-processes` 只读采样：例如
+   `--sample --interval 10 --count 90 --with-processes --jsonl logs\desktop-pressure.jsonl`，
+   再用 `--analyze` 汇总，并从带进程排名的样本中列出 working-set 最高的
+   所有者（同名多进程分开看；working set 含共享页，不相加、不当可回收量）。
+   2026-10-18 晚间桌面应用本身已使可用内存约由 24 GiB 降到 10 GiB，
+   这就是可用压力，不必只等实验负载。
+2. (b) 一次人工交叉核对：同一时刻把一次性巡检快照与任务管理器 /
+   RAMMap（若可用）对照，把差异写进 `docs/validation.md`。
+3. (c) 负载基线：真实实验运行时顺带跑一段有界只读序列，并与实验
+   吞吐、尾延迟按 UTC 对齐；没实验时跳过本项继续下一项，不阻塞。
+4. (d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
+   任何清理执行；没有可重复的持续净收益就不启用清理。
+
+空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)
+（空闲基线、非实验负载；其中约 20:11（Asia/Shanghai）的释放来自外部，
+不是本工具的清理收益）。
