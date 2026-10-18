@@ -95,9 +95,12 @@ def _default_sample(count, interval):
     return iter_snapshots(count, interval, include_processes=False)
 
 
-def _default_release():
+RELEASE_WHATS = ("working-set", "standby", "both")
+
+
+def _default_release(what):
     from .release import perform_release
-    return perform_release("both")
+    return perform_release(what)
 
 
 def _now():
@@ -133,13 +136,19 @@ def summarize(outdir, plan):
 
 
 def run_protocol(plan, outdir, *, live=False, log_dir="logs", sample_fn=None, release_fn=None,
-                 preflight_fn=None, now=None):
-    """Dry-run unless live. Returns a plain dict; never raises on NT failures."""
+                 preflight_fn=None, now=None, release_what="both"):
+    """Dry-run unless live. Returns a plain dict; never raises on NT failures.
+
+    ``release_what`` selects the authorised call: working-set, standby, or both
+    (the default, unchanged). A live run calls that one release before each B window.
+    """
+    if release_what not in RELEASE_WHATS:
+        raise ValueError("release_what must be working-set, standby, or both")
     outdir = Path(outdir)
     guards = check_guards(log_dir, preflight_fn, now)
     result = {"schema_version": 1, "mode": "ab-protocol-live" if live else "ab-protocol-dry-run",
-              "cleanup_performed": False, "plan": plan, "outdir": str(outdir), "guards": guards,
-              "events": [], "status": None, "summary": None}
+              "cleanup_performed": False, "release_what": release_what, "plan": plan,
+              "outdir": str(outdir), "guards": guards, "events": [], "status": None, "summary": None}
     if not live:
         result["status"] = "dry-run: nothing sampled, nothing released" + ("" if guards["ok"] else "; live run would be blocked")
         return result
@@ -151,7 +160,8 @@ def run_protocol(plan, outdir, *, live=False, log_dir="logs", sample_fn=None, re
         return result
     outdir.mkdir(parents=False, exist_ok=True)
     sample_fn = _default_sample if sample_fn is None else sample_fn
-    release_fn = _default_release if release_fn is None else release_fn
+    if release_fn is None:
+        release_fn = lambda: _default_release(release_what)
     for window in plan["windows"]:
         if window["release_before"]:
             recheck = check_guards(log_dir, preflight_fn)
@@ -197,6 +207,7 @@ def _gib(value):
 def format_protocol(result):
     plan = result["plan"]
     lines = [f"A/B release protocol | {result['mode']} | cleanup performed: {'YES' if result['cleanup_performed'] else 'NO'}",
+             f"release_what: {result.get('release_what', 'both')}",
              f"pattern {','.join(plan['pattern'])} | {plan['count_per_window']} x {plan['interval_seconds']} s per window | "
              f"{len(plan['windows'])} windows, {plan['releases_planned']} release(s), about {plan['estimated_minutes']} min",
              f"output: {result['outdir']}"]

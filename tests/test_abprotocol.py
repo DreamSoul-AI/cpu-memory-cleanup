@@ -165,8 +165,44 @@ class CliTests(unittest.TestCase):
 
     def test_protocol_flags_need_protocol_and_exclude_release(self):
         self.assertEqual(self.run_main(["--ab-live"])[0], 2)
+        self.assertEqual(self.run_main(["--ab-what", "standby"])[0], 2)
         self.assertEqual(self.run_main(["--ab-protocol", "x", "--release"])[0], 2)
         self.assertEqual(self.run_main(["--ab-protocol", "x", "--sample"])[0], 2)
+
+    def test_release_what_selects_one_call_and_default_stays_both(self):
+        seen = []
+
+        def fake_release(what="both"):
+            seen.append(what)
+            return {"cleanup_performed": True, "actions": [{"ntstatus_hex": "0x00000000"}], "release_what": what}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch("cpu_memory_cleanup.release.perform_release", side_effect=fake_release):
+                standby = abprotocol.run_protocol(
+                    abprotocol.build_plan(("AA", "AB"), 1, 3), Path(tmp, "standby"), live=True, log_dir=tmp,
+                    sample_fn=Recorder().sample, preflight_fn=lambda: READY, release_what="standby")
+                both = abprotocol.run_protocol(
+                    abprotocol.build_plan(("AA", "AB"), 1, 3), Path(tmp, "both"), live=True, log_dir=tmp,
+                    sample_fn=Recorder().sample, preflight_fn=lambda: READY)
+            self.assertEqual(seen, ["standby", "both"])
+            self.assertEqual(standby["release_what"], "standby")
+            self.assertEqual(both["release_what"], "both")
+            self.assertEqual(standby["status"], "completed")
+            with self.assertRaises(ValueError):
+                abprotocol.run_protocol(abprotocol.build_plan(), Path(tmp, "bad"), release_what="trim")
+
+    def test_cli_ab_what_dry_run_names_the_mechanism_and_releases_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp, "ab")
+            with mock.patch.object(abprotocol, "_default_preflight", lambda: READY), \
+                    mock.patch.object(abprotocol, "_default_sample", forbidden), \
+                    mock.patch.object(abprotocol, "_default_release", forbidden):
+                code, text, _ = self.run_main(["--ab-protocol", str(out), "--ab-what", "working-set"])
+            self.assertEqual(code, 0)
+            self.assertIn("release_what: working-set", text)
+            self.assertIn("cleanup performed: NO", text)
+            self.assertIn("dry-run", text)
+            self.assertFalse(out.exists())
 
     def test_cli_dry_run_reports_blockers_and_touches_nothing(self):
         with tempfile.TemporaryDirectory() as tmp:

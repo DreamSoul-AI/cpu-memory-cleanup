@@ -216,8 +216,10 @@ def main(argv=None):
     parser.add_argument("--ab-pattern", help="with --ab-protocol: comma list of AA/AB pairs (default AA,AB,AA,AB)")
     parser.add_argument("--ab-interval", type=float, help="with --ab-protocol: seconds between samples (default 10)")
     parser.add_argument("--ab-count", type=int, help="with --ab-protocol: samples per window (default 30)")
+    parser.add_argument("--ab-what", choices=RELEASE_WHATS, default=None,
+                        help="with --ab-protocol: working-set, standby, or both (default both, unchanged)")
     args = parser.parse_args(argv)
-    ab_proto_flags = ("ab_live", "ab_pattern", "ab_interval", "ab_count")
+    ab_proto_flags = ("ab_live", "ab_pattern", "ab_interval", "ab_count", "ab_what")
     if args.ab_protocol is None and any(getattr(args, k) not in (None, False) for k in ab_proto_flags):
         parser.error("--ab-live, --ab-pattern, --ab-interval and --ab-count require --ab-protocol")
     if args.ab_protocol is not None:
@@ -229,7 +231,8 @@ def main(argv=None):
             plan = abprotocol.build_plan(pattern,
                                          abprotocol.DEFAULT_INTERVAL if args.ab_interval is None else args.ab_interval,
                                          abprotocol.DEFAULT_COUNT if args.ab_count is None else args.ab_count)
-            result = abprotocol.run_protocol(plan, args.ab_protocol, live=args.ab_live)
+            result = abprotocol.run_protocol(plan, args.ab_protocol, live=args.ab_live,
+                                              release_what=args.ab_what or "both")
         except (OSError, ValueError) as exc:
             emit_failure(args.json, f"A/B protocol failed: {exc}")
             return 1

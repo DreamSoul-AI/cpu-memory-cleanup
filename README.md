@@ -43,6 +43,11 @@ python -m cpu_memory_cleanup --json --top 10
 # ONLY this flag performs a release; every other mode stays read-only.
 python -m cpu_memory_cleanup --release
 python -m cpu_memory_cleanup --release --release-what standby --json
+
+# A/B 协议。不加 --ab-live 就是 dry-run，不采样、不释放。
+# --ab-what 默认 both；working-set 或 standby 只跑那一个已授权调用。
+python -m cpu_memory_cleanup --ab-protocol logs\ab-out --ab-what standby
+python -m cpu_memory_cleanup --ab-protocol logs\ab-out --ab-live --ab-what standby
 python -m unittest discover -s tests -v
 
 # 可选：保存只读报告；logs 已加入 gitignore
@@ -146,7 +151,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
    pools - driver；Get-Counter 失败则字段为 null，不中断序列）。正在跑的 age 序列
    （run_id f813ba37）启动早于本改动，不含这些字段；下一轮序列可用来看残差是否随
    进程数变化。2026-10-19 00:04:56（Asia/Shanghai）起已用当前脚本另起一段 60 秒 × 120 的有界只读残差序列（run_id f9059e66，写 gitignored 的 `logs\tree-series-residual.jsonl`，约 02:04 结束；与 age 序列重叠的约一小时内两个只读采样器同时运行），首拍残差 8.466 GiB（占 commit 14.2%，696 个进程，日常桌面、无实验负载，单拍不作结论）；结束后用 `--tree-summary` 看残差与进程数的相关性。RAMMap 人工对照仍可选。只读，不做任何动作。
-9. （未做）把两种已授权机制拆开各做一次 A/B，只用 `MemoryPurgeStandbyList` 与 `MemoryEmptyWorkingSets`。协议和口径与 33baefb / `logs/ab-live-20261019-r2` 相同：日常桌面负载，`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s，脱离编辑器进程运行。各用新的日志目录。先 standby-purge-only，跑完把判定写入 [docs/validation.md](docs/validation.md)，测试通过后提交并推送，再跑 working-set-only。每次开跑前确认没有其它采样序列在跑。working-set-only 要记录 modified 列表和回写磁盘的量；磁盘写入或硬缺页明显失控就中止并如实记录。若 `--ab-protocol` 还不能单独选机制，先加单机制选项并补 mock 测试，默认仍是 `both`。
+9. （选项已加，现场拆分未跑）把两种已授权机制拆开各做一次 A/B，只用 `MemoryPurgeStandbyList` 与 `MemoryEmptyWorkingSets`。`--ab-protocol --ab-what standby|working-set` 已能单选，默认仍是 `both`。协议和口径与 33baefb / `logs/ab-live-20261019-r2` 相同：日常桌面负载，`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s，脱离编辑器进程运行。各用新的日志目录。先 standby-purge-only，跑完把判定写入 [docs/validation.md](docs/validation.md)，测试通过后提交并推送，再跑 working-set-only。每次开跑前确认没有其它采样序列在跑。working-set-only 要记录 modified 列表和回写磁盘的量；磁盘写入或硬缺页明显失控就中止并如实记录。
 10. （未做）在 [docs/validation.md](docs/validation.md) 注明：r2 两次释放前，token 里的 `SeProfileSingleProcessPrivilege` 已经是 enabled，所以「持有但未启用 → 在显式 `--release` 时启用 → 用完恢复」这条路径还没有实测。
 
 空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)
