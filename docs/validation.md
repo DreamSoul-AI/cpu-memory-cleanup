@@ -472,3 +472,67 @@ point, so the live run cannot be done ad hoc: `python -m cpu_memory_cleanup --ab
   blocked until Enmao decides on that privilege.
 - 12 mock tests (109 total) pass; tests inject fake sample/release/pre-flight functions and never
   call the real NT release. No release was performed.
+
+## Age-bucket tree series, complete (desktop load, read-only)
+
+Date: 2026-10-18 23:12:06 to 2026-10-19 01:11:07 Asia/Shanghai
+(15:12:06-17:11:07 UTC). Ordinary desktop load, no experimental load.
+`scripts/tree-series.ps1`, 120/120 samples at 60 s, `run_id`
+`f813ba37-af51-42cc-9e37-85f7d605a9bc`, raw log in gitignored
+`logs\tree-series-age.jsonl`; the run stopped on its own. Analysed offline
+on 2026-10-19 01:15 Asia/Shanghai with `--tree-summary`, `--pressure` and a
+one-off read of the same JSONL (no system calls). No release, trim, purge,
+termination or setting change happened during or after the run. A second
+read-only series (commit residual, `run_id` f9059e66) overlapped from 00:04:56.
+
+| Metric (Codex tree unless noted) | First 23:12 | Min | Median | Max | Last 01:11 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Tree processes | 687 | 208 | 348.5 | 725 | 226 |
+| Tree private commit GiB | 12.503 | 4.458 | 7.134 | 12.826 | 4.458 |
+| `server.mjs` processes | 92 | 24 | 43.5 | 100 | 28 |
+| `server.mjs` private commit GiB | 6.413 | 1.674 | 3.094 | 7.131 | 1.953 |
+| `server.mjs` older than 3 h | 0 | 0 | - | 12 (0.838 GiB) | 8 (0.561 GiB) |
+| `cua_repl` older than 3 h | 0 | 0 | - | 6 (0.121 GiB) | 4 (0.080 GiB) |
+| `node_repl` older than 3 h | 0 | 0 | - | 18 (0.096 GiB) | 12 (0.069 GiB) |
+| Host free GiB (`FreePhysicalMemory`) | 6.609 | 6.403 | 9.022 | 12.674 | 10.355 |
+| Host commit used GiB (limit 95.112) | 65.373 | 56.538 | 61.149 | 65.501 | 59.540 |
+
+Reading (answers mitigation-design open question 1 for this evening):
+
+- Long-lived members exist but hold little. The first `server.mjs`/REPL
+  members crossed 3 h at 23:16; the peak was 12 `server.mjs` + 6 `cua_repl`
+  + 18 `node_repl` older than 3 h at 23:59, together at most 1.063 GiB
+  (00:08, when the tree held 6.05 GiB). By 01:11 they were down to 8 + 4 + 12
+  holding 0.71 GiB of 4.46 GiB. The >3 h count also fell (12 to 8), so these
+  are not immortal either. Oldest member age ran 176.5 to 287.1 min, one
+  minute per sample, so at least one member (probably the tree root, not
+  verified) lived through the whole run.
+- The bulk is young and is reaped on its own. The tree fell from 687
+  processes / 12.50 GiB to 208 / 4.72 GiB between 23:12 and 23:48 with no
+  action from this tool, in steps of 13-44 processes per minute, stayed flat
+  until 00:02, then rose with activity (+2.77 GiB at 00:05, +65 processes at
+  00:09) and fell again after 00:36. The largest one-minute drop was 44
+  processes / 1.20 GiB at 00:45, with host commit down 1.21 GiB and free up
+  0.88 GiB in the same minute.
+- The Codex tree drives the host commit swings: tree private commit and host
+  commit used correlate at r = 0.89 over the 120 samples, and the 23:12-23:48
+  drop of 7.8 GiB tree private matches the 8.1 GiB fall in host commit.
+- Pressure report with the proposed thresholds (free < 4 GiB or commit
+  > 85 % for 3 samples): 0 breaching samples; min free 6.40 GiB, max commit
+  68.9 %.
+
+What this means for the release button: on this evening's desktop load the
+memory that matters is commit held by live, mostly short-lived Codex tool
+processes, which a working-set trim cannot reduce (trimming does not change
+commit charge) and which the processes release themselves when they exit.
+The long-lived (>3 h) members are the plausible "kept pages they no longer
+use" candidates, but together they hold under 1.1 GiB of private commit;
+whether their working sets are cold is exactly what the pending A/B
+(refault rate after a working-set emptying) has to show. No benefit is
+claimed from this series.
+
+Caveats: one evening, one desktop session, 60 s resolution; `PrivatePageCount`
+is commit charge, not residency, so it does not say how much a trim would
+free; `FreePhysicalMemory` is the WMI figure, not the PDH available counter;
+per-process identities were not recorded, so "the same 8 survivors" is not
+established. Nothing here makes terminating any process safe or allowed.

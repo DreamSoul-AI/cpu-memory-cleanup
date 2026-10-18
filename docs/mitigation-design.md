@@ -155,6 +155,10 @@ experiment throughput or tail latency. No experiment-load data exists yet.
 
 - Age-bucket series: do any `server.mjs` / REPL instances survive for hours,
   and what share of private commit do they hold? (backlog item 4)
+  Answered for 2026-10-18/19 desktop load (validation.md, "Age-bucket tree
+  series, complete"): yes, up to 12 `server.mjs` + 24 REPLs passed 3 h, but
+  together they held at most 1.06 GiB private commit; the bulk (up to 12.5
+  GiB) is young members that exit on their own.
 - About 9.7 GiB of commit was not attributed by process private commit and
   pool counters at 22:19. Candidates (unverified): page-file-backed shared
   sections, page tables, kernel stacks. Needs RAMMap or a dedicated counter.
