@@ -81,6 +81,35 @@ class AnalysisTests(unittest.TestCase):
         self.assertNotIn((3, "commit_used_bytes"), pairs)
         self.assertIn((3, "available_bytes"), pairs)
 
+
+    def test_process_owners_keep_largest_instance_without_summing(self):
+        gib = 1024**3
+        a, b, c = record(0), record(1), record(2)
+        a["processes"] = {"top": [{"name": "app.exe", "working_set_bytes": 3 * gib},
+                                  {"name": "app.exe", "working_set_bytes": 2 * gib},
+                                  {"name": "tool.exe", "working_set_bytes": 1 * gib}]}
+        b["processes"] = {"top": [{"name": "app.exe", "working_set_bytes": 1 * gib},
+                                  {"name": "bad", "working_set_bytes": None},
+                                  "junk"]}
+        owners = analysis.summarize_process_owners([a, b, c])
+        self.assertEqual(owners["ranked_samples"], 2)
+        by_name = {o["name"]: o for o in owners["owners"]}
+        self.assertEqual(set(by_name), {"app.exe", "tool.exe"})
+        app = by_name["app.exe"]
+        self.assertEqual(app["samples_present"], 2)
+        self.assertEqual(app["max_instances_in_top"], 2)
+        self.assertEqual(app["largest_instance_max_bytes"], 3.0 * gib)  # not 5 GiB: never summed
+        self.assertEqual(app["largest_instance_median_bytes"], 2.0 * gib)
+        self.assertEqual(owners["owners"][0]["name"], "app.exe")
+        text = analysis.format_summary(analysis.summarize_records([a, b, c]))
+        self.assertIn("ranked_samples=2", text)
+        self.assertIn("not summed", text)
+
+    def test_process_owners_absent_without_ranking(self):
+        summary = analysis.summarize_records([record(0), record(1)])
+        self.assertEqual(summary["process_owners"]["ranked_samples"], 0)
+        self.assertIn("without --with-processes", analysis.format_summary(summary))
+
     def test_cli_analyze_json_and_missing_file(self):
         lines = "\n".join(json.dumps(record(i)) for i in range(2))
         import tempfile, os

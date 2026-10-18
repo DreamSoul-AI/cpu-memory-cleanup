@@ -9,6 +9,7 @@ RATE_METRICS = ("page_reads_per_sec", "pages_input_per_sec",
                 "disk_read_bytes_per_sec", "disk_write_bytes_per_sec")
 ALL_METRICS = BYTE_METRICS + RATE_METRICS
 DEFAULT_TRANSITION_BYTES = 1024 ** 3
+OWNER_LINES = 10
 
 
 def _get(record, *keys):
@@ -105,6 +106,44 @@ def detect_transitions(records, threshold_bytes=DEFAULT_TRANSITION_BYTES):
     return transitions
 
 
+def summarize_process_owners(records):
+    """Per-name view of the working-set ranking stored with --with-processes.
+
+    For each process name we keep only the largest single instance in each sample.
+    Same-name instances are never added together, and working set includes shared
+    pages, so nothing here is a reclaimable amount.
+    """
+    ranked = [r for r in records
+              if isinstance(r.get("processes"), dict) and isinstance(r["processes"].get("top"), list)]
+    per_name = {}
+    for record in ranked:
+        largest, instances = {}, {}
+        for item in record["processes"]["top"]:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            size = item.get("working_set_bytes")
+            if not isinstance(name, str) or not isinstance(size, (int, float)) or isinstance(size, bool):
+                continue
+            instances[name] = instances.get(name, 0) + 1
+            largest[name] = max(largest.get(name, 0), size)
+        for name, size in largest.items():
+            entry = per_name.setdefault(name, {"sizes": [], "max_instances_in_top": 0})
+            entry["sizes"].append(size)
+            entry["max_instances_in_top"] = max(entry["max_instances_in_top"], instances[name])
+    owners = []
+    for name, entry in per_name.items():
+        sizes = sorted(entry["sizes"])
+        owners.append({"name": name, "samples_present": len(sizes),
+                       "max_instances_in_top": entry["max_instances_in_top"],
+                       "largest_instance_median_bytes": percentile(sizes, 0.5),
+                       "largest_instance_max_bytes": float(sizes[-1])})
+    owners.sort(key=lambda o: (-o["largest_instance_median_bytes"], o["name"]))
+    return {"ranked_samples": len(ranked), "owners": owners,
+            "basis": "largest single instance per sample; same-name instances not summed; "
+                     "working set includes shared pages and is not a reclaimable amount"}
+
+
 def summarize_records(records, transition_threshold_bytes=DEFAULT_TRANSITION_BYTES):
     extracted = [metric_values(record) for record in records]
     warnings = [w for record in records for w in (record.get("warnings") or [])]
@@ -122,6 +161,7 @@ def summarize_records(records, transition_threshold_bytes=DEFAULT_TRANSITION_BYT
         "metrics": {key: describe([row[key] for row in extracted]) for key in ALL_METRICS},
         "transition_threshold_bytes": transition_threshold_bytes,
         "transitions": detect_transitions(records, transition_threshold_bytes),
+        "process_owners": summarize_process_owners(records),
     }
 
 
@@ -156,4 +196,15 @@ def format_summary(summary):
         lines.append(f"  sample {item['index'] + 1} {item['metric']} "
                      f"{_gib(item['from_bytes'])} -> {_gib(item['to_bytes'])} "
                      f"(delta {_gib(item['delta_bytes'])}) at {item['started_at_utc']}")
+    owners = summary.get("process_owners") or {}
+    if owners.get("ranked_samples"):
+        lines.append(f"process owners from working-set ranking: ranked_samples={owners['ranked_samples']} "
+                     f"({owners['basis']})")
+        for owner in owners["owners"][:OWNER_LINES]:
+            lines.append(f"  {owner['name']}: present={owner['samples_present']} "
+                         f"max_instances_in_top={owner['max_instances_in_top']} "
+                         f"largest_median={_gib(owner['largest_instance_median_bytes'])} "
+                         f"largest_max={_gib(owner['largest_instance_max_bytes'])}")
+    else:
+        lines.append("process owners: no working-set ranking in this log (sampled without --with-processes)")
     return "\n".join(lines)

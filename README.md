@@ -68,7 +68,7 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
 例行每轮取本清单第一个未完成项推进；没有实验负载不是停工理由，
 (c) 只在真实实验恰好运行时顺带做。全部只读，不实现清理执行。
 
-1. (a) 日常桌面压力下的有界 `--with-processes` 只读采样：例如
+1. （已完成 2026-10-18 22:14，见 [docs/desktop-pressure-summary.md](docs/desktop-pressure-summary.md)；分析器已能按进程名汇总排名）(a) 日常桌面压力下的有界 `--with-processes` 只读采样：例如
    `--sample --interval 10 --count 90 --with-processes --jsonl logs\desktop-pressure.jsonl`，
    再用 `--analyze` 汇总，并从带进程排名的样本中列出 working-set 最高的
    所有者（同名多进程分开看；working set 含共享页，不相加、不当可回收量）。
@@ -76,6 +76,8 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
    这就是可用压力，不必只等实验负载。
 2. (b) 一次人工交叉核对：同一时刻把一次性巡检快照与任务管理器 /
    RAMMap（若可用）对照，把差异写进 `docs/validation.md`。
+   重点核对桌面压力下最大单进程不到 2 GiB、已用物理内存约 39 GiB、
+   commit 约 64.7 GiB 之间的缺口落在哪里（全部进程、内核分页 / 非分页池、驱动等），仍只读。
 3. (c) 负载基线：真实实验运行时顺带跑一段有界只读序列，并与实验
    吞吐、尾延迟按 UTC 对齐；没实验时跳过本项继续下一项，不阻塞。
 4. (d) 基于证据的缓解方案设计文档：只写设计与验证门槛，仍不实现
