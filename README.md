@@ -53,8 +53,8 @@ python -m cpu_memory_cleanup --sample --interval 10 --count 360 --jsonl logs\ser
 
 ## 交接状态（2026-10-18）
 
-- 当前有一次性只读巡检（文本、`--json`、`--top`）和有界只读采样（`--sample`、`--interval`、`--count`、`--jsonl`）。没有后台服务，也没有清理执行。2026-10-17 的一次性巡检和 2026-10-18 的两拍采样都已在本机跑过，原始输出和局限见 [验证记录](docs/validation.md)，不代表长期性能或清理收益已验证。
+- 当前有一次性只读巡检（文本、`--json`、`--top`）和有界只读采样（`--sample`、`--interval`、`--count`、`--jsonl`）。没有后台服务，也没有清理执行。2026-10-17 的一次性巡检、2026-10-18 的两拍采样和 2026-10-18 20:09–20:24（Asia/Shanghai）的 90 样本 × 10 秒空闲基线（无实验负载）都已在本机跑过，原始输出和局限见 [验证记录](docs/validation.md)，不代表长期性能或清理收益已验证。
 - [360 专项调研](docs/360_memory_cleanup.md)：官方资料确认加速球具有关闭进程的能力；具体是否修剪工作集、清 standby 及各自贡献比例仍未证实。standby 已计入 Available；工作集修剪不释放应用 commit，并会带来重新调页代价。绝不能结束任何进程，尤其训练 / 评测 / Python 进程。
 - [GitHub 同类项目调研](docs/github_survey.md)：优先参考 System Informer 的分类和状态处理、MemListMgr 的单项动作拆分，以及 Mem Reduct 的冷却 / 日志思路；源码事实、README 声称、维护日期限制和许可证分别标注。尚未引入任何上游清理实现，也不采用自动提权或全局组合清理。
 - 主机侧 Available、commit、硬缺页和磁盘 I/O 已能写入 JSONL。下一步是在实验负载下采样，并把实验吞吐、尾延迟按 UTC 对齐；再决定是否有必要进入隔离环境的执行验证。清理执行阶段等待 Enmao 审阅后另定，不能将文档中的候选视为执行授权。
-- 本仓库目前仅有本地 Git 提交，没有 remote，也没有 push；等待 Enmao 明确指示后再创建或配置远程仓库。
+- 远程为私有仓库 DreamSoul-AI/cpu-memory-cleanup（不加 CI）。GitHub `master` 停在 `6314b9d`；之后的本地提交须先在汇报中给出改动摘要，经 Enmao 同意后再推送。
