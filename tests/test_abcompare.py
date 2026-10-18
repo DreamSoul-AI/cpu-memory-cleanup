@@ -1,4 +1,4 @@
-import contextlib
+﻿import contextlib
 import io
 import json
 import tempfile
@@ -97,6 +97,61 @@ class ABCompareTests(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
                 main(["--ab-compare", "a", "b", "--sample"])
+
+
+class ABNullCalibrationTests(unittest.TestCase):
+    @staticmethod
+    def burst_window(peak):
+        # Shape of the 2026-10-19 00:24-00:34 A/A pair: quiet window with one natural two-sample burst.
+        return window(n=10, available_gib=8.5, reads=2.0) + [rec(available_gib=8.5, reads=peak)] * 2 + \
+            window(n=10, available_gib=8.5, reads=2.0)
+
+    def test_aa_pair_with_natural_burst_trips_raw_rule(self):
+        # Documents the false positive the null calibration exists to catch.
+        r = abcompare.compare(window(n=22, available_gib=8.5, reads=2.0), self.burst_window(2000))
+        self.assertEqual(r["verdict"], "cosmetic-or-harmful")
+        self.assertIsNone(r["null_calibration"])
+
+    def test_spike_within_null_ceiling_is_not_counted(self):
+        null = [(window(n=22, available_gib=8.5, reads=2.0), self.burst_window(2000))]
+        r = abcompare.compare(window(n=22, available_gib=8.5, reads=2.0), self.burst_window(1500), null_pairs=null)
+        self.assertEqual(r["verdict"], "cosmetic")
+        self.assertFalse(r["refault"]["page_reads_per_sec"]["beyond_null"])
+        self.assertIn("within A/A noise", r["reason"])
+        self.assertEqual(r["null_calibration"]["pairs_flagged_by_raw_rule"], 1)
+
+    def test_spike_beyond_null_ceiling_still_counts(self):
+        null = [(window(n=22, available_gib=8.5, reads=2.0), self.burst_window(200))]
+        r = abcompare.compare(window(n=22, available_gib=8.5, reads=2.0),
+                              [rec(available_gib=10.5, reads=3000)] * 22, null_pairs=null)
+        self.assertEqual(r["verdict"], "cosmetic-or-harmful")
+        self.assertTrue(r["refault"]["page_reads_per_sec"]["beyond_null"])
+
+    def test_gain_with_suppressed_spike_is_benefit(self):
+        null = [(window(n=22, available_gib=8.5, reads=2.0), self.burst_window(2000))]
+        b = window(n=10, available_gib=10.5, reads=2.0) + [rec(available_gib=10.5, reads=1500)] * 2 + \
+            window(n=10, available_gib=10.5, reads=2.0)
+        r = abcompare.compare(window(n=22, available_gib=8.5, reads=2.0), b, null_pairs=null)
+        self.assertEqual(r["verdict"], "benefit-for-this-workload")
+
+    def test_cli_ab_null_requires_ab_compare(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            main(["--ab-null", "a.jsonl", "b.jsonl"])
+
+    def test_cli_ab_null_end_to_end(self):
+        with tempfile.TemporaryDirectory() as d:
+            paths = {}
+            for name, rows in (("a", window(n=22, available_gib=8.5, reads=2.0)), ("b", self.burst_window(1500)),
+                               ("n1", window(n=22, available_gib=8.5, reads=2.0)), ("n2", self.burst_window(2000))):
+                paths[name] = Path(d) / f"{name}.jsonl"
+                paths[name].write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = main(["--ab-compare", str(paths["a"]), str(paths["b"]),
+                             "--ab-null", str(paths["n1"]), str(paths["n2"])])
+            self.assertEqual(code, 0)
+            self.assertIn("A/A null calibration: 1 pair(s)", out.getvalue())
+            self.assertIn("Verdict: cosmetic", out.getvalue())
 
 
 if __name__ == "__main__":

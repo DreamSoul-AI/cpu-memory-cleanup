@@ -421,3 +421,27 @@ misread as release cost (or a quiet B as benefit).
 - Proposed rule (not yet adopted): run at least one A/A pair right before each live A/B and report
   the A/A refault spread alongside the A/B result, so a release-induced spike is judged against
   same-evening noise.
+
+### A/A result (2026-10-19 00:35 Asia/Shanghai): the raw spike rule gives a false positive
+
+Labelled: daily desktop load, no experiment load, **no release in either window**, 2 windows x 30
+samples at 10 s (A1 00:24:14-00:29:04, A2 00:29:04-00:33:54 Asia/Shanghai), age and residual
+series running alongside (read-only).
+
+- `--ab-compare logs/aa-A1.jsonl logs/aa-A2.jsonl` returned **`cosmetic-or-harmful`** with the
+  pre-registered rule, i.e. it would have charged refault cost to a release that never happened.
+- Cause: one natural two-sample burst in A2 at about 00:30:54-00:31:04 (page_reads/s 1648 and 2124,
+  disk read up to 18.4 MB/s; source not identified). Outside it the windows are alike: page_reads/s
+  median 2.5 vs 3.6, pages_input/s median 17.8 vs 15.1, disk read median 0.14 vs 0.14 MB/s.
+  Means are dominated by the burst: page_reads/s 6.0 vs 143.6 (limit 14.0, excess ratio 10.2),
+  pages_input/s 34.1 vs 428.2 (limit 101.2, ratio 4.2), disk read 0.19 vs 1.67 MB/s (ratio 0.3,
+  not flagged).
+- Levels barely moved with no release: available tail -0.03 GiB, commit median -0.27 GiB, standby
+  median +0.12 GiB. So the 0.5 GiB level threshold looks adequate; the refault rule does not.
+- Consequence, as pre-committed above: the rule is revised **before** any live A/B. `--ab-compare`
+  now takes repeatable `--ab-null A B` A/A pairs; the largest A/A excess ratio per metric becomes the
+  noise ceiling, and a B refault spike only counts as release cost if it exceeds that ceiling.
+  Without null pairs the output says the rule is uncalibrated. Refault medians are now printed next
+  to means. 6 new tests (97 total) pass; no release was performed.
+- One A/A pair is itself a thin ceiling. Proposal for the live run: alternate windows
+  A/A, A/B, A/A, A/B (at least 2 null pairs) and report every pair, not only the verdict.

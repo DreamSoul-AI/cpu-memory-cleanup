@@ -203,7 +203,12 @@ def main(argv=None):
     parser.add_argument("--ab-compare", type=Path, nargs=2, metavar=("A_JSONL", "B_JSONL"),
                         help="offline read-only A/B comparison of two --sample JSONL windows (A no release, "
                              "B after one --release) with the pre-registered verdict; takes no action")
+    parser.add_argument("--ab-null", type=Path, nargs=2, action="append", metavar=("A_JSONL", "B_JSONL"),
+                        help="with --ab-compare: an A/A null pair (no release in either window); repeatable. "
+                             "A B refault spike only counts if it exceeds the largest A/A excess")
     args = parser.parse_args(argv)
+    if args.ab_null is not None and args.ab_compare is None:
+        parser.error("--ab-null requires --ab-compare")
     if args.release_preflight:
         others = {k: v for k, v in vars(args).items() if k not in ("json", "release_preflight", "top")}
         if any(v not in (None, False) for v in others.values()) or args.top != 10:
@@ -228,7 +233,7 @@ def main(argv=None):
                 or args.commit_above_pct is not None or args.sustain is not None):
             parser.error("--ab-compare can only be combined with --json")
         try:
-            comparison = ab_compare_files(*args.ab_compare)
+            comparison = ab_compare_files(*args.ab_compare, null_paths=args.ab_null)
         except (OSError, ValueError) as exc:
             emit_failure(args.json, f"A/B comparison failed: {exc}")
             return 1

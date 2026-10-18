@@ -321,3 +321,8 @@ windows, so refault noise is large. Before the live A/B, an A/A pair (`--sample 
 --count 30` x 2, read-only) is compared with `--ab-compare`; the comparator must return neither
 benefit nor spike on it. Proposal: pair each live A/B with a fresh A/A and report both. Details
 and results: docs/validation.md "A/A null calibration of the comparator".
+
+- 2026-10-19 00:35 result: the single A/A pair tripped the raw spike rule (`cosmetic-or-harmful`
+  with no release) because of one natural burst. Adopted before any live A/B: `--ab-null` A/A pairs
+  set a per-metric noise ceiling and only B excess beyond it counts. Live A/B plan: interleave
+  A/A and A/B windows, at least two null pairs. Details in `docs/validation.md`.
