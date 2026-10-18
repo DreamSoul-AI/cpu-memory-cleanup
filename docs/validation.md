@@ -727,3 +727,104 @@ available; top-10 owners omit anyone who never entered that list;
 per-process identities are not recorded, so "the same survivor" is only
 supported for the age of the oldest member, not for a named PID. Nothing
 here makes terminating any process safe or allowed.
+
+## Live A/B attempt interrupted (2026-10-19 05:07 Asia/Shanghai)
+
+`python -m cpu_memory_cleanup --ab-protocol logs\ab-live-20261019 --ab-live`
+started at 05:04:04 Asia/Shanghai (21:04:04 UTC) and stopped when Cursor
+closed at about 05:07. The directory is left untouched as that attempt.
+It holds only `pair1-AA-1.jsonl`: 24 of 30 samples (index 0-23), last
+sample 05:07:54 Asia/Shanghai. Every record has `cleanup_performed: false`.
+No `pair*-release.json` was written, and no `ab-protocol` process was
+still running at 05:18. No real release occurred. This file is not
+resumed; the re-run uses a new directory.
+
+## Live A/B protocol (daily desktop load, 2026-10-19 05:20-05:59 Asia/Shanghai)
+
+Scope: daily desktop load, no experimental load. Pattern `AA,AB,AA,AB`,
+eight windows, 30 samples x 10 s (about 5 min each). Started 05:20:44,
+last sample 05:59:40 Asia/Shanghai (21:20:44-21:59:40 UTC). Output:
+gitignored `logs/ab-live-20261019-r2/` (`protocol.json`, eight window
+JSONL files, two release records). Launched detached from the editor
+(`Start-Process` of `python -m cpu_memory_cleanup --ab-protocol
+logs\ab-live-20261019-r2 --ab-live`, parented under WmiPrvSE so closing
+Cursor would not kill it). Guards were ok. Status `completed`. Exit left
+no stderr. The interrupted directory above was not an input.
+
+The release is the authorised default `both`: one
+`MemoryEmptyWorkingSets` and one `MemoryPurgeStandbyList`, in that order,
+once before each B window (05:35:21 and 05:54:50). Both calls returned
+`STATUS_SUCCESS (0x00000000)` both times. They run together, so the
+5-minute windows are not a clean single-mechanism contrast. The
+before/after snapshot still separates them: a working-set empty shows up
+as a modified-list jump and a following disk-write burst; a standby purge
+shows up as the standby list going to ~0. Refault cost below is judged
+against the A/A noise ceiling from this same run, not against the free
+number.
+
+On both releases the process token already had
+`SeProfileSingleProcessPrivilege` enabled (`enabled_by_default: false`;
+the read-only preflight runs before the scope and reported `enabled:
+true`). The scope therefore did not turn it on (`enabled_by_tool: false`)
+and did not turn it off (left as found). No UAC prompt, no elevation.
+
+A/A noise ceiling, from the two null pairs (largest excess ratio, B mean
+divided by the spike limit). Pair 1 AA itself tripped the raw page-reads
+rule with no release (26.2 to 67.8 /s, excess 1.53), and that ratio is
+the page-reads ceiling. Pair 3 AA did not trip any raw rule.
+
+| Metric | A/A ceiling (excess) | AB pair 2 (05:35, after release) | AB pair 4 (05:54, after release) |
+| --- | ---: | --- | --- |
+| page reads /s | 1.53 | 177 to 789, excess 2.91, beyond ceiling | 684 to 1787, excess 1.73, beyond ceiling (narrowly) |
+| pages input /s | 0.78 | 1194 to 5156, excess 2.80, beyond ceiling | 10174 to 10124, excess 0.66, not a spike (A was already hot) |
+| disk read | 0.27 | 4.6 to 20.9 MB/s, excess 1.72, beyond ceiling | 6.0 to 41.1 MB/s, excess 2.88, beyond ceiling |
+| commit, median B-A | benefit needs a fall of at least 0.5 GiB | +0.45 GiB | -0.16 GiB |
+| available, last-third median B-A | not a benefit by itself | +21.59 GiB | +5.05 GiB |
+
+Tool verdict for both AB pairs: `cosmetic-or-harmful`. Neither pair is
+`benefit-for-this-workload`. Disk writes are not in the pre-registered
+spike rule; they are reported below as observed I/O.
+
+### Working-set emptying
+
+Immediate effect, first release: modified list 0.09 to 23.28 GiB,
+commit 65.43 to 65.61 GiB (up, not down), available 5.35 to 13.20 GiB.
+Over the next ~20 s the modified list fell to 0.48 GiB while disk writes
+hit 732 MB/s then 1502 MB/s (the B-window write mean is 80 MB/s; the
+no-release windows sit at 1.7-6.9 MB/s, with one natural blip of 36 MB/s
+and one of 52 MB/s). Hard faults in that same first 10 s were 6465 page
+reads/s and 35566 pages input/s. They did not return to the control
+level inside the 5 min window (still 253 page reads/s on the last
+sample). The second release moved much less onto the modified list (0.35
+to 4.82 GiB) because the first empty had already happened, and still
+wrote 374 MB/s in the first 10 s, with 4088 page reads/s and 24688 pages
+input/s. Commit over that window's median was -0.16 GiB.
+
+Verdict for this mechanism, on this desktop load: **cosmetic-or-harmful**.
+Commit did not fall. The pages were not cold pages that stayed out; they
+were written out and faulted back above the A/A ceiling. The higher
+available number after the call does not change that.
+
+### Standby purge
+
+Immediate effect: standby 4.25 GiB to ~0 on the first release, and 20.18
+GiB to ~0 on the second. Standby already counts as available, so that
+move by itself is not new headroom; free rose because standby became
+free. After the first purge, standby was back to 20.8 GiB within ~20 s
+(the flushed modified pages landing in standby) while disk reads were
+145 MB/s. After the second, standby only rebuilt to 5.8 GiB by 5 min,
+and disk reads stayed high for the whole window (mean 41 MB/s against
+6.0 MB/s in its A window; excess 2.88 against an A/A ceiling of 0.27).
+Both AB pairs' disk-read means cleared that ceiling. Commit did not fall
+on either pair.
+
+Verdict for this mechanism, on this desktop load: **cosmetic-or-harmful**.
+The free number rose and the cache was faulted back in from disk above
+the no-release noise. No commit was released.
+
+What this does not say: anything about experiment throughput or tail
+latency. One desktop session, mechanisms not repeated on separate
+occasions, 10 s samples. Background bursts are real (the A/A ceiling and
+the hot A window of pair 4 are in the table so a single spike is not
+mistaken for the release). Nothing here makes terminating a process safe
+or allowed. No benefit is claimed.
