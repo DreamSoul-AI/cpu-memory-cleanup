@@ -4,6 +4,7 @@ import json
 import sys
 
 from .abcompare import compare_files as ab_compare_files, format_comparison
+from . import abprotocol
 from .analysis import format_summary, summarize_file
 from .pressure import (DEFAULT_COMMIT_ABOVE_PCT, DEFAULT_FREE_BELOW_GIB, DEFAULT_SUSTAIN,
                        LiveTracker, evaluate_file, format_report)
@@ -206,7 +207,34 @@ def main(argv=None):
     parser.add_argument("--ab-null", type=Path, nargs=2, action="append", metavar=("A_JSONL", "B_JSONL"),
                         help="with --ab-compare: an A/A null pair (no release in either window); repeatable. "
                              "A B refault spike only counts if it exceeds the largest A/A excess")
+    parser.add_argument("--ab-protocol", type=Path, metavar="OUTDIR",
+                        help="bounded A/A + A/B release protocol into a fresh OUTDIR; DRY-RUN unless --ab-live "
+                             "(prints the plan and guards, samples nothing, releases nothing)")
+    parser.add_argument("--ab-live", action="store_true",
+                        help="with --ab-protocol: actually sample, releasing once before each B window; refuses "
+                             "while a tree-series log is being written or the privilege pre-flight is not ready")
+    parser.add_argument("--ab-pattern", help="with --ab-protocol: comma list of AA/AB pairs (default AA,AB,AA,AB)")
+    parser.add_argument("--ab-interval", type=float, help="with --ab-protocol: seconds between samples (default 10)")
+    parser.add_argument("--ab-count", type=int, help="with --ab-protocol: samples per window (default 30)")
     args = parser.parse_args(argv)
+    ab_proto_flags = ("ab_live", "ab_pattern", "ab_interval", "ab_count")
+    if args.ab_protocol is None and any(getattr(args, k) not in (None, False) for k in ab_proto_flags):
+        parser.error("--ab-live, --ab-pattern, --ab-interval and --ab-count require --ab-protocol")
+    if args.ab_protocol is not None:
+        allowed = ("json", "top", "ab_protocol") + ab_proto_flags
+        if any(v not in (None, False) for k, v in vars(args).items() if k not in allowed) or args.top != 10:
+            parser.error("--ab-protocol can only be combined with --json, --ab-live, --ab-pattern, --ab-interval, --ab-count")
+        try:
+            pattern = abprotocol.parse_pattern(args.ab_pattern) if args.ab_pattern else abprotocol.DEFAULT_PATTERN
+            plan = abprotocol.build_plan(pattern,
+                                         abprotocol.DEFAULT_INTERVAL if args.ab_interval is None else args.ab_interval,
+                                         abprotocol.DEFAULT_COUNT if args.ab_count is None else args.ab_count)
+            result = abprotocol.run_protocol(plan, args.ab_protocol, live=args.ab_live)
+        except (OSError, ValueError) as exc:
+            emit_failure(args.json, f"A/B protocol failed: {exc}")
+            return 1
+        print(json.dumps(result, indent=2, ensure_ascii=True) if args.json else abprotocol.format_protocol(result))
+        return 0 if (not args.ab_live or result["status"] == "completed") else 1
     if args.ab_null is not None and args.ab_compare is None:
         parser.error("--ab-null requires --ab-compare")
     if args.release_preflight:
