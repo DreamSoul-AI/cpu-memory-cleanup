@@ -95,7 +95,7 @@ def _deltas(before, after):
     return out
 
 
-def perform_release(what="both", *, nt_call=None, snapshot_fn=None):
+def perform_release(what="both", *, nt_call=None, snapshot_fn=None, preflight_fn=None):
     """Run the authorised release once. All NT access is injectable.
 
     Returns a plain dict; NT / privilege failures are recorded, not raised.
@@ -107,6 +107,9 @@ def perform_release(what="both", *, nt_call=None, snapshot_fn=None):
         snapshot_fn = lambda: _snapshot(10, include_processes=False)
     if nt_call is None:
         nt_call = _default_nt_call
+        if preflight_fn is None:
+            from .privcheck import check as preflight_fn
+    preflight = preflight_fn() if preflight_fn is not None else None
     started = datetime.now(timezone.utc).isoformat()
     before_report = snapshot_fn()
     actions = []
@@ -133,12 +136,16 @@ def perform_release(what="both", *, nt_call=None, snapshot_fn=None):
     ]
     if not performed:
         warnings.append("No release action succeeded; see actions[].ntstatus / error. No elevation was attempted.")
+    if preflight is not None and preflight.get("ready") is False:
+        missing = ", ".join(x["name"] for x in preflight.get("privileges", []) if not x["enabled"])
+        warnings.append(f"Pre-flight: {missing} not enabled in this token, so 0xC0000061 is expected. "
+                        "The tool does not enable or request privileges.")
     return {
         "schema_version": 1, "mode": "release", "release_what": what,
         "cleanup_performed": performed,
         "started_at_utc": started, "finished_at_utc": datetime.now(timezone.utc).isoformat(),
         "before": before, "after": after, "deltas": _deltas(before, after),
-        "actions": actions, "warnings": warnings,
+        "preflight": preflight, "actions": actions, "warnings": warnings,
     }
 
 
@@ -154,6 +161,11 @@ def format_release(record):
     lines = [f"Windows host memory release | 360-style | cleanup performed: {'YES' if record['cleanup_performed'] else 'NO'}",
              f"UTC: {record['started_at_utc']} .. {record['finished_at_utc']}",
              f"release_what: {record['release_what']}"]
+    pre = record.get("preflight")
+    if pre:
+        states = ", ".join(f"{x['name']}={'enabled' if x['enabled'] else ('held-disabled' if x['held'] else 'not-held')}"
+                           for x in pre.get("privileges", []))
+        lines.append(f"pre-flight: {states or pre.get('error') or 'unavailable'}")
     for action in record["actions"]:
         if action["error"]:
             lines.append(f"  {action['what']} ({action['mechanism']}, command {action['command']}): FAILED {action['error']}")

@@ -11,6 +11,7 @@ from .treesummary import format_summary as format_tree_summary, summarize_file a
 from .follow import (MAX_POLL_SECONDS, MAX_POLLS, MIN_POLL_SECONDS, follow_file, format_event,
                      format_follow_summary)
 from .release import RELEASE_WHATS, format_release, perform_release
+from .privcheck import check as privilege_check, format_check
 from .windows import (MAX_INTERVAL_SECONDS, MAX_SAMPLE_COUNT, MIN_INTERVAL_SECONDS,
                       iter_snapshots, snapshot)
 
@@ -169,6 +170,9 @@ def main(argv=None):
                              "with before/after snapshots. This is the only entry point that performs a release.")
     parser.add_argument("--release-what", choices=RELEASE_WHATS, default=None,
                         help="with --release: working-set, standby, or both (default: both, the one-click behaviour)")
+    parser.add_argument("--release-preflight", action="store_true",
+                        help="read-only: report whether the token already has the privilege --release needs enabled; "
+                             "changes nothing and enables nothing")
     parser.add_argument("--top", type=positive_int, default=10, help="process count when ranking is enabled (default: 10)")
     parser.add_argument("--sample", action="store_true",
                         help="bounded read-only series; requires --interval, --count, and --jsonl or --json")
@@ -200,6 +204,13 @@ def main(argv=None):
                         help="offline read-only A/B comparison of two --sample JSONL windows (A no release, "
                              "B after one --release) with the pre-registered verdict; takes no action")
     args = parser.parse_args(argv)
+    if args.release_preflight:
+        others = {k: v for k, v in vars(args).items() if k not in ("json", "release_preflight", "top")}
+        if any(v not in (None, False) for v in others.values()) or args.top != 10:
+            parser.error("--release-preflight can only be combined with --json")
+        record = privilege_check()
+        print(json.dumps(record, indent=2, ensure_ascii=True) if args.json else format_check(record))
+        return 1 if record.get("error") else 0
     if args.release:
         if (args.sample or args.analyze is not None or args.pressure is not None or args.pressure_follow is not None
                 or args.tree_summary is not None or args.ab_compare is not None or args.interval is not None or args.count is not None

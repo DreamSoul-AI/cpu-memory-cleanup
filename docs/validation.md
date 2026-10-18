@@ -390,3 +390,12 @@ fall or a sustained available gain with no hard-fault/disk spike above A;
 a rapid refault spike is cosmetic-or-harmful for that mechanism. If the
 release call returns `STATUS_PRIVILEGE_NOT_HELD`, record that here as the
 blocker ? do not elevate and do not retry as administrator from code.
+
+### Privilege pre-flight tool, live read (2026-10-19 00:24 Asia/Shanghai)
+
+`python -m cpu_memory_cleanup --release-preflight`, run once from the elevated Administrator
+shell used for this project's checks (read-only token query, nothing enabled):
+`SeProfileSingleProcessPrivilege: held but disabled`, so a live `--release` from that shell is
+expected to fail with 0xC0000061 until Enmao decides whether the tool may enable that
+already-held privilege in its own token. No release was run; both read-only series
+(age f813ba37, residual f9059e66) were left undisturbed. 90 tests pass.

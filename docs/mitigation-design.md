@@ -307,3 +307,10 @@ first live release is expected to fail with 0xC0000061. Whether the tool may ena
 already-held privilege in its own token is an open decision for Enmao (section 5 style), not
 assumed. See docs/validation.md "A/B tooling and pre-flight check".
 
+2026-10-19 00:25 Asia/Shanghai: the pre-flight is now a tool, `python -m cpu_memory_cleanup
+--release-preflight [--json]` (`cpu_memory_cleanup/privcheck.py`). It opens the own process token
+with TOKEN_QUERY only and reports held / enabled for SeProfileSingleProcessPrivilege; it enables
+and requests nothing. `--release` records the same pre-flight in its output and warns that
+0xC0000061 is expected when the privilege is not enabled. The enable-or-not decision above is
+unchanged and still open.
+
