@@ -6,6 +6,7 @@ import sys
 from .analysis import format_summary, summarize_file
 from .pressure import (DEFAULT_COMMIT_ABOVE_PCT, DEFAULT_FREE_BELOW_GIB, DEFAULT_SUSTAIN,
                        LiveTracker, evaluate_file, format_report)
+from .treesummary import format_summary as format_tree_summary, summarize_file as summarize_tree_file
 from .follow import (MAX_POLL_SECONDS, MAX_POLLS, MIN_POLL_SECONDS, follow_file, format_event,
                      format_follow_summary)
 from .windows import (MAX_INTERVAL_SECONDS, MAX_SAMPLE_COUNT, MIN_INTERVAL_SECONDS,
@@ -175,7 +176,25 @@ def main(argv=None):
     parser.add_argument("--polls", type=poll_count, help=f"--pressure-follow poll count (1..{MAX_POLLS})")
     parser.add_argument("--poll-interval", type=poll_seconds,
                         help=f"--pressure-follow seconds between polls ({MIN_POLL_SECONDS}..{MAX_POLL_SECONDS})")
+    parser.add_argument("--tree-summary", type=Path, metavar="JSONL",
+                        help="offline read-only summary of a scripts/tree-series.ps1 JSONL log "
+                             "(process trees, member age buckets, commit residual); takes no action")
     args = parser.parse_args(argv)
+    if args.tree_summary is not None:
+        if (args.pressure is not None or args.pressure_follow is not None or args.analyze is not None
+                or args.sample or args.interval is not None or args.count is not None or args.jsonl is not None
+                or args.with_processes or args.polls is not None or args.poll_interval is not None
+                or args.free_below_gib is not None or args.commit_above_pct is not None
+                or args.sustain is not None):
+            parser.error("--tree-summary can only be combined with --json")
+        try:
+            tree_summary = summarize_tree_file(args.tree_summary)
+        except (OSError, ValueError) as exc:
+            emit_failure(args.json, f"Tree summary failed: {exc}")
+            return 1
+        print(json.dumps(tree_summary, indent=2, ensure_ascii=True) if args.json
+              else format_tree_summary(tree_summary))
+        return 0
     threshold_flags = (args.free_below_gib is not None or args.commit_above_pct is not None
                        or args.sustain is not None)
     if args.pressure_follow is not None:

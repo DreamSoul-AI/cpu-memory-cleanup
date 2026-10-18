@@ -38,6 +38,9 @@ python -m cpu_memory_cleanup --analyze logs\idle-baseline.jsonl --json
 # 或有界跟随另一个窗口里 scripts\tree-series.ps1 正在追加的日志：
 python -m cpu_memory_cleanup --pressure logs\tree-series.jsonl
 python -m cpu_memory_cleanup --pressure-follow logs\tree-series.jsonl --polls 30 --poll-interval 60
+
+# 离线汇总 tree-series 日志（进程树水位、成员年龄分桶、commit 残差；纯文件解析，不做任何动作）：
+python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 ```
 
 文本以 GiB 显示，JSON 容量为整数 bytes，速率为每秒浮点数，缺失指标为 null；0 是实际取得的零。退出码 0 表示本次巡检或整段采样完成（可能有缺失指标，须读 warnings），1 表示核心 API、平台或日志写入错误，2 表示参数错误。采样期间数据持续变化，不是原子快照。`--top` 排名只覆盖可读取的进程，同名项对应不同进程；working set 含共享页，不能相加或当成可回收量。
@@ -95,7 +98,7 @@ python -m cpu_memory_cleanup --pressure-follow logs\tree-series.jsonl --polls 30
    说明子进程确实会被回收，水位跟着使用活动走。
    22:19 单点快照里“累积不回收”的猜测不成立；单个 `server.mjs`
    能活多久仍未知（序列未记录每个成员的年龄）。
-4. （脚本部分已完成 2026-10-18 23:12：`scripts/tree-series.ps1` 每拍新增 `age_buckets` 聚合，按 `server_mjs` / `cua_repl` / `node_repl` 分 lt10m、10to60m、1to3h、gt3h、unknown 五档写进程数与私有 commit，另写各类最老年龄；补静态测试和单拍只读冒烟测试，30 测试过。60 秒 × 120 的序列 23:12:06 起在跑，写 gitignored 的 `logs\tree-series-age.jsonl`，约 01:11 结束后离线分析写入 docs/validation.md）(f) 成员年龄分桶：给 `scripts/tree-series.ps1` 加 `server.mjs` / `cua-repl.mjs` /
+4. （脚本部分已完成 2026-10-18 23:12：`scripts/tree-series.ps1` 每拍新增 `age_buckets` 聚合，按 `server_mjs` / `cua_repl` / `node_repl` 分 lt10m、10to60m、1to3h、gt3h、unknown 五档写进程数与私有 commit，另写各类最老年龄；补静态测试和单拍只读冒烟测试，30 测试过。60 秒 × 120 的序列 23:12:06 起在跑，写 gitignored 的 `logs\tree-series-age.jsonl`，约 01:11 结束后离线分析写入 docs/validation.md。离线汇总工具 2026-10-19 已完成：`python -m cpu_memory_cleanup --tree-summary <JSONL>`（cpu_memory_cleanup/treesummary.py，纯文件解析、不调用系统接口、不做任何动作；旧日志缺字段时记为 null，不推测；新增 7 个测试，共 60 测试过）。中期读数（仅前 48/120 拍，23:12:06–23:59:06 Asia/Shanghai，60 秒间隔，日常桌面、无实验负载，序列未结束不作结论）：Codex 子树 687→208 个进程、私有 commit 12.50→4.73 GiB，server.mjs 92→24 个（6.41→1.67 GiB），说明大部分成员会退出；但有一小部分长期存活：末拍 >3 小时的 server.mjs 12 个约 0.84 GiB、cua_repl 6 个约 0.12 GiB、node_repl 18 个约 0.10 GiB，最老约 223.5 分钟。进程私有 commit 不等于可回收内存，这里只是取证）(f) 成员年龄分桶：给 `scripts/tree-series.ps1` 加 `server.mjs` / `cua-repl.mjs` /
    `node_repl.exe` 的年龄分桶计数与私有 commit（例如 <10 分钟、10–60 分钟、
    1–3 小时、>3 小时，只写聚合），补静态测试，再在日常桌面负载下跑一段
    更长的有界序列（如 60 秒 × 120）。回答：老实例是否长期不退、
