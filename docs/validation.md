@@ -343,6 +343,26 @@ authorisation (see mitigation-design.md section 7).
 - Full suite at implementation time: see the commit message / handover
   note for the count (60 pre-existing + 10 new).
 
+### A/B tooling and pre-flight check (2026-10-19 00:20 Asia/Shanghai)
+
+- Offline comparator built: `python -m cpu_memory_cleanup --ab-compare logs\ab-A.jsonl logs\ab-B.jsonl [--json]`
+  (`cpu_memory_cleanup/abcompare.py`, pure file parsing, takes no action, 11 tests, 81 total pass).
+  It applies the pre-registered rule of mitigation-design.md 7.3 mechanically: verdict
+  `benefit-for-this-workload` needs the B-minus-A median commit to fall by >= 0.5 GiB **or** the
+  median available over the last third of B to stay >= 0.5 GiB above the last third of A, **and**
+  no refault spike (B mean of page_reads/s, pages_input/s or disk read B/s above A mean x 1.5 plus a
+  floor of 5/s, 50/s, 5 MiB/s); any spike gives `cosmetic-or-harmful`; neither gives `cosmetic`;
+  missing rates give `insufficient-data`. Thresholds are proposals and are printed with the verdict.
+  Smoke run only (not an A/B): idle-baseline.jsonl vs desktop-pressure.jsonl (90 x 10 s each, two
+  different loads on 2026-10-18) parsed cleanly and correctly reported no benefit.
+- Read-only pre-flight (`whoami /priv`, 00:14 Asia/Shanghai, from the patrol shell, which is in the
+  Administrators role): `SeProfileSingleProcessPrivilege` and `SeIncreaseQuotaPrivilege` are **held but
+  disabled** in the token. `release.py` deliberately never calls `AdjustTokenPrivileges`, so the live
+  `--release` is expected to return `STATUS_PRIVILEGE_NOT_HELD (0xC0000061)` and stop. Enabling an
+  already-held privilege in the tool's own token (what one-click releasers do) is not UAC elevation, but
+  it is a privilege change in code, so it is **left for Enmao to decide** and not implemented. If the
+  live run returns 0xC0000061 it is recorded below as the blocker, as pre-registered.
+
 ### Live A/B results (stub ? pending)
 
 Status: **PENDING**. No live release was run at implementation time,

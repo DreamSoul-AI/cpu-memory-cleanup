@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import sys
 
+from .abcompare import compare_files as ab_compare_files, format_comparison
 from .analysis import format_summary, summarize_file
 from .pressure import (DEFAULT_COMMIT_ABOVE_PCT, DEFAULT_FREE_BELOW_GIB, DEFAULT_SUSTAIN,
                        LiveTracker, evaluate_file, format_report)
@@ -195,16 +196,34 @@ def main(argv=None):
     parser.add_argument("--tree-summary", type=Path, metavar="JSONL",
                         help="offline read-only summary of a scripts/tree-series.ps1 JSONL log "
                              "(process trees, member age buckets, commit residual); takes no action")
+    parser.add_argument("--ab-compare", type=Path, nargs=2, metavar=("A_JSONL", "B_JSONL"),
+                        help="offline read-only A/B comparison of two --sample JSONL windows (A no release, "
+                             "B after one --release) with the pre-registered verdict; takes no action")
     args = parser.parse_args(argv)
     if args.release:
         if (args.sample or args.analyze is not None or args.pressure is not None or args.pressure_follow is not None
-                or args.tree_summary is not None or args.interval is not None or args.count is not None
+                or args.tree_summary is not None or args.ab_compare is not None or args.interval is not None or args.count is not None
                 or args.jsonl is not None or args.with_processes or args.polls is not None or args.poll_interval is not None
                 or args.free_below_gib is not None or args.commit_above_pct is not None or args.sustain is not None):
             parser.error("--release can only be combined with --json and --release-what")
         return run_release(args)
     if args.release_what is not None:
         parser.error("--release-what requires --release")
+    if args.ab_compare is not None:
+        if (args.tree_summary is not None or args.pressure is not None or args.pressure_follow is not None
+                or args.analyze is not None or args.sample or args.interval is not None or args.count is not None
+                or args.jsonl is not None or args.with_processes or args.polls is not None
+                or args.poll_interval is not None or args.free_below_gib is not None
+                or args.commit_above_pct is not None or args.sustain is not None):
+            parser.error("--ab-compare can only be combined with --json")
+        try:
+            comparison = ab_compare_files(*args.ab_compare)
+        except (OSError, ValueError) as exc:
+            emit_failure(args.json, f"A/B comparison failed: {exc}")
+            return 1
+        print(json.dumps(comparison, indent=2, ensure_ascii=True) if args.json
+              else format_comparison(comparison))
+        return 0
     if args.tree_summary is not None:
         if (args.pressure is not None or args.pressure_follow is not None or args.analyze is not None
                 or args.sample or args.interval is not None or args.count is not None or args.jsonl is not None

@@ -296,3 +296,14 @@ that neither sampling process is still running) before window A starts.
    window. A rapid refault spike = cosmetic-or-harmful for that
    mechanism/workload. Report per mechanism; do not generalise to
    experiment load.
+
+### 7.4 Comparator and privilege pre-flight (2026-10-19 00:20 Asia/Shanghai)
+
+Step 3-4 above are now mechanised by the read-only `--ab-compare A_JSONL B_JSONL`
+(`cpu_memory_cleanup/abcompare.py`); thresholds (0.5 GiB gain / commit fall, refault spike =
+B mean > A mean x 1.5 + floor) are proposals reported with each verdict. Pre-flight found
+`SeProfileSingleProcessPrivilege` held but disabled in the token; v1 does not enable it, so the
+first live release is expected to fail with 0xC0000061. Whether the tool may enable that
+already-held privilege in its own token is an open decision for Enmao (section 5 style), not
+assumed. See docs/validation.md "A/B tooling and pre-flight check".
+
