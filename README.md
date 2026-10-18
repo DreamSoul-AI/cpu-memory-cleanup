@@ -1,5 +1,18 @@
 # cpu-memory-cleanup
 
+> **Authorisation update (2026-10-19, Asia/Shanghai):** Enmao explicitly
+> authorised a 360-style one-click memory release button with A/B
+> validation, superseding the read-only red line **only** for
+> `MemoryEmptyWorkingSets` and `MemoryPurgeStandbyList` behind the explicit
+> `--release` flag. Still absolutely forbidden: terminating any process,
+> changing system settings / pagefile / registry, and auto-elevation
+> (a missing privilege is reported as its NTSTATUS; the tool never
+> elevates). Honesty rule: standby already counts as available, so a
+> standby purge alone guarantees ~0 additional available, and a rising
+> free number alone is never claimed as a benefit ? benefit must survive
+> the refault A/B in docs/mitigation-design.md section 7. All other modes
+> remain read-only and still reject `--execute` / `--clean`.
+
 Windows CPU / 主机 RAM 安全巡检工具。长期目标是为实验机器提供有证据、可预览、可追溯的周期性内存维护；**当前阶段是一次性只读巡检，外加有界只读采样，没有任何清理执行能力**。
 
 Python 3.10+，Windows 10/11；只用标准库 ctypes 调用 Windows PSAPI / PDH，无第三方依赖，不需要安装包。当前实测环境见 [验证记录](docs/validation.md)。
@@ -20,6 +33,10 @@ Python 3.10+，Windows 10/11；只用标准库 ctypes 调用 Windows PSAPI / PDH
 Set-Location D:\GitHub\DreamSoul\cpu-memory-cleanup
 python -m cpu_memory_cleanup
 python -m cpu_memory_cleanup --json --top 10
+# Authorised 2026-10-19 (see below): explicit opt-in 360-style release, one-click default both.
+# ONLY this flag performs a release; every other mode stays read-only.
+python -m cpu_memory_cleanup --release
+python -m cpu_memory_cleanup --release --release-what standby --json
 python -m unittest discover -s tests -v
 
 # 可选：保存只读报告；logs 已加入 gitignore
@@ -119,7 +136,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
    residual_gib、residual_pct_of_commit；公式 residual = commit_used - private -
    pools - driver；Get-Counter 失败则字段为 null，不中断序列）。正在跑的 age 序列
    （run_id f813ba37）启动早于本改动，不含这些字段；下一轮序列可用来看残差是否随
-   进程数变化。RAMMap 人工对照仍可选。只读，不做任何动作。
+   进程数变化。2026-10-19 00:04:56（Asia/Shanghai）起已用当前脚本另起一段 60 秒 × 120 的有界只读残差序列（run_id f9059e66，写 gitignored 的 `logs\tree-series-residual.jsonl`，约 02:04 结束；与 age 序列重叠的约一小时内两个只读采样器同时运行），首拍残差 8.466 GiB（占 commit 14.2%，696 个进程，日常桌面、无实验负载，单拍不作结论）；结束后用 `--tree-summary` 看残差与进程数的相关性。RAMMap 人工对照仍可选。只读，不做任何动作。
 
 空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)
 （空闲基线、非实验负载；其中约 20:11（Asia/Shanghai）的释放来自外部，

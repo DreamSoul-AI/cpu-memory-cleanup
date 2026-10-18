@@ -1,11 +1,13 @@
 # Mitigation design (evidence-based, not implemented)
 
-Date: 2026-10-18 (Asia/Shanghai). Status: **design and validation gates only**.
-Nothing in this document is implemented, and nothing here authorizes running
-any cleanup action. The tool still has no cleanup function and rejects
-`--execute` / `--clean`. Red lines in the README stay in force for every
-option below: no process termination, no service stops, no system setting or
-page-file changes, no automatic elevation.
+Date: 2026-10-18 (Asia/Shanghai); section 7 added 2026-10-19.
+Status: **the 360-style release in section 7 is now implemented behind the
+explicit `--release` flag, under Enmao's 2026-10-19 authorisation, for A/B
+validation only**. Earlier sections are the pre-authorisation evidence and
+design record. `--execute` / `--clean` are still rejected; bare invocation
+stays read-only. Still forbidden for every option: no process termination,
+no service stops, no system setting / page-file / registry changes, no
+automatic elevation (missing privilege = report the NTSTATUS and stop).
 
 This is a draft. It will be revised when the 120-sample age-bucket series
 (backlog item 4, running until about 01:11 Asia/Shanghai on 2026-10-19) and an
@@ -198,3 +200,95 @@ Decision Enmao needs to make before any code crosses the read-only red line:
 
 Until Enmao makes that decision, M0 remains the direction and nothing in
 this note or the survey is an implementation authorisation.
+
+
+## 7. Authorised 360-style release + A/B validation (2026-10-19)
+
+Authorisation on record: on 2026-10-19 (Asia/Shanghai) Enmao explicitly
+chose option (b) from section 6 and authorised building a 360-style
+one-click memory release button in this repo, with A/B validation of real
+impact. This lifts the previous read-only / no-cleanup red line **only**
+for the two mechanisms below. Everything else in the red lines stands.
+
+### 7.1 Implemented (v1, `cpu_memory_cleanup/release.py`)
+
+- Entry point: `python -m cpu_memory_cleanup --release`
+  (`--release-what working-set|standby|both`, default `both` = one-click).
+  No other flag combination triggers a release; bare invocation and all
+  sampling / analysis modes stay read-only, and their records still report
+  `cleanup_performed: false`. Only this path may report a release action.
+- Mechanisms (our own ctypes code for the publicly documented mechanism;
+  no GPL code copied from memreduct / WinMemoryCleaner or others):
+  `NtSetSystemInformation(SystemMemoryListInformation=80)` with
+  `MemoryEmptyWorkingSets` (2) and/or `MemoryPurgeStandbyList` (4).
+  The NT call sits behind an injectable `nt_call` so unit tests mock it and
+  never perform a real release on any machine.
+- Deliberately NOT in v1: modified-list flush and system file-cache purge
+  (survey: modified list ~0.12 GiB on this host, no target), per-process
+  `EmptyWorkingSet` loops, and any process termination.
+- Before/after: the release path captures an existing-inspector snapshot
+  before and after, and reports commit used, available, standby
+  (core+normal+reserve) and free & zero bytes plus deltas, per-action
+  NTSTATUS, and `cleanup_performed` (true only if at least one NT call
+  returned `STATUS_SUCCESS`).
+- Privilege failure: if the token lacks e.g.
+  `SeProfileSingleProcessPrivilege`, `NtSetSystemInformation` returns e.g.
+  `STATUS_PRIVILEGE_NOT_HELD (0xC0000061)`; the tool prints that plainly,
+  exits 1, and stops. It never retries elevated, never uses `runas` /
+  `ShellExecute`, and never prompts for elevation from code.
+
+### 7.2 Framing: not pre-judged as cosmetic (Enmao, 2026-10-19 00:04)
+
+Windows' built-in memory management is coarse and not application-aware,
+and some applications keep pages in their working set that they no longer
+use. If such cold pages are emptied and the process does not touch them
+again, that memory is genuinely freed and stays freed; the cost only
+materialises if the process faults them back in. So the verdict is
+per-mechanism and evidence-based, centred on **refault behaviour**, not
+on the free number:
+
+- **Genuinely useful (for that workload):** after the release, working
+  set / available improves **and** hard faults (`page_reads_per_sec`),
+  `pages_input_per_sec` and disk read/write bytes/sec over the following
+  minutes are **not materially above** the no-release A window ? i.e. the
+  trimmed pages were cold and stayed out.
+- **Cosmetic:** free rises but standby merely moved to free (standby
+  already counts as available, so guaranteed additional available from a
+  standby purge alone is ~0), or everything returns within minutes with
+  commit unchanged.
+- **Harmful:** pages are rapidly faulted back ? a hard-fault / pages-input
+  / disk-I/O spike above the A window, or a responsiveness cost ? with no
+  sustained gain.
+- A standby purge and a working-set emptying are judged separately
+  (`--release-what`), because their refault profiles differ. Neither is
+  labelled cosmetic in advance; the A/B decides.
+
+### 7.3 Pre-registered A/B design (desktop load, labelled as such)
+
+Do NOT run any live release before the 60 s x 120 age-bucket series
+(run_id f813ba37, `logs/tree-series-age.jsonl`) ends (~01:11 Asia/Shanghai
+2026-10-19); a system-wide trim / purge would contaminate that evidence.
+
+1. Window A (control): bounded read-only sampling, no release, e.g.
+   `python -m cpu_memory_cleanup --sample --interval 10 --count 90 --jsonl logs/ab-A.jsonl`
+   under ordinary desktop load (label it desktop, non-experiment load).
+2. Window B (treatment): one release at window start, then the identical
+   sampling window:
+   `python -m cpu_memory_cleanup --release --json` followed immediately by
+   the same `--sample` command writing `logs/ab-B.jsonl`.
+   Repeat per mechanism (`--release-what working-set` / `standby`) on
+   separate occasions, not back-to-back, so windows stay comparable.
+3. Compare over the following minutes, A vs B: available / commit /
+   standby trajectories (does any gain persist or decay back?), and the
+   refault cost: `page_reads_per_sec`, `pages_input_per_sec`, disk
+   read/write bytes/sec from the sampler counters, plus any available
+   responsiveness proxy from existing counters (hard-fault rates are the
+   proxy; no experiment throughput / tail-latency exists on desktop load,
+   and none may be claimed).
+4. Verdict rule (pre-registered, from the survey + 7.2): free/standby
+   movement alone = cosmetic, validation FAILS as a benefit claim.
+   Benefit requires commit actually falling **or** a sustained available
+   gain **without** a hard-fault / disk spike materially above the A
+   window. A rapid refault spike = cosmetic-or-harmful for that
+   mechanism/workload. Report per mechanism; do not generalise to
+   experiment load.

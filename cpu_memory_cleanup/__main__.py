@@ -9,6 +9,7 @@ from .pressure import (DEFAULT_COMMIT_ABOVE_PCT, DEFAULT_FREE_BELOW_GIB, DEFAULT
 from .treesummary import format_summary as format_tree_summary, summarize_file as summarize_tree_file
 from .follow import (MAX_POLL_SECONDS, MAX_POLLS, MIN_POLL_SECONDS, follow_file, format_event,
                      format_follow_summary)
+from .release import RELEASE_WHATS, format_release, perform_release
 from .windows import (MAX_INTERVAL_SECONDS, MAX_SAMPLE_COUNT, MIN_INTERVAL_SECONDS,
                       iter_snapshots, snapshot)
 
@@ -149,9 +150,24 @@ def run_series(args):
     return 0
 
 
+def run_release(args):
+    try:
+        record = perform_release(args.release_what or "both")
+    except (OSError, ValueError) as exc:
+        emit_failure(args.json, f"Release failed before any action: {exc}")
+        return 1
+    print(json.dumps(record, indent=2, ensure_ascii=True) if args.json else format_release(record))
+    return 0 if record.get("cleanup_performed") else 1
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Read-only Windows memory inspection. No cleanup executor exists.")
+    parser = argparse.ArgumentParser(description="Windows memory inspection. Read-only unless the explicit --release flag is given (authorised 2026-10-19).")
     parser.add_argument("--json", action="store_true", help="emit JSON with byte units and null for unavailable metrics")
+    parser.add_argument("--release", action="store_true",
+                        help="EXPLICIT OPT-IN: run the authorised 360-style release once (working-set + standby by default), "
+                             "with before/after snapshots. This is the only entry point that performs a release.")
+    parser.add_argument("--release-what", choices=RELEASE_WHATS, default=None,
+                        help="with --release: working-set, standby, or both (default: both, the one-click behaviour)")
     parser.add_argument("--top", type=positive_int, default=10, help="process count when ranking is enabled (default: 10)")
     parser.add_argument("--sample", action="store_true",
                         help="bounded read-only series; requires --interval, --count, and --jsonl or --json")
@@ -180,6 +196,15 @@ def main(argv=None):
                         help="offline read-only summary of a scripts/tree-series.ps1 JSONL log "
                              "(process trees, member age buckets, commit residual); takes no action")
     args = parser.parse_args(argv)
+    if args.release:
+        if (args.sample or args.analyze is not None or args.pressure is not None or args.pressure_follow is not None
+                or args.tree_summary is not None or args.interval is not None or args.count is not None
+                or args.jsonl is not None or args.with_processes or args.polls is not None or args.poll_interval is not None
+                or args.free_below_gib is not None or args.commit_above_pct is not None or args.sustain is not None):
+            parser.error("--release can only be combined with --json and --release-what")
+        return run_release(args)
+    if args.release_what is not None:
+        parser.error("--release-what requires --release")
     if args.tree_summary is not None:
         if (args.pressure is not None or args.pressure_follow is not None or args.analyze is not None
                 or args.sample or args.interval is not None or args.count is not None or args.jsonl is not None

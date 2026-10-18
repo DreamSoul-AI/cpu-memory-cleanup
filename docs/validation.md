@@ -321,3 +321,50 @@ the Commit residual re-check above). Counter failures set the pool/driver/
 residual fields to null and do not abort the series. The age-bucket series
 started at 23:12 (run_id `f813ba37`) does **not** include these fields; use
 them on the next series after that run finishes.
+
+
+## Authorised release button: implementation tests (no live release yet)
+
+Date: 2026-10-19 (Asia/Shanghai). Recorded under Enmao's 2026-10-19
+authorisation (see mitigation-design.md section 7).
+
+- Implementation: `cpu_memory_cleanup/release.py` +
+  `python -m cpu_memory_cleanup --release [--release-what working-set|standby|both]`.
+- Unit tests (`tests/test_release.py`, 10 tests) mock the NT layer
+  (`nt_call`) and snapshot source; **no real release was performed by any
+  test, on any machine**. They cover: command mapping (2 / 4), before/after
+  deltas, single vs both mechanisms, `STATUS_PRIVILEGE_NOT_HELD` reported
+  plainly with `cleanup_performed: false`, partial success, a static check
+  that the release module contains no termination / elevation / per-process
+  calls, bare invocation staying read-only, `--release` as the only entry,
+  exit 1 (no traceback) on privilege failure, and rejection of
+  `--execute` / `--clean` / `--release-what` without `--release` /
+  incompatible flag combinations.
+- Full suite at implementation time: see the commit message / handover
+  note for the count (60 pre-existing + 10 new).
+
+### Live A/B results (stub ? pending)
+
+Status: **PENDING**. No live release was run at implementation time,
+because the 60 s x 120 age-bucket series (run_id f813ba37) was still
+running until ~01:11 Asia/Shanghai 2026-10-19 and a release would
+contaminate it. The 5-minute patrol should run, only after confirming
+that series has ended:
+
+```powershell
+Set-Location D:\GitHub\DreamSoul\cpu-memory-cleanup
+# A window (no release), then B window (one release at start), desktop load:
+python -m cpu_memory_cleanup --sample --interval 10 --count 90 --jsonl logs\ab-A.jsonl
+python -m cpu_memory_cleanup --release --json
+python -m cpu_memory_cleanup --sample --interval 10 --count 90 --jsonl logs\ab-B.jsonl
+```
+
+Then fill in, per mechanism: before/after commit / available / standby /
+free, the post-release available/commit/standby trajectory vs A, and
+page_reads/s, pages_input/s and disk read/write B/s vs A. Apply the
+pre-registered verdict in mitigation-design.md 7.3: free/standby movement
+alone is cosmetic and fails as a benefit claim; benefit needs a commit
+fall or a sustained available gain with no hard-fault/disk spike above A;
+a rapid refault spike is cosmetic-or-harmful for that mechanism. If the
+release call returns `STATUS_PRIVILEGE_NOT_HELD`, record that here as the
+blocker ? do not elevate and do not retry as administrator from code.
