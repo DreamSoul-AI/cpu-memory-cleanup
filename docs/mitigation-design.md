@@ -217,7 +217,8 @@ for the two mechanisms below. Everything else in the red lines stands.
 ### 7.1 Implemented (v1, `cpu_memory_cleanup/release.py`)
 
 - Entry point: `python -m cpu_memory_cleanup --release`
-  (`--release-what working-set|standby|both`, default `both` = one-click).
+  (`--release-what working-set|standby|both`, CLI default `both`).
+  The double-click button (section 7.6) passes `working-set` only.
   No other flag combination triggers a release; bare invocation and all
   sampling / analysis modes stay read-only, and their records still report
   `cleanup_performed: false`. Only this path may report a release action.
@@ -348,12 +349,21 @@ list out (about 27 GiB then 12 GiB, one sample at about 2732 MB/s and
 1059 MB/s). Standby purge turned standby into free and was followed by
 hard faults. Details: docs/validation.md.
 
-Recommended composition of the one-click button: **do not call either
-mechanism.** The usable artifact is
-[scripts/desktop-memory-button.cmd](../scripts/desktop-memory-button.cmd).
-Double-click it. It prints this result and runs the existing read-only
-inspection. It does not end processes, stop services, change settings, the
-page file, or the registry, and it does not elevate. `--release` stays in
-the tree for a future experiment-load A/B; it is not what the button does.
-Closing heavy apps remains the action that actually drops commit, and the
-tool does not do that either.
+On 2026-10-20 02:54 (Asia/Shanghai) Enmao decided the one-click button
+does a real release on click, unconditionally. Composition:
+
+- Double-click
+  [scripts/desktop-memory-button.cmd](../scripts/desktop-memory-button.cmd)
+  runs `python -m cpu_memory_cleanup --release --release-what working-set`
+  with no confirmation and no per-item menu. Standby purge is not called:
+  the standby-only A/B moved available only +0.24 / +0.30 GiB and hard
+  faults were about 3× that run's A/A ceiling.
+- The existing release formatter prints before/after available and commit.
+  The script then prints the measured note: under daily desktop load the
+  benefit is unproven (`cosmetic-or-harmful`) and a refault cost follows.
+  A higher available number is not claimed as a benefit.
+- `desktop-memory-button.cmd report` keeps the read-only inspection. That
+  is not the double-click action.
+- Still excluded: process termination, service stops, startup / registry /
+  settings / page-file changes, and elevation. Privilege handling stays
+  inside the existing `--release` path.

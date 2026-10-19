@@ -1,4 +1,9 @@
-"""Static safety checks for helper scripts under scripts/ (read-only only)."""
+"""Static safety checks for helper scripts under scripts/.
+
+tree-series.ps1 stays read-only. desktop-memory-button.cmd's default action
+is the authorised working-set release; it still must not kill, elevate, or
+edit settings.
+"""
 
 import json
 import re
@@ -131,16 +136,22 @@ class TreeSeriesSmokeTest(unittest.TestCase):
 
 
 class MemoryButtonTests(unittest.TestCase):
-    def test_button_is_read_only_and_states_the_verdict(self):
-        text = (SCRIPTS / "desktop-memory-button.cmd").read_text(encoding="utf-8")
+    def test_double_click_releases_working_set_only_and_states_the_cost(self):
+        text = (SCRIPTS / "desktop-memory-button.cmd").read_text(encoding="utf-8").replace("\r\n", "\n")
         lowered = text.lower()
+        release = "python -m cpu_memory_cleanup --release --release-what working-set\n"
+        report = "python -m cpu_memory_cleanup\n"
+        self.assertLess(text.index(release), text.index(":report"))
+        self.assertGreater(text.index(report), text.index(":report"))
+        self.assertNotIn("--release-what standby", lowered)
+        self.assertNotIn("--release-what both", lowered)
         for token in (
-            "--release", "taskkill", "stop-process", "stop-service", "ntsetsysteminformation",
-            "runas", "reg add", "reg.exe", "pagefile", "emptyworkingset",
+            "taskkill", "stop-process", "stop-service", "ntsetsysteminformation",
+            "runas", "reg add", "reg.exe", "pagefile", "emptyworkingset", "set /p",
         ):
             self.assertNotIn(token, lowered, token)
-        self.assertIn("python -m cpu_memory_cleanup\n", text.replace("\r\n", "\n"))
         self.assertIn("cosmetic-or-harmful", text)
+        self.assertIn("+0.24/+0.30", text)
         self.assertIn("does not release memory", lowered)
 
 

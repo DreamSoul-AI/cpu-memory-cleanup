@@ -26,7 +26,7 @@ Python 3.10+，Windows 10/11；只用标准库 ctypes 调用 Windows PSAPI / PDH
 ## 红线
 
 1. 绝不结束任何进程，尤其 Python / 训练 / 评测进程。也不停服务。working-set 清空和 standby 清除只存在于显式 `--release`（2026-10-19 授权，仅这两个调用），默认不跑。
-2. 清理默认不执行。唯一入口是显式 `--release`；A/B 协议默认 dry-run，要加 `--ab-live` 才采样并释放。传入 `--execute` / `--clean` 会被参数解析拒绝。宁可少清不能误伤。
+2. 命令行不带 `--release` 时不清理。唯一释放入口是显式 `--release`；A/B 协议默认 dry-run，要加 `--ab-live` 才采样并释放。双击 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd) 会无提示执行 `--release --release-what working-set`（不调用 standby）。传入 `--execute` / `--clean` 会被参数解析拒绝。宁可少清不能误伤。
 3. 不修改系统关键配置，不改页面文件设置，不改注册表，不关闭内存压缩来“腾内存”。不 UAC 提权。`SeProfileSingleProcessPrivilege` 只在显式 `--release` 期间、且本进程令牌已经持有它时启用，调用结束立即恢复关闭；不加新特权，不碰其它令牌或进程。
 
 只读路径只绑定明确列出的查询接口。显式 `--release` 另调用已授权的 `NtSetSystemInformation`（命令 2 与 4），不打开其它进程句柄。进程句柄只请求 `PROCESS_QUERY_LIMITED_INFORMATION (0x1000)`，读取后关闭句柄。测试覆盖 API 白名单和进程权限掩码。读取失败显示 warning / null / skipped，不尝试更高权限。一次性巡检只向 stdout/stderr 输出。采样可用 `--jsonl` 追加日志；写日志失败会停止，不继续采样。原始报告只含进程文件名和占用，不含 PID、命令行或完整路径。采样默认不排名进程。
@@ -39,10 +39,15 @@ Python 3.10+，Windows 10/11；只用标准库 ctypes 调用 Windows PSAPI / PDH
 Set-Location D:\GitHub\DreamSoul\cpu-memory-cleanup
 python -m cpu_memory_cleanup
 python -m cpu_memory_cleanup --json --top 10
-# Authorised 2026-10-19 (see below): explicit opt-in 360-style release, one-click default both.
-# ONLY this flag performs a release; every other mode stays read-only.
+# Authorised 2026-10-19. CLI default is both mechanisms. The double-click button is working-set only.
+# ONLY --release performs a release; every other mode stays read-only.
 python -m cpu_memory_cleanup --release
+python -m cpu_memory_cleanup --release --release-what working-set
 python -m cpu_memory_cleanup --release --release-what standby --json
+# Double-click, or:
+scripts\desktop-memory-button.cmd
+# Read-only, no release:
+scripts\desktop-memory-button.cmd report
 
 # A/B 协议。不加 --ab-live 就是 dry-run，不采样、不释放。
 # --ab-what 默认 both；working-set 或 standby 只跑那一个已授权调用。
@@ -89,7 +94,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 
 执行代码加入之前，必须具备默认 dry-run、明确单次执行入口、可靠的作用范围、操作前后日志、日志失败阻止执行、冷却 / 频率上限、失败停止且无激进回退。不能仅靠进程名识别实验进程；全局 standby 操作也会影响实验缓存。没有可重复的持续净收益就不启用。终止进程、关闭服务、修改关键配置等红线在后续阶段仍有效。
 
-建议下一步：日常桌面负载上，推荐的一键按钮是只读的 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd)（双击即可）。它不调用 `--release`。实验负载基线仍是第 5 项，没实验时不阻塞。
+建议下一步：双击 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd) 即执行 working-set 释放（Enmao 2026-10-20 决定，无确认、不选 standby）。日常桌面 A/B 上收益未证实，随后有硬缺页代价，按钮会把这句话和 available / commit 前后值一起打出来。实验负载基线仍是第 5 项，没实验时不阻塞。
 
 ## 交接状态（2026-10-19）
 
@@ -97,7 +102,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 - 显式 `--release` 已实现（Enmao 2026-10-19 授权）：`NtSetSystemInformation` 的 `MemoryEmptyWorkingSets` 与 `MemoryPurgeStandbyList`，`--release-what working-set|standby|both`，默认 `both`。其它模式仍只读。`SeProfileSingleProcessPrivilege` 只在这次显式释放期间、且令牌已经持有时于本进程令牌启用，用完立即恢复（`cpu_memory_cleanup/privscope.py`）。不 UAC 提权。
 - A/B 协议已实现：`python -m cpu_memory_cleanup --ab-protocol OUTDIR` 默认 dry-run；`--ab-live` 才采样，并在每个 AB 对的 B 窗开始前释放一次。默认形态 `AA,AB,AA,AB`，每窗 30 样本 × 10 秒，共 8 窗。
 - 三次日常桌面 A/B（`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s，无实验负载）判定都是 cosmetic-or-harmful。口径与细节见 [docs/validation.md](docs/validation.md)。合并 `both`：2026-10-19 05:20:44–05:59:40，可用内存尾段约 +21.6 GiB 和 +5.0 GiB，commit 中位数约 +0.45 GiB 和 −0.16 GiB，硬缺页与磁盘读超过 A/A 上限。仅 standby：2026-10-19 06:16:53–06:55:37，可用内存几乎不动随后下降，commit 不降，硬缺页超过上限。仅 working-set：2026-10-20 02:04:20–02:43:07，modified 列表约 +27 GiB 和 +12 GiB 并在一拍内写回磁盘（峰值约 2732 MB/s 和 1059 MB/s），commit 不降，硬缺页超过上限。可用内存上升本身不算收益。
-- 推荐的一键按钮因此不释放内存：双击 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd)，只打印上述结论并跑只读巡检。不结束进程，不改系统设置。`--release` 仍留在代码里，供以后实验负载 A/B，不是这个按钮。
+- 一键按钮（Enmao 2026-10-20 02:54）：双击 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd) 无提示执行 `--release --release-what working-set`，然后打印 available / commit 前后值和日常桌面证据：收益未证实，随后有硬缺页代价。standby 不调用（仅 standby 的可用内存只 +0.24 / +0.30 GiB，硬缺页约 3 倍于 A/A 上限）。`report` 参数仍是只读巡检。不结束进程，不改系统设置，不提权。
 - [360 专项调研](docs/360_memory_cleanup.md)：官方资料确认加速球具有关闭进程的能力；具体是否修剪工作集、清 standby 及各自贡献比例仍未证实。standby 已计入 Available；工作集修剪不释放应用 commit，并会带来重新调页代价。绝不能结束任何进程，尤其训练 / 评测 / Python 进程。
 - [GitHub 同类项目调研](docs/github_survey.md)：优先参考 System Informer 的分类和状态处理、MemListMgr 的单项动作拆分，以及 Mem Reduct 的冷却 / 日志思路；源码事实、README 声称、维护日期限制和许可证分别标注。尚未引入任何上游清理实现，也不采用自动提权或全局组合清理。
 - 主机侧 Available、commit、硬缺页和磁盘 I/O 已能写入 JSONL。实验负载下与吞吐、尾延迟按 UTC 对齐仍未做（待办第 5 项）。2026-10-19 的授权只覆盖上面两个调用加 A/B，不把文档里的其它候选变成执行授权。
@@ -107,7 +112,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 
 例行每轮取本清单第一个未完成的动作项推进；没有实验负载不是停工理由，
 第 5 项只在真实实验恰好运行时顺带做。第 9、10 项已完成。下一项是第 5 项。
-只读巡检仍然是默认。推荐按钮不调用 `--release`。
+命令行不带 `--release` 仍然只读。双击按钮会做 working-set 释放。
 
 1. （已完成 2026-10-18 22:14，见 [docs/desktop-pressure-summary.md](docs/desktop-pressure-summary.md)；分析器已能按进程名汇总排名）(a) 日常桌面压力下的有界 `--with-processes` 只读采样：例如
    `--sample --interval 10 --count 90 --with-processes --jsonl logs\desktop-pressure.jsonl`，

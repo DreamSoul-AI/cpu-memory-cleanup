@@ -1,18 +1,33 @@
 @echo off
 setlocal
 cd /d "%~dp0.."
+if /I "%~1"=="report" goto report
+
 echo.
-echo Desktop memory button. Read-only. This does not release memory.
+echo Desktop memory button. Working-set release only. Standby purge is not called.
+echo Runs immediately. No confirmation and no per-item selection.
+echo Does not end processes, stop services, or change system settings.
 echo.
-echo Three A/B runs on daily desktop load (AA,AB,AA,AB; 8 windows x 30 samples x 10 s)
-echo all returned cosmetic-or-harmful. A higher free number is not a benefit.
-echo   combined both      2026-10-19 05:20-05:59 Asia/Shanghai
-echo   standby purge      2026-10-19 06:16-06:55 Asia/Shanghai
-echo   working-set empty  2026-10-20 02:04-02:43 Asia/Shanghai
-echo Commit did not fall. Hard faults, pages input, or disk I/O rose above the A/A ceiling.
-echo If commit is the problem, close heavy apps yourself. This button does not end processes
-echo and does not change system settings, the page file, or the registry.
+python -m cpu_memory_cleanup --release --release-what working-set
+set RC=%ERRORLEVEL%
 echo.
-python -m cpu_memory_cleanup
+echo Before/after available and commit are the lines above. A higher available number is not a proven benefit.
+echo Measured evidence, daily desktop load, AA,AB,AA,AB, 8 windows x 30 samples x 10 s:
+echo   working-set empty  2026-10-20 02:04-02:43 Asia/Shanghai  cosmetic-or-harmful
+echo   Commit did not fall. Hard faults rose above that run's A/A ceiling, and a refault cost follows.
+echo   Standby purge is excluded: standby-only A/B showed available only +0.24/+0.30 GiB with about 3x the refault ceiling.
+echo This button does not end processes and does not change system settings, the page file, or the registry.
+echo Report-only, no release: run this script with the argument report.
 echo.
 pause
+exit /b %RC%
+
+:report
+echo.
+echo Desktop memory button, report-only. This does not release memory.
+echo.
+python -m cpu_memory_cleanup
+set RC=%ERRORLEVEL%
+echo.
+pause
+exit /b %RC%

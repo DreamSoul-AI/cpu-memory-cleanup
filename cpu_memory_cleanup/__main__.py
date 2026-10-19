@@ -170,7 +170,8 @@ def main(argv=None):
                         help="EXPLICIT OPT-IN: run the authorised 360-style release once (working-set + standby by default), "
                              "with before/after snapshots. This is the only entry point that performs a release.")
     parser.add_argument("--release-what", choices=RELEASE_WHATS, default=None,
-                        help="with --release: working-set, standby, or both (default: both, the one-click behaviour)")
+                        help="with --release: working-set, standby, or both (default: both). "
+                             "The double-click button passes working-set and does not purge standby.")
     parser.add_argument("--release-preflight", action="store_true",
                         help="read-only: report whether the token holds / has enabled the privilege --release needs; "
                              "changes nothing and enables nothing")
