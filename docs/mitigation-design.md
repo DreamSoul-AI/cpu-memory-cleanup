@@ -354,8 +354,9 @@ does a real release on click, unconditionally. Composition:
 
 - Double-click
   [scripts/desktop-memory-ui.cmd](../scripts/desktop-memory-ui.cmd)
-  (2026-10-20). It opens one tkinter window: live physical-used percent,
-  available / total, commit, and one accelerate button. The button calls
+  (2026-10-20). It opens one tkinter window in view-only mode: live
+  physical-used percent, available / total, commit, and one accelerate
+  button. Opening does not release. The button calls
   `perform_release("working-set")` with no confirmation and no menu — the
   same function as `--release --release-what working-set`. The bar keeps
   polling through the call, then the window shows that call's before/after
@@ -364,11 +365,12 @@ does a real release on click, unconditionally. Composition:
   run's A/A ceiling.
 - The window states the measured note: under daily desktop load the benefit
   is unproven (`cosmetic-or-harmful`) and a refault cost follows. A higher
-  available number is not claimed as a benefit.
+  available number is not claimed as a benefit. Until the button is clicked
+  the status says the window is still view-only.
 - [scripts/desktop-memory-button.cmd](../scripts/desktop-memory-button.cmd)
-  remains the console fallback and does the same working-set release.
-  `desktop-memory-button.cmd report` is the read-only inspection. That is
-  not the double-click action.
+  is the console fallback. Double-click is a read-only report (2026-10-20
+  05:16: the no-argument path used to release on open). Working-set release
+  requires the explicit argument `release`.
 - Still excluded: process termination, service stops, startup / registry /
   settings / page-file changes, and elevation. Privilege handling stays
   inside the existing `--release` path.

@@ -1,8 +1,8 @@
 """Static safety checks for helper scripts under scripts/.
 
-tree-series.ps1 stays read-only. desktop-memory-button.cmd's default action
-is the authorised working-set release; it still must not kill, elevate, or
-edit settings.
+tree-series.ps1 stays read-only. desktop-memory-button.cmd's default
+double-click is a read-only report; working-set release needs the explicit
+argument release. It still must not kill, elevate, or edit settings.
 """
 
 import json
@@ -136,13 +136,16 @@ class TreeSeriesSmokeTest(unittest.TestCase):
 
 
 class MemoryButtonTests(unittest.TestCase):
-    def test_double_click_releases_working_set_only_and_states_the_cost(self):
+    def test_double_click_is_read_only_until_release_argument(self):
         text = (SCRIPTS / "desktop-memory-button.cmd").read_text(encoding="utf-8").replace("\r\n", "\n")
         lowered = text.lower()
-        release = "python -m cpu_memory_cleanup --release --release-what working-set\n"
-        report = "python -m cpu_memory_cleanup\n"
-        self.assertLess(text.index(release), text.index(":report"))
-        self.assertGreater(text.index(report), text.index(":report"))
+        head, sep, tail = lowered.partition(":release\n")
+        self.assertEqual(sep, ":release\n")
+        self.assertIn('if /i "%~1"=="release" goto release', head)
+        self.assertNotIn("--release", head)
+        self.assertIn("python -m cpu_memory_cleanup\n", head)
+        self.assertIn("does not release memory", head)
+        self.assertIn("python -m cpu_memory_cleanup --release --release-what working-set\n", tail)
         self.assertNotIn("--release-what standby", lowered)
         self.assertNotIn("--release-what both", lowered)
         for token in (
@@ -152,7 +155,6 @@ class MemoryButtonTests(unittest.TestCase):
             self.assertNotIn(token, lowered, token)
         self.assertIn("cosmetic-or-harmful", text)
         self.assertIn("+0.24/+0.30", text)
-        self.assertIn("does not release memory", lowered)
 
 
 if __name__ == "__main__":

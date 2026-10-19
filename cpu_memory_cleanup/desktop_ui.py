@@ -94,6 +94,7 @@ class MemoryWindow:
         self._polling = False
         self._poll_busy = False
         self._releasing = False
+        self._asked = False
         self._shown = None
         self._anim_from = None
         self._anim_to = None
@@ -127,10 +128,12 @@ class MemoryWindow:
             padx=24, pady=14,
         )
         self.button.pack(fill="x", padx=36, pady=(4, 12))
-        self.status = tk.Label(root, text="正在读取…", fg=MUTED, bg=BG, font=(family, 11))
+        self.status = tk.Label(
+            root, text="只读查看。正在读取，尚未释放。", fg=MUTED, bg=BG, font=(family, 11),
+        )
         self.status.pack()
         self.result = tk.Label(
-            root, text="点按钮后这里显示可用内存和 Commit 的前后值。",
+            root, text="当前只读，尚未释放。点「一键加速」后这里才显示可用内存和 Commit 的前后值。",
             fg=INK, bg=BG, font=(family, 11), justify="left", wraplength=380,
         )
         self.result.pack(padx=28, pady=(12, 8), anchor="w")
@@ -161,8 +164,8 @@ class MemoryWindow:
             text=f"Commit {format_gib(levels.get('commit_used_bytes'))} / {format_gib(levels.get('commit_limit_bytes'))}"
         )
         self._set_target(used_percent(levels))
-        if not self._releasing:
-            self.status.configure(text="约每 0.2 秒刷新。百分比和用量条会平滑过渡。按钮只清空 working set。")
+        if not self._releasing and not self._asked:
+            self.status.configure(text="只读查看。尚未释放。点「一键加速」才会清空 working set。")
 
     def _set_target(self, target):
         if target is None:
@@ -213,6 +216,7 @@ class MemoryWindow:
     def accelerate(self):
         if self._releasing:
             return
+        self._asked = True
         self._releasing = True
         self.button.configure(state="disabled", text="正在加速…")
         self.status.configure(text="正在加速… 只清空 working set。用量会跟着变。standby 不会动。")

@@ -57,6 +57,41 @@ class ViewTests(unittest.TestCase):
 
 
 class WindowTests(unittest.TestCase):
+    def test_opening_and_polling_does_not_release(self):
+        import tkinter as tk
+        from cpu_memory_cleanup.desktop_ui import MemoryWindow
+
+        calls = []
+
+        def release_fn(what):
+            calls.append(what)
+            raise AssertionError("release on open")
+
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            window = MemoryWindow(root, lambda: LEVELS, release_fn, poll_ms=20)
+            self.assertIn("尚未释放", window.status.cget("text"))
+            window.start()
+            deadline = time.monotonic() + 0.35
+            while time.monotonic() < deadline:
+                window.pump()
+                root.update()
+                time.sleep(0.02)
+            self.assertEqual(calls, [])
+            self.assertIn("只读查看", window.status.cget("text"))
+            self.assertIn("尚未释放", window.status.cget("text"))
+            self.assertEqual(window.button.cget("text"), "一键加速")
+            self.assertEqual(str(window.button.cget("state")), "normal")
+            source = UI.read_text(encoding="utf-8")
+            self.assertEqual(source.count("self.release_fn("), 1)
+            self.assertIn("command=self.accelerate,", source)
+            self.assertNotIn("self.accelerate()", source)
+        finally:
+            window.stop()
+            root.destroy()
+
+
     def test_button_releases_working_set_only_and_shows_before_after(self):
         import tkinter as tk
         from cpu_memory_cleanup.desktop_ui import EVIDENCE_NOTE, MemoryWindow
