@@ -10,11 +10,13 @@ perform_release.
 
 import queue
 import threading
+import time
 import tkinter as tk
 from tkinter import font as tkfont
 
 RELEASE_WHAT = "working-set"
-POLL_MS = 400
+POLL_MS = 200
+ANIM_MS = 800
 
 EVIDENCE_NOTE = (
     "日常桌面负载下收益未证实（cosmetic-or-harmful），释放后会有硬缺页代价。"
@@ -41,11 +43,22 @@ def format_signed(value):
 
 
 def used_percent(levels):
+    """Physical memory used percent: (total - available) / total. Not a composite score."""
     total = levels.get("total_bytes")
-    used = levels.get("used_bytes")
-    if not total or used is None:
+    available = levels.get("available_bytes")
+    if not total or available is None:
         return None
-    return max(0.0, min(100.0, used / total * 100.0))
+    return max(0.0, min(100.0, (total - available) / total * 100.0))
+
+
+def smoothstep(start, end, t):
+    """Interpolate start→end. t is 0..1 over the animation; outside that it clamps."""
+    if t <= 0:
+        return start
+    if t >= 1:
+        return end
+    s = t * t * (3.0 - 2.0 * t)
+    return start + (end - start) * s
 
 
 def format_result(record):
@@ -70,24 +83,36 @@ def format_result(record):
 
 
 class MemoryWindow:
-    def __init__(self, root, levels_fn, release_fn, poll_ms=POLL_MS):
+    def __init__(self, root, levels_fn, release_fn, poll_ms=POLL_MS, anim_ms=ANIM_MS, clock=None):
         self.root = root
         self.levels_fn = levels_fn
         self.release_fn = release_fn
         self.poll_ms = poll_ms
+        self.anim_ms = anim_ms
+        self._clock = clock or time.monotonic
         self._events = queue.Queue()
         self._polling = False
         self._poll_busy = False
         self._releasing = False
+        self._shown = None
+        self._anim_from = None
+        self._anim_to = None
+        self._anim_t0 = None
+        self._anim_job = None
         root.title("内存加速")
         root.configure(bg=BG)
-        root.geometry("440x640")
-        root.minsize(400, 580)
+        root.geometry("440x680")
+        root.minsize(400, 620)
         family = "Microsoft YaHei UI"
-        self.percent = tk.Label(root, text="--%", fg=INK, bg=BG, font=(family, 64, "bold"))
-        self.percent.pack(pady=(28, 0))
-        self.caption = tk.Label(root, text="内存占用", fg=MUTED, bg=BG, font=(family, 12))
+        self.percent = tk.Label(root, text="--%", fg=INK, bg=BG, font=(family, 72, "bold"))
+        self.percent.pack(pady=(22, 0))
+        self.caption = tk.Label(root, text="内存占用 · 仅物理内存", fg=INK, bg=BG, font=(family, 14))
         self.caption.pack()
+        self.formula = tk.Label(
+            root, text="（总量 − 可用）/ 总量，不是 CPU 或综合评分",
+            fg=MUTED, bg=BG, font=(family, 10),
+        )
+        self.formula.pack()
         self.bar = tk.Canvas(root, width=360, height=18, bg=TRACK, highlightthickness=0)
         self.bar.pack(pady=(14, 8))
         self.bar_fill = self.bar.create_rectangle(0, 0, 0, 18, fill=BAR, width=0)
@@ -129,19 +154,58 @@ class MemoryWindow:
         self._polling = False
 
     def show_levels(self, levels):
-        percent = used_percent(levels)
-        self.percent.configure(text="--%" if percent is None else f"{percent:.0f}%")
-        width = int(self.bar.cget("width"))
-        fill = 0 if percent is None else int(width * percent / 100.0)
-        self.bar.coords(self.bar_fill, 0, 0, fill, int(self.bar.cget("height")))
         self.available.configure(
             text=f"可用 {format_gib(levels.get('available_bytes'))} / 共 {format_gib(levels.get('total_bytes'))}"
         )
         self.commit.configure(
             text=f"Commit {format_gib(levels.get('commit_used_bytes'))} / {format_gib(levels.get('commit_limit_bytes'))}"
         )
+        self._set_target(used_percent(levels))
         if not self._releasing:
-            self.status.configure(text="实时刷新。按钮只清空 working set，没有确认框。")
+            self.status.configure(text="约每 0.2 秒刷新。百分比和用量条会平滑过渡。按钮只清空 working set。")
+
+    def _set_target(self, target):
+        if target is None:
+            self._cancel_anim()
+            self._shown = None
+            self._paint_percent(None)
+            return
+        if self._shown is None:
+            self._shown = target
+            self._paint_percent(target)
+            return
+        if self._anim_job is None and abs(self._shown - target) < 0.05:
+            self._shown = target
+            self._paint_percent(target)
+            return
+        self._anim_to = target
+        if self._anim_job is None:
+            self._anim_from = self._shown
+            self._anim_t0 = self._clock()
+            self._anim_job = self.root.after(16, self._anim_frame)
+
+    def _anim_frame(self):
+        self._anim_job = None
+        duration = self.anim_ms / 1000.0
+        t = 0.0 if not duration else (self._clock() - self._anim_t0) / duration
+        self._shown = smoothstep(self._anim_from, self._anim_to, t)
+        if t >= 1:
+            self._shown = self._anim_to
+        self._paint_percent(self._shown)
+        if t < 1:
+            self._anim_job = self.root.after(16, self._anim_frame)
+
+    def _cancel_anim(self):
+        if self._anim_job is not None:
+            self.root.after_cancel(self._anim_job)
+            self._anim_job = None
+
+    def _paint_percent(self, percent):
+        self.percent.configure(text="--%" if percent is None else f"{percent:.0f}%")
+        width = int(self.bar.cget("width"))
+        height = int(self.bar.cget("height"))
+        fill = 0 if not percent else int(width * max(0.0, min(100.0, percent)) / 100.0)
+        self.bar.coords(self.bar_fill, 0, 0, fill, height)
 
     def show_levels_error(self, exc):
         self.status.configure(text=f"读取失败：{exc}")
@@ -150,8 +214,8 @@ class MemoryWindow:
         if self._releasing:
             return
         self._releasing = True
-        self.button.configure(state="disabled", text="正在释放…")
-        self.status.configure(text="正在清空 working set。standby 不会动。")
+        self.button.configure(state="disabled", text="正在加速…")
+        self.status.configure(text="正在加速… 只清空 working set。用量会跟着变。standby 不会动。")
 
         def work():
             try:

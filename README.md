@@ -96,7 +96,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 
 执行代码加入之前，必须具备默认 dry-run、明确单次执行入口、可靠的作用范围、操作前后日志、日志失败阻止执行、冷却 / 频率上限、失败停止且无激进回退。不能仅靠进程名识别实验进程；全局 standby 操作也会影响实验缓存。没有可重复的持续净收益就不启用。终止进程、关闭服务、修改关键配置等红线在后续阶段仍有效。
 
-建议下一步：双击 [scripts/desktop-memory-ui.cmd](scripts/desktop-memory-ui.cmd) 打开一键界面。大按钮无确认地执行 working-set 释放（不选 standby）。窗口里的占用百分比、可用/总量和 Commit 会在释放前后刷新，并写明日常桌面负载下收益未证实、随后有硬缺页代价。控制台回退仍是 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd)。实验负载基线仍是第 5 项，没实验时不阻塞。
+建议下一步：双击 [scripts/desktop-memory-ui.cmd](scripts/desktop-memory-ui.cmd) 打开一键界面。大数字是物理内存占用（总量 − 可用）/ 总量，不是综合评分；用量条和这个百分比大约 0.8 秒过渡，可用/总量和 Commit 约每 0.2 秒刷新。大按钮无确认地执行 working-set 释放（不选 standby），按下后变为「正在加速…」并停用，结束后留下前后值。窗口写明日常桌面负载下收益未证实、随后有硬缺页代价。控制台回退仍是 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd)。实验负载基线仍是第 5 项，没实验时不阻塞。
 
 ## 交接状态（2026-10-19）
 
@@ -104,7 +104,7 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 - 显式 `--release` 已实现（Enmao 2026-10-19 授权）：`NtSetSystemInformation` 的 `MemoryEmptyWorkingSets` 与 `MemoryPurgeStandbyList`，`--release-what working-set|standby|both`，默认 `both`。其它模式仍只读。`SeProfileSingleProcessPrivilege` 只在这次显式释放期间、且令牌已经持有时于本进程令牌启用，用完立即恢复（`cpu_memory_cleanup/privscope.py`）。不 UAC 提权。
 - A/B 协议已实现：`python -m cpu_memory_cleanup --ab-protocol OUTDIR` 默认 dry-run；`--ab-live` 才采样，并在每个 AB 对的 B 窗开始前释放一次。默认形态 `AA,AB,AA,AB`，每窗 30 样本 × 10 秒，共 8 窗。
 - 三次日常桌面 A/B（`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s，无实验负载）判定都是 cosmetic-or-harmful。口径与细节见 [docs/validation.md](docs/validation.md)。合并 `both`：2026-10-19 05:20:44–05:59:40，可用内存尾段约 +21.6 GiB 和 +5.0 GiB，commit 中位数约 +0.45 GiB 和 −0.16 GiB，硬缺页与磁盘读超过 A/A 上限。仅 standby：2026-10-19 06:16:53–06:55:37，可用内存几乎不动随后下降，commit 不降，硬缺页超过上限。仅 working-set：2026-10-20 02:04:20–02:43:07，modified 列表约 +27 GiB 和 +12 GiB 并在一拍内写回磁盘（峰值约 2732 MB/s 和 1059 MB/s），commit 不降，硬缺页超过上限。可用内存上升本身不算收益。
-- 一键按钮（Enmao 2026-10-20 02:54，界面 03:59）：双击 [scripts/desktop-memory-ui.cmd](scripts/desktop-memory-ui.cmd) 打开单窗口（tkinter，无额外依赖）。大按钮无提示调用 `perform_release("working-set")`，也就是 `--release --release-what working-set`。占用条和可用 / Commit 在释放前、中、后刷新，并显示前后值和日常桌面证据：收益未证实，随后有硬缺页代价。standby 不调用（仅 standby 的可用内存只 +0.24 / +0.30 GiB，硬缺页约 3 倍于 A/A 上限）。[scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd) 仍是控制台回退；`report` 参数仍是只读巡检。不结束进程，不改系统设置，不提权。
+- 一键按钮（Enmao 2026-10-20 02:54，界面 03:59，动效 04:12）：双击 [scripts/desktop-memory-ui.cmd](scripts/desktop-memory-ui.cmd) 打开单窗口（tkinter，无额外依赖）。大百分比是物理内存占用（总量 − 可用）/ 总量，标明不是综合评分；它和用量条在新旧值之间大约 0.8 秒过渡，可用/总量与 Commit 约每 0.2 秒更新。大按钮无提示调用 `perform_release("working-set")`，也就是 `--release --release-what working-set`；按下后停用并显示「正在加速…」，结束后留下 available / commit 前后值。standby 不调用（仅 standby 的可用内存只 +0.24 / +0.30 GiB，硬缺页约 3 倍于 A/A 上限）。[scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd) 仍是控制台回退；`report` 参数仍是只读巡检。不结束进程，不改系统设置，不提权。
 - [360 专项调研](docs/360_memory_cleanup.md)：官方资料确认加速球具有关闭进程的能力；具体是否修剪工作集、清 standby 及各自贡献比例仍未证实。standby 已计入 Available；工作集修剪不释放应用 commit，并会带来重新调页代价。绝不能结束任何进程，尤其训练 / 评测 / Python 进程。
 - [GitHub 同类项目调研](docs/github_survey.md)：优先参考 System Informer 的分类和状态处理、MemListMgr 的单项动作拆分，以及 Mem Reduct 的冷却 / 日志思路；源码事实、README 声称、维护日期限制和许可证分别标注。尚未引入任何上游清理实现，也不采用自动提权或全局组合清理。
 - 主机侧 Available、commit、硬缺页和磁盘 I/O 已能写入 JSONL。实验负载下与吞吐、尾延迟按 UTC 对齐仍未做（待办第 5 项）。2026-10-19 的授权只覆盖上面两个调用加 A/B，不把文档里的其它候选变成执行授权。

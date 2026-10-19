@@ -30,10 +30,17 @@ RECORD = {
 
 class ViewTests(unittest.TestCase):
     def test_percent_and_result_use_available_and_commit(self):
-        from cpu_memory_cleanup.desktop_ui import format_result, used_percent
+        from cpu_memory_cleanup.desktop_ui import POLL_MS, format_result, smoothstep, used_percent
 
+        self.assertEqual(POLL_MS, 200)
         self.assertAlmostEqual(used_percent(LEVELS), 75.0)
+        self.assertAlmostEqual(used_percent({
+            "total_bytes": 100, "available_bytes": 25, "used_bytes": 0,
+        }), 75.0)
         self.assertIsNone(used_percent({"total_bytes": 0, "used_bytes": 0}))
+        self.assertAlmostEqual(smoothstep(80, 40, 0), 80)
+        self.assertAlmostEqual(smoothstep(80, 40, 0.5), 60)
+        self.assertAlmostEqual(smoothstep(80, 40, 1), 40)
         text = format_result(RECORD)
         self.assertIn("4.000 GiB", text)
         self.assertIn("11.000 GiB", text)
@@ -63,15 +70,36 @@ class WindowTests(unittest.TestCase):
         root = tk.Tk()
         root.withdraw()
         try:
-            window = MemoryWindow(root, lambda: LEVELS, release_fn, poll_ms=60_000)
+            clock = {"now": 0.0}
+            window = MemoryWindow(
+                root, lambda: LEVELS, release_fn, poll_ms=60_000, anim_ms=800,
+                clock=lambda: clock["now"],
+            )
             window.show_levels(LEVELS)
             self.assertEqual(window.percent.cget("text"), "75%")
+            self.assertIn("仅物理内存", window.caption.cget("text"))
+            self.assertIn("不是 CPU", window.formula.cget("text"))
             self.assertIn("10.000 GiB", window.available.cget("text"))
             self.assertIn("50.000 GiB", window.commit.cget("text"))
             self.assertIn("cosmetic-or-harmful", window.note.cget("text"))
             self.assertEqual(window.note.cget("text"), EVIDENCE_NOTE)
+            lower = dict(LEVELS, available_bytes=30 * 1024 ** 3)
+            window.show_levels(lower)
+            self.assertEqual(window.percent.cget("text"), "75%")
+            self.assertIn("30.000 GiB", window.available.cget("text"))
+            clock["now"] = 0.4
+            window._anim_frame()
+            self.assertEqual(window.percent.cget("text"), "50%")
+            fill = window.bar.coords(window.bar_fill)[2]
+            self.assertGreater(fill, 0)
+            self.assertLess(fill, float(window.bar.cget("width")))
+            clock["now"] = 0.8
+            window._anim_frame()
+            self.assertEqual(window.percent.cget("text"), "25%")
             window.accelerate()
             window.accelerate()
+            self.assertEqual(window.button.cget("text"), "正在加速…")
+            self.assertEqual(str(window.button.cget("state")), "disabled")
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
                 window.pump()
