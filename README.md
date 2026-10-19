@@ -89,14 +89,15 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 
 执行代码加入之前，必须具备默认 dry-run、明确单次执行入口、可靠的作用范围、操作前后日志、日志失败阻止执行、冷却 / 频率上限、失败停止且无激进回退。不能仅靠进程名识别实验进程；全局 standby 操作也会影响实验缓存。没有可重复的持续净收益就不启用。终止进程、关闭服务、修改关键配置等红线在后续阶段仍有效。
 
-建议下一步：见下方待办第 9、10 项（两种机制拆开的 A/B，以及特权「持有但未启用」路径尚未实测的注明）。实验负载基线仍是第 5 项，没实验时不阻塞。
+建议下一步：日常桌面负载上，推荐的一键按钮是只读的 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd)（双击即可）。它不调用 `--release`。实验负载基线仍是第 5 项，没实验时不阻塞。
 
 ## 交接状态（2026-10-19）
 
 - 只读能力仍在：一次性巡检（文本、`--json`、`--top`）、有界采样（`--sample`、`--interval`、`--count`、`--jsonl`）、压力报告、`--tree-summary`。没有后台服务。2026-10-17 的一次性巡检、2026-10-18 的两拍采样和 2026-10-18 20:09–20:24（Asia/Shanghai）的 90 样本 × 10 秒空闲基线（无实验负载）都已在本机跑过，原始输出和局限见 [验证记录](docs/validation.md)。
 - 显式 `--release` 已实现（Enmao 2026-10-19 授权）：`NtSetSystemInformation` 的 `MemoryEmptyWorkingSets` 与 `MemoryPurgeStandbyList`，`--release-what working-set|standby|both`，默认 `both`。其它模式仍只读。`SeProfileSingleProcessPrivilege` 只在这次显式释放期间、且令牌已经持有时于本进程令牌启用，用完立即恢复（`cpu_memory_cleanup/privscope.py`）。不 UAC 提权。
 - A/B 协议已实现：`python -m cpu_memory_cleanup --ab-protocol OUTDIR` 默认 dry-run；`--ab-live` 才采样，并在每个 AB 对的 B 窗开始前释放一次。默认形态 `AA,AB,AA,AB`，每窗 30 样本 × 10 秒，共 8 窗。
-- 33baefb 的现场结论，口径如下：日常桌面负载、无实验负载；`AA,AB,AA,AB`；8 窗 × 30 样本 × 10 s；2026-10-19 05:20:44–05:59:40 Asia/Shanghai；两种机制合并为一次 `both` 释放（不是分开对照）。两次释放均 `STATUS_SUCCESS`。B 窗可用内存尾段中位数相对 A 约 +21.6 GiB 和 +5.0 GiB，commit 中位数变化约 +0.45 GiB 和 −0.16 GiB（没有达到 ≥0.5 GiB 的下降）。硬缺页与磁盘读超过本次 A/A 噪声上限。窗口级判定为 cosmetic-or-harmful。可用内存上升本身不算收益。细节见 [docs/validation.md](docs/validation.md) 的 Live A/B protocol 一节。这不是实验负载下的结论。
+- 三次日常桌面 A/B（`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s，无实验负载）判定都是 cosmetic-or-harmful。口径与细节见 [docs/validation.md](docs/validation.md)。合并 `both`：2026-10-19 05:20:44–05:59:40，可用内存尾段约 +21.6 GiB 和 +5.0 GiB，commit 中位数约 +0.45 GiB 和 −0.16 GiB，硬缺页与磁盘读超过 A/A 上限。仅 standby：2026-10-19 06:16:53–06:55:37，可用内存几乎不动随后下降，commit 不降，硬缺页超过上限。仅 working-set：2026-10-20 02:04:20–02:43:07，modified 列表约 +27 GiB 和 +12 GiB 并在一拍内写回磁盘（峰值约 2732 MB/s 和 1059 MB/s），commit 不降，硬缺页超过上限。可用内存上升本身不算收益。
+- 推荐的一键按钮因此不释放内存：双击 [scripts/desktop-memory-button.cmd](scripts/desktop-memory-button.cmd)，只打印上述结论并跑只读巡检。不结束进程，不改系统设置。`--release` 仍留在代码里，供以后实验负载 A/B，不是这个按钮。
 - [360 专项调研](docs/360_memory_cleanup.md)：官方资料确认加速球具有关闭进程的能力；具体是否修剪工作集、清 standby 及各自贡献比例仍未证实。standby 已计入 Available；工作集修剪不释放应用 commit，并会带来重新调页代价。绝不能结束任何进程，尤其训练 / 评测 / Python 进程。
 - [GitHub 同类项目调研](docs/github_survey.md)：优先参考 System Informer 的分类和状态处理、MemListMgr 的单项动作拆分，以及 Mem Reduct 的冷却 / 日志思路；源码事实、README 声称、维护日期限制和许可证分别标注。尚未引入任何上游清理实现，也不采用自动提权或全局组合清理。
 - 主机侧 Available、commit、硬缺页和磁盘 I/O 已能写入 JSONL。实验负载下与吞吐、尾延迟按 UTC 对齐仍未做（待办第 5 项）。2026-10-19 的授权只覆盖上面两个调用加 A/B，不把文档里的其它候选变成执行授权。
@@ -105,8 +106,8 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
 ## 有序待办（5 分钟例行按此推进，不空等）
 
 例行每轮取本清单第一个未完成的动作项推进；没有实验负载不是停工理由，
-第 5 项只在真实实验恰好运行时顺带做。下一项是第 9 项，然后第 10 项。
-只读巡检仍然是默认；清理只走已授权的 `--release`。
+第 5 项只在真实实验恰好运行时顺带做。第 9、10 项已完成。下一项是第 5 项。
+只读巡检仍然是默认。推荐按钮不调用 `--release`。
 
 1. （已完成 2026-10-18 22:14，见 [docs/desktop-pressure-summary.md](docs/desktop-pressure-summary.md)；分析器已能按进程名汇总排名）(a) 日常桌面压力下的有界 `--with-processes` 只读采样：例如
    `--sample --interval 10 --count 90 --with-processes --jsonl logs\desktop-pressure.jsonl`，
@@ -151,8 +152,8 @@ python -m cpu_memory_cleanup --tree-summary logs\tree-series-age.jsonl
    pools - driver；Get-Counter 失败则字段为 null，不中断序列）。正在跑的 age 序列
    （run_id f813ba37）启动早于本改动，不含这些字段；下一轮序列可用来看残差是否随
    进程数变化。2026-10-19 00:04:56（Asia/Shanghai）起已用当前脚本另起一段 60 秒 × 120 的有界只读残差序列（run_id f9059e66，写 gitignored 的 `logs\tree-series-residual.jsonl`，约 02:04 结束；与 age 序列重叠的约一小时内两个只读采样器同时运行），首拍残差 8.466 GiB（占 commit 14.2%，696 个进程，日常桌面、无实验负载，单拍不作结论）；结束后用 `--tree-summary` 看残差与进程数的相关性。RAMMap 人工对照仍可选。只读，不做任何动作。
-9. （选项已加，现场拆分未跑）把两种已授权机制拆开各做一次 A/B，只用 `MemoryPurgeStandbyList` 与 `MemoryEmptyWorkingSets`。`--ab-protocol --ab-what standby|working-set` 已能单选，默认仍是 `both`。协议和口径与 33baefb / `logs/ab-live-20261019-r2` 相同：日常桌面负载，`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s，脱离编辑器进程运行。各用新的日志目录。先 standby-purge-only，跑完把判定写入 [docs/validation.md](docs/validation.md)，测试通过后提交并推送，再跑 working-set-only。每次开跑前确认没有其它采样序列在跑。working-set-only 要记录 modified 列表和回写磁盘的量；磁盘写入或硬缺页明显失控就中止并如实记录。
-10. （未做）在 [docs/validation.md](docs/validation.md) 注明：r2 两次释放前，token 里的 `SeProfileSingleProcessPrivilege` 已经是 enabled，所以「持有但未启用 → 在显式 `--release` 时启用 → 用完恢复」这条路径还没有实测。
+9. （已完成 2026-10-20，见 [docs/validation.md](docs/validation.md)）两种机制已拆开各做一次 A/B，口径与合并跑相同（日常桌面，`AA,AB,AA,AB`，8 窗 × 30 样本 × 10 s）。standby-only（2026-10-19 06:16–06:55）与 working-set-only（2026-10-20 02:04–02:43）都是 cosmetic-or-harmful。working-set 的 modified 列表与回写磁盘量记在该节。2026-10-19 07:13 那次 working-set 释放因关机中断，无判定。
+10. （已完成，见 working-set 一节）r2、standby-only、working-set-only 每次释放前，token 里的 `SeProfileSingleProcessPrivilege` 都已经是 enabled。`enabled_by_tool` 为 false，范围逻辑把它保持原样。「持有但未启用 → 启用 → 用完恢复」还没有实测。
 
 空闲基线的离线汇总见 [docs/idle-baseline-summary.md](docs/idle-baseline-summary.md)
 （空闲基线、非实验负载；其中约 20:11（Asia/Shanghai）的释放来自外部，

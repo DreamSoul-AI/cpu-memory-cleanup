@@ -130,5 +130,19 @@ class TreeSeriesSmokeTest(unittest.TestCase):
             self.assertAlmostEqual(cr["residual_gib"], expected, places=2)
 
 
+class MemoryButtonTests(unittest.TestCase):
+    def test_button_is_read_only_and_states_the_verdict(self):
+        text = (SCRIPTS / "desktop-memory-button.cmd").read_text(encoding="utf-8")
+        lowered = text.lower()
+        for token in (
+            "--release", "taskkill", "stop-process", "stop-service", "ntsetsysteminformation",
+            "runas", "reg add", "reg.exe", "pagefile", "emptyworkingset",
+        ):
+            self.assertNotIn(token, lowered, token)
+        self.assertIn("python -m cpu_memory_cleanup\n", text.replace("\r\n", "\n"))
+        self.assertIn("cosmetic-or-harmful", text)
+        self.assertIn("does not release memory", lowered)
+
+
 if __name__ == "__main__":
     unittest.main()

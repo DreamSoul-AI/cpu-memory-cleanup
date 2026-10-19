@@ -330,3 +330,30 @@ and results: docs/validation.md "A/A null calibration of the comparator".
   with no release) because of one natural burst. Adopted before any live A/B: `--ab-null` A/A pairs
   set a per-metric noise ceiling and only B excess beyond it counts. Live A/B plan: interleave
   A/A and A/B windows, at least two null pairs. Details in `docs/validation.md`.
+
+### 7.6 Recommended one-click button (2026-10-20)
+
+Desktop A/B, same shape each time (`AA,AB,AA,AB`, 8 windows × 30 samples ×
+10 s, daily desktop load, no experiment load). Judged on refault, pages
+input and disk I/O against that run's A/A ceiling, not on the free number.
+
+| Run | When (Asia/Shanghai) | Mechanisms | Verdict |
+| --- | --- | --- | --- |
+| `logs/ab-live-20261019-r2` | 2026-10-19 05:20–05:59 | both together | cosmetic-or-harmful |
+| `logs/ab-live-20261019-standby` | 2026-10-19 06:16–06:55 | standby purge only | cosmetic-or-harmful |
+| `logs/ab-live-20261020-working-set` | 2026-10-20 02:04–02:43 | working-set empty only | cosmetic-or-harmful |
+
+Commit did not fall on any of them. Working-set emptying wrote the modified
+list out (about 27 GiB then 12 GiB, one sample at about 2732 MB/s and
+1059 MB/s). Standby purge turned standby into free and was followed by
+hard faults. Details: docs/validation.md.
+
+Recommended composition of the one-click button: **do not call either
+mechanism.** The usable artifact is
+[scripts/desktop-memory-button.cmd](../scripts/desktop-memory-button.cmd).
+Double-click it. It prints this result and runs the existing read-only
+inspection. It does not end processes, stop services, change settings, the
+page file, or the registry, and it does not elevate. `--release` stays in
+the tree for a future experiment-load A/B; it is not what the button does.
+Closing heavy apps remains the action that actually drops commit, and the
+tool does not do that either.
