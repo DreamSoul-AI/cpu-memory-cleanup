@@ -240,6 +240,31 @@ def estimate(cache, available):
     }
 
 
+def host_levels():
+    """Physical available/total and commit from GetPerformanceInfo only.
+
+    No PDH query and no process handles. The GUI polls this so the bar can
+    move while a release is in flight. Same counters as snapshot()['physical']
+    and snapshot()['commit'].
+    """
+    if sys.platform != "win32":
+        raise OSError("Windows is required; no operations were performed.")
+    psapi = c.WinDLL("psapi.dll", use_last_error=True)
+    get_info = bind(psapi, "GetPerformanceInfo", [c.POINTER(PerformanceInfo), w.DWORD], w.BOOL)
+    info = PerformanceInfo(cb=c.sizeof(PerformanceInfo))
+    check(get_info(c.byref(info), c.sizeof(info)))
+    page = info.PageSize
+    total = info.PhysicalTotal * page
+    available = info.PhysicalAvailable * page
+    return {
+        "available_bytes": available,
+        "total_bytes": total,
+        "used_bytes": total - available,
+        "commit_used_bytes": info.CommitTotal * page,
+        "commit_limit_bytes": info.CommitLimit * page,
+    }
+
+
 def snapshot(top=10, *, session=None, include_processes=True):
     if sys.platform != "win32":
         raise OSError("Windows is required; no operations were performed.")

@@ -353,17 +353,22 @@ On 2026-10-20 02:54 (Asia/Shanghai) Enmao decided the one-click button
 does a real release on click, unconditionally. Composition:
 
 - Double-click
-  [scripts/desktop-memory-button.cmd](../scripts/desktop-memory-button.cmd)
-  runs `python -m cpu_memory_cleanup --release --release-what working-set`
-  with no confirmation and no per-item menu. Standby purge is not called:
-  the standby-only A/B moved available only +0.24 / +0.30 GiB and hard
-  faults were about 3× that run's A/A ceiling.
-- The existing release formatter prints before/after available and commit.
-  The script then prints the measured note: under daily desktop load the
-  benefit is unproven (`cosmetic-or-harmful`) and a refault cost follows.
-  A higher available number is not claimed as a benefit.
-- `desktop-memory-button.cmd report` keeps the read-only inspection. That
-  is not the double-click action.
+  [scripts/desktop-memory-ui.cmd](../scripts/desktop-memory-ui.cmd)
+  (2026-10-20). It opens one tkinter window: live physical-used percent,
+  available / total, commit, and one accelerate button. The button calls
+  `perform_release("working-set")` with no confirmation and no menu — the
+  same function as `--release --release-what working-set`. The bar keeps
+  polling through the call, then the window shows that call's before/after
+  available and commit. Standby purge is not called: the standby-only A/B
+  moved available only +0.24 / +0.30 GiB and hard faults were about 3× that
+  run's A/A ceiling.
+- The window states the measured note: under daily desktop load the benefit
+  is unproven (`cosmetic-or-harmful`) and a refault cost follows. A higher
+  available number is not claimed as a benefit.
+- [scripts/desktop-memory-button.cmd](../scripts/desktop-memory-button.cmd)
+  remains the console fallback and does the same working-set release.
+  `desktop-memory-button.cmd report` is the read-only inspection. That is
+  not the double-click action.
 - Still excluded: process termination, service stops, startup / registry /
   settings / page-file changes, and elevation. Privilege handling stays
   inside the existing `--release` path.
