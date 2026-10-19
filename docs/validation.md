@@ -878,3 +878,72 @@ exceed the A/A ceiling on both pairs, and the second pair also exceeds it
 on pages input and disk reads. Disk writes stay in the same few-MB/s band
 as the no-release windows. No benefit is claimed. This is not an
 experiment-load result.
+
+## Working-set emptying alone (daily desktop load, 2026-10-20 02:04-02:43 Asia/Shanghai)
+
+Scope: daily desktop load, no experimental load. `--ab-what working-set`
+only (`MemoryEmptyWorkingSets`). Pattern `AA,AB,AA,AB`, 8 windows × 30
+samples × 10 s. 2026-10-20 02:04:20–02:43:07 Asia/Shanghai
+(2026-10-19 18:04:20–18:43:07 UTC). Gitignored
+`logs/ab-live-20261020-working-set/`. Detached `Start-Process` under
+WmiPrvSE. Before the start, no tree-series sampler was running (newest
+`logs/tree-series*.jsonl` write still 2026-10-19 02:03:59). Guards ok.
+Both releases (02:18:55 and 02:38:17) are one action,
+`STATUS_SUCCESS (0x00000000)`. No standby purge. On both, the token
+already had `SeProfileSingleProcessPrivilege` enabled
+(`enabled_by_tool: false`, left as found). The same was true of the
+combined r2 releases and the standby-only releases, so the path "held but
+disabled, then enabled for the call, then disabled again" has still not
+been measured live.
+
+A/A ceiling (largest excess ratio of the two null pairs). Both null pairs
+tripped the raw rule with no release (pair 1 page reads excess 1.23; pair
+3 page reads 1.02 and pages input 1.25). Ceiling: page reads 1.23, pages
+input 1.25, disk read 0.75.
+
+| | AB pair 2 (after 02:18:55) | AB pair 4 (after 02:38:17) |
+| --- | --- | --- |
+| Immediate modified list | 0.04 → 27.38 GiB | 0.03 → 11.61 GiB |
+| One sample later | modified 0.47 GiB, disk write 2732 MB/s, page reads 121/s | modified 0.47 GiB, disk write 1059 MB/s, page reads 63/s |
+| Immediate commit | 57.16 → 57.32 GiB | 59.49 → 59.62 GiB |
+| Immediate available | 4.43 → 10.97 GiB | 22.72 → 26.84 GiB |
+| Page reads /s, mean A → B | 50 → 264, excess 3.32, beyond ceiling | 52 → 155, excess 1.87, beyond ceiling |
+| Pages input /s | 445 → 5420, excess 7.56, beyond ceiling | 629 → 946, excess 0.95, within ceiling |
+| Disk read | 1.8 → 21.9 MB/s, excess 2.77, beyond ceiling | 2.5 → 3.7 MB/s, excess 0.41, within ceiling |
+| Disk write mean (max) | 100 MB/s (2732 MB/s) | 40 MB/s (1059 MB/s) |
+| Commit median B−A | +1.38 GiB | −0.48 GiB |
+| Available, last-third median B−A | +24.82 GiB | +5.14 GiB |
+
+The write spike was one sample each time, then disk writes fell under
+about 10 MB/s. It was watched against a stop line of three samples in a
+row above 200 MB/s write or 5000 page reads/s; that line was not crossed,
+so the run was not stopped. On pair 2 the hard-fault and disk-read means
+are not the flush sample (that sample's disk read was 0.6 MB/s). They come
+from about a minute later: sample index 6 alone is 964 page reads/s,
+77261 pages input/s and 316 MB/s disk read, with more elevated samples
+through the rest of the window. Pair 4's page-read excess still clears
+the A/A ceiling; its pages-input and disk-read means do not.
+
+Tool verdict for both AB pairs: `cosmetic-or-harmful`. Commit does not
+fall by the 0.5 GiB bar. The available rise is the free number after
+dirty pages were written out (modified list emptied into standby/free).
+
+Verdict for working-set emptying alone, on this desktop load:
+**cosmetic-or-harmful**. The call does not release commit. It moves a
+large modified list (27 GiB, then 12 GiB) and the machine writes that out
+at about 1–3 GB/s for one sample. Hard faults after the first call, and
+page reads after the second, sit above the no-release ceiling. No benefit
+is claimed. Not an experiment-load result.
+
+### Interrupted working-set attempt (partial, no verdict)
+
+`logs/ab-live-20261019-working-set/` is left untouched. The machine shut
+down on 2026-10-19 at about 07:15 Asia/Shanghai, during `pair2-AB-2`.
+That file has 14 of 30 samples (index 0–13, 07:13:39–07:15:49).
+`pair2-release.json` is one working-set call at 07:13:37,
+`STATUS_SUCCESS`. Immediate counters only, not a window: modified list
+0.25 → 7.32 GiB, commit 62.41 → 62.42 GiB, available 28.40 → 32.53 GiB.
+The next sample wrote 665 MB/s and the modified list was back to 0.56 GiB,
+with 8 page reads/s. The run never finished, there is no second release,
+and there is no A/A comparison. **No verdict.** The completed run above
+replaces it.
