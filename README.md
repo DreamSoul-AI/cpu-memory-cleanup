@@ -7,8 +7,9 @@ Windows 主机内存观察与显式单次释放工具。Python 3.10+，Windows 1
 ## 文档入口
 
 - [项目协作约定](AGENTS.md)：中文要求、飞书参考、执行边界与文档维护规则。
-- [通用调研](<docs/CPU 内存清理 通用调研.md>)：以 DreamSoul 原报告和证据为基础，研究主机内存、工具所有权、正常回收与历史验证。
-- [架构设计](<docs/CPU 内存清理 架构设计.md>)：区分现有能力和目标设计，明确宿主边界、数据契约、失败处理与验证顺序。
+- [通用调研](<docs/CPU 内存清理 通用调研.md>)：以 360 PC 加速为主要产品对照，研究 CPU 治理、内存清理方法、现有技术、实现机制与验证边界。
+- [架构设计](<docs/CPU 内存清理 架构设计.md>)：依据关联资料库的软件架构设计研究，从质量场景定义状态归属、接口合同、源码依赖、运行部署与验证，不受旧代码框架约束。
+- [代码结构设计](<docs/CPU 内存清理 代码结构设计.md>)：目标目录树、各 Python 文件职责、允许依赖和对应测试位置，尚未实施。
 
 ## 关联的 DreamSoul 资料
 本仓库地址：[DreamSoul-AI/cpu-memory-cleanup](https://github.com/DreamSoul-AI/cpu-memory-cleanup)。源码位置以当前项目实际关联的仓库为准。
@@ -17,7 +18,7 @@ Windows 主机内存观察与显式单次释放工具。Python 3.10+，Windows 1
 
 未关联本地文档库时，从 [飞书规范总索引](https://dreamsoul.feishu.cn/docx/UmU1d2EwLoeET5xCJChcOKPknyb) 和 [工具与教程总索引](https://dreamsoul.feishu.cn/docx/VSQ5dlJl3o0hbIxrEhUc8qKEnBc) 查找。代码、协作、测试、日志、CI/CD 与调研等规范的任务入口统一维护在 [项目协作约定](AGENTS.md)。
 
-两份文档按 [飞书文档规范](https://dreamsoul.feishu.cn/docx/DdmxdrNvBo9AMXxkAYmc4EJ6nwe) 和 [通用调研规范](https://dreamsoul.feishu.cn/docx/YcWIdE4INoLqoLxR5O8cbl7hnTf) 组织，2026年10月21日已读取对应飞书正文。规范读取不代表历史实验或当前系统状态已重新验证。
+项目文档按 [飞书文档规范](https://dreamsoul.feishu.cn/docx/DdmxdrNvBo9AMXxkAYmc4EJ6nwe) 组织，通用调研另依照 [通用调研规范](https://dreamsoul.feishu.cn/docx/YcWIdE4INoLqoLxR5O8cbl7hnTf)，2026年10月21日已读取对应飞书正文。规范读取不代表历史实验或当前系统状态已重新验证。
 
 ## 文件结构
 
@@ -30,7 +31,8 @@ cpu-memory-cleanup/
 ├── tests/               测试
 └── docs/
     ├── CPU 内存清理 通用调研.md
-    └── CPU 内存清理 架构设计.md
+    ├── CPU 内存清理 架构设计.md
+    └── CPU 内存清理 代码结构设计.md
 ```
 
 ## 只读功能
@@ -53,7 +55,7 @@ CLI 的 `--release` 才触发直接单次释放，`--release-what` 可选 `worki
 
 `scripts/desktop-memory-ui.cmd` 打开单窗口，打开时只读；点击“一键加速”才释放工作集。`scripts/desktop-memory-button.cmd` 无参数只读，显式参数 `release` 才释放工作集。两个桌面入口都不调用 standby 清除。
 
-不结束进程、不停服务、不修改系统配置、页面文件或注册表，不自动提权。真实释放可能引起重新调页、磁盘回写和响应代价。代码已知的失败处理、部分成功判定及记录缺口见架构设计，尚未修复。
+不结束进程、不停服务、不修改系统配置、页面文件或注册表，不自动提权。真实释放可能引起重新调页、磁盘回写和响应代价。代码已知的失败处理、部分成功判定及记录缺口见通用调研第六章，尚未修复。
 
 ## 验证与历史输出
 
