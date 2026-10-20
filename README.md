@@ -10,11 +10,12 @@ Windows 主机内存观察与显式单次释放工具。Python 3.10+，Windows 1
 - [通用调研](<docs/CPU 内存清理 通用调研.md>)：以 DreamSoul 原报告和证据为基础，研究主机内存、工具所有权、正常回收与历史验证。
 - [架构设计](<docs/CPU 内存清理 架构设计.md>)：区分现有能力和目标设计，明确宿主边界、数据契约、失败处理与验证顺序。
 
-## 关联的本地 DreamSoul 资料
+## 关联的 DreamSoul 资料
+本仓库地址：[DreamSoul-AI/cpu-memory-cleanup](https://github.com/DreamSoul-AI/cpu-memory-cleanup)。源码位置以当前项目实际关联的仓库为准。
 
-本项目源码位于 `D:\GitHub\DreamSoul\cpu-memory-cleanup`，相关规范、调研与交接使用已关联的本地目录 `D:\360安全浏览器下载\Agent\DreamSoul`。
+每次从当前项目关联文件夹和资料链接定位 DreamSoul 文档库，读取其资料入口、相关规范与已有调研，再沿用已有飞书分享链接。文档库通常通过 `文档/规范/` 和 `研发/研究/` 定位，不依赖固定盘符、用户名或机器目录。
 
-先从 [DreamSoul 资料入口](<D:/360安全浏览器下载/Agent/DreamSoul/AGENTS.md>) 查找相关资料，读取 [本地通用调研规范](<D:/360安全浏览器下载/Agent/DreamSoul/文档/规范/研发/开发/通用调研规范 General Research Standard.md>)、[已有 Codex 回收调研](<D:/360安全浏览器下载/Agent/DreamSoul/研发/研究/软件开发 Software Engineering/Codex 闲置工具进程安全回收调研.md>)，并沿用这些文件中已有的飞书链接。已有本地入口时先使用，不必重新搜索或为读取本地文件发起授权。需要核对云端最新正文时，再访问对应链接并注明实际核验范围。
+未关联本地文档库时，从 [飞书规范总索引](https://dreamsoul.feishu.cn/docx/UmU1d2EwLoeET5xCJChcOKPknyb) 和 [工具与教程总索引](https://dreamsoul.feishu.cn/docx/VSQ5dlJl3o0hbIxrEhUc8qKEnBc) 查找。代码、协作、测试、日志、CI/CD 与调研等规范的任务入口统一维护在 [项目协作约定](AGENTS.md)。
 
 两份文档按 [飞书文档规范](https://dreamsoul.feishu.cn/docx/DdmxdrNvBo9AMXxkAYmc4EJ6nwe) 和 [通用调研规范](https://dreamsoul.feishu.cn/docx/YcWIdE4INoLqoLxR5O8cbl7hnTf) 组织，2026年10月21日已读取对应飞书正文。规范读取不代表历史实验或当前系统状态已重新验证。
 
