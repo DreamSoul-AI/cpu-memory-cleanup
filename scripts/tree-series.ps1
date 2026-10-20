@@ -131,7 +131,7 @@ for ($i = 1; $i -le $Count; $i++) {
 
   # Read-only PDH commit residual (fail soft: null fields if counters unavailable).
   # Formula: residual = commit_used - process_private - paged_pool - nonpaged_pool - system_driver
-  # (same sources as docs/validation.md Commit residual re-check).
+  # (来源与 docs/通用调研.md 第六节的提交残差复核一致).
   $commitUsedGib = [math]::Round(([double]$os.TotalVirtualMemorySize - [double]$os.FreeVirtualMemory) * 1024 / $GiB, 3)
   $processPrivateGib = [math]::Round($totalPrivate / $GiB, 3)
   $pagedPoolGib = $null
