@@ -67,6 +67,28 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.completion, "success")
         self.assertEqual(self.backend.calls, 0)
 
+    def test_named_sample_file_does_not_parse_itself_as_actions(self):
+        path = Path(self.temp.name) / "operation.jsonl"
+        saved = self.app.inspect({"jsonl_path": path})
+        reviewed = self.app.review(path)
+        self.assertEqual(saved.completion, "success")
+        self.assertEqual(reviewed.completion, "success")
+        self.assertEqual(reviewed.errors, [])
+        self.assertFalse(reviewed.action["attempted"])
+        self.assertEqual(self.backend.calls, 0)
+
+    def test_inspection_review_ignores_unrelated_sibling_actions(self):
+        path = Path(self.temp.name) / "readonly.jsonl"
+        (path.parent / "operation.jsonl").write_text(
+            '{"record_type":"intent","run_id":"unrelated"}\n', encoding="utf-8")
+        saved = self.app.inspect({"jsonl_path": path})
+        reviewed = self.app.review(path)
+        self.assertEqual(saved.completion, "success")
+        self.assertEqual(reviewed.completion, "success")
+        self.assertEqual(reviewed.errors, [])
+        self.assertFalse(reviewed.action["attempted"])
+        self.assertEqual(self.backend.calls, 0)
+
     def test_top_is_forwarded_to_analysis_and_saved_conditions(self):
         report = self.app.inspect({"with_processes": True, "top": 2})
         self.assertEqual(report.analysis["process_ranking"]["limit"], 2)
@@ -264,6 +286,18 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.samples[0].sequence, 3)
         self.assertEqual(report.samples[0].metrics["processes"], 7)
         self.assertEqual(report.samples[0].metrics["commit_residual"]["residual_gib"], -0.5)
+        self.assertEqual(self.backend.opens, 0)
+
+    def test_legacy_warnings_survive_review(self):
+        path = Path(self.temp.name) / "legacy-warnings.jsonl"
+        warnings = ["sampling overrun", "no previous PDH interval"]
+        path.write_text(json.dumps({"warnings": warnings}) + "\n", encoding="utf-8")
+        report = self.app.review(path)
+        self.assertEqual(report.completion, "partial")
+        self.assertEqual(report.samples[0].errors[:2], warnings)
+        self.assertEqual(report.analysis["warning_count"], 2)
+        self.assertEqual(report.analysis["overrun_count"], 1)
+        self.assertEqual(report.analysis["first_tick_rate_warning_count"], 1)
         self.assertEqual(self.backend.opens, 0)
 
     def test_empty_preflight_is_refused(self):

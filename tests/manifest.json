@@ -273,6 +273,11 @@
       "file": "tests/scripts/test_run_tests.py"
     },
     {
+      "test_id": "tests/scripts/test_run_tests.py::WorkerTests.test_worker_cleanup_overrun_is_timeout_and_keeps_evidence",
+      "unittest_id": "tests.scripts.test_run_tests.WorkerTests.test_worker_cleanup_overrun_is_timeout_and_keeps_evidence",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
       "test_id": "tests/scripts/test_run_tests.py::PersistenceTests.test_src_source_change_invalidates_resume",
       "unittest_id": "tests.scripts.test_run_tests.PersistenceTests.test_src_source_change_invalidates_resume",
       "file": "tests/scripts/test_run_tests.py"
@@ -355,6 +360,11 @@
     {
       "test_id": "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker",
       "unittest_id": "tests.scripts.test_run_tests.PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::PersistenceTests.test_last_result_persistence_overrun_blocks_batch_release",
+      "unittest_id": "tests.scripts.test_run_tests.PersistenceTests.test_last_result_persistence_overrun_blocks_batch_release",
       "file": "tests/scripts/test_run_tests.py"
     },
     {
@@ -525,6 +535,16 @@
       "file": "tests/src/cpu_memory_cleanup/test_core.py"
     },
     {
+      "test_id": "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_named_sample_file_does_not_parse_itself_as_actions",
+      "unittest_id": "tests.src.cpu_memory_cleanup.test_core.CoreTests.test_named_sample_file_does_not_parse_itself_as_actions",
+      "file": "tests/src/cpu_memory_cleanup/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_inspection_review_ignores_unrelated_sibling_actions",
+      "unittest_id": "tests.src.cpu_memory_cleanup.test_core.CoreTests.test_inspection_review_ignores_unrelated_sibling_actions",
+      "file": "tests/src/cpu_memory_cleanup/test_core.py"
+    },
+    {
       "test_id": "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_top_is_forwarded_to_analysis_and_saved_conditions",
       "unittest_id": "tests.src.cpu_memory_cleanup.test_core.CoreTests.test_top_is_forwarded_to_analysis_and_saved_conditions",
       "file": "tests/src/cpu_memory_cleanup/test_core.py"
@@ -637,6 +657,11 @@
     {
       "test_id": "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_legacy_tree_counts_and_signed_residual_survive_review",
       "unittest_id": "tests.src.cpu_memory_cleanup.test_core.CoreTests.test_legacy_tree_counts_and_signed_residual_survive_review",
+      "file": "tests/src/cpu_memory_cleanup/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_legacy_warnings_survive_review",
+      "unittest_id": "tests.src.cpu_memory_cleanup.test_core.CoreTests.test_legacy_warnings_survive_review",
       "file": "tests/src/cpu_memory_cleanup/test_core.py"
     },
     {
@@ -1085,8 +1110,18 @@
       "file": "tests/src/cpu_memory_cleanup/test_rules.py"
     },
     {
+      "test_id": "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_commit_median_drift_with_equal_tails_is_not_benefit",
+      "unittest_id": "tests.src.cpu_memory_cleanup.test_rules.ComparisonTests.test_commit_median_drift_with_equal_tails_is_not_benefit",
+      "file": "tests/src/cpu_memory_cleanup/test_rules.py"
+    },
+    {
       "test_id": "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_calibration_same_run_is_rejected",
       "unittest_id": "tests.src.cpu_memory_cleanup.test_rules.ComparisonTests.test_calibration_same_run_is_rejected",
+      "file": "tests/src/cpu_memory_cleanup/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_calibration_build_or_schema_mismatch_is_insufficient",
+      "unittest_id": "tests.src.cpu_memory_cleanup.test_rules.ComparisonTests.test_calibration_build_or_schema_mismatch_is_insufficient",
       "file": "tests/src/cpu_memory_cleanup/test_rules.py"
     },
     {
@@ -1339,6 +1374,8 @@
         "tests/src/cpu_memory_cleanup/test_contracts.py::ContractTests.test_combined_mechanism_is_rejected",
         "tests/src/cpu_memory_cleanup/test_contracts.py::ContractTests.test_confirmation_cannot_be_truthy_text",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_inspection_is_read_only",
+        "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_named_sample_file_does_not_parse_itself_as_actions",
+        "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_inspection_review_ignores_unrelated_sibling_actions",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_top_is_forwarded_to_analysis_and_saved_conditions",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_missing_confirmation_prevents_system_access",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_missing_preflight_capability_prevents_call",
@@ -1362,6 +1399,7 @@
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_contradictory_historical_action_is_rejected",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_record_close_failure_leaves_no_successful_terminal",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_legacy_tree_counts_and_signed_residual_survive_review",
+        "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_legacy_warnings_survive_review",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_empty_preflight_is_refused",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_invalid_interval_never_opens_reader",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_shutdown_before_worker_admission_prevents_call",
@@ -1451,7 +1489,9 @@
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_commit_drop_can_be_benefit",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_standby_movement_alone_is_cosmetic",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_level_drift_within_calibration_is_not_benefit",
+        "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_commit_median_drift_with_equal_tails_is_not_benefit",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_calibration_same_run_is_rejected",
+        "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_calibration_build_or_schema_mismatch_is_insufficient",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_environment_mismatch_is_insufficient",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_empty_windows_are_insufficient",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_observed_delta_survives_insufficient_evidence",
@@ -1523,6 +1563,8 @@
         "tests/src/cpu_memory_cleanup/test_contracts.py::ContractTests.test_combined_mechanism_is_rejected",
         "tests/src/cpu_memory_cleanup/test_contracts.py::ContractTests.test_confirmation_cannot_be_truthy_text",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_inspection_is_read_only",
+        "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_named_sample_file_does_not_parse_itself_as_actions",
+        "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_inspection_review_ignores_unrelated_sibling_actions",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_top_is_forwarded_to_analysis_and_saved_conditions",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_missing_confirmation_prevents_system_access",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_missing_preflight_capability_prevents_call",
@@ -1546,6 +1588,7 @@
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_contradictory_historical_action_is_rejected",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_record_close_failure_leaves_no_successful_terminal",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_legacy_tree_counts_and_signed_residual_survive_review",
+        "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_legacy_warnings_survive_review",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_empty_preflight_is_refused",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_invalid_interval_never_opens_reader",
         "tests/src/cpu_memory_cleanup/test_core.py::CoreTests.test_shutdown_before_worker_admission_prevents_call",
@@ -1635,7 +1678,9 @@
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_commit_drop_can_be_benefit",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_standby_movement_alone_is_cosmetic",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_level_drift_within_calibration_is_not_benefit",
+        "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_commit_median_drift_with_equal_tails_is_not_benefit",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_calibration_same_run_is_rejected",
+        "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_calibration_build_or_schema_mismatch_is_insufficient",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_environment_mismatch_is_insufficient",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_empty_windows_are_insufficient",
         "tests/src/cpu_memory_cleanup/test_rules.py::ComparisonTests.test_observed_delta_survives_insufficient_evidence",
@@ -1713,6 +1758,7 @@
         "tests/scripts/test_run_tests.py::WorkerTests.test_declared_parameters_remain_individually_visible",
         "tests/scripts/test_run_tests.py::WorkerTests.test_deadline_terminates_only_own_worker",
         "tests/scripts/test_run_tests.py::WorkerTests.test_windows_job_reports_own_committed_memory",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_worker_cleanup_overrun_is_timeout_and_keeps_evidence",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_src_source_change_invalidates_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_pyproject_change_invalidates_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_list_never_imports_test_modules",
@@ -1729,7 +1775,8 @@
         "tests/scripts/test_run_tests.py::PersistenceTests.test_parameter_case_count_does_not_double_count_group",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_interrupted_attempt_is_preserved_on_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_compatibility_script_change_invalidates_resume",
-        "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker"
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker",
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_last_result_persistence_overrun_blocks_batch_release"
       ],
       "required": [
         "tests/scripts/test_run_tests.py::CatalogTests.test_defaults_are_resolved_before_selection",
@@ -1761,6 +1808,7 @@
         "tests/scripts/test_run_tests.py::WorkerTests.test_declared_parameters_remain_individually_visible",
         "tests/scripts/test_run_tests.py::WorkerTests.test_deadline_terminates_only_own_worker",
         "tests/scripts/test_run_tests.py::WorkerTests.test_windows_job_reports_own_committed_memory",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_worker_cleanup_overrun_is_timeout_and_keeps_evidence",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_src_source_change_invalidates_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_pyproject_change_invalidates_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_list_never_imports_test_modules",
@@ -1777,7 +1825,8 @@
         "tests/scripts/test_run_tests.py::PersistenceTests.test_parameter_case_count_does_not_double_count_group",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_interrupted_attempt_is_preserved_on_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_compatibility_script_change_invalidates_resume",
-        "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker"
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker",
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_last_result_persistence_overrun_blocks_batch_release"
       ],
       "dependencies": [
         "quick"

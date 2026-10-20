@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 _SPEC = importlib.util.spec_from_file_location("project_test_runner", Path(__file__).resolve().parents[2] / "scripts" / "run-tests.py")
 runner = importlib.util.module_from_spec(_SPEC)
@@ -262,6 +262,32 @@ class WorkerTests(_Project):
             self.skipTest("Windows Job 合同")
         self.assertGreater(result["peak_memory_bytes"], 0)
 
+    def test_worker_cleanup_overrun_is_timeout_and_keeps_evidence(self):
+        if runner.os.name != "nt":
+            self.skipTest("Windows Job 合同")
+        clock = [0.0]
+        original_failure = {"phase": "test", "type": "AssertionError", "message": "synthetic failure"}
+        measured = [{"name": "latency", "value": 12}]
+        observed = {"status": "failed", "verdict": "fail", "category": "fail", "failure": [original_failure],
+                    "metrics": measured, "subtests": [], "assertion_count": 1}
+        process = Mock(returncode=0)
+        process.communicate.return_value = json.dumps(observed), ""
+        process.poll.return_value = 0
+        job = Mock()
+        job.peak.return_value = 1
+        job.close.side_effect = lambda: clock.__setitem__(0, 2.0)
+        with patch.object(runner, "_WindowsJob", return_value=job), \
+             patch.object(runner.subprocess, "Popen", return_value=process), \
+             patch.object(runner.time, "monotonic", side_effect=lambda: clock[0]):
+            result = self.execute(timeout=1)
+        self.assertEqual(result["status"], "timeout")
+        self.assertIsNone(result["verdict"])
+        self.assertEqual(result["duration_ms"], 2000)
+        self.assertEqual(result["assertion_count"], 1)
+        self.assertEqual(result["metrics"], measured)
+        self.assertEqual(result["failure"][0], original_failure)
+        self.assertEqual(result["failure"][-1]["type"], "Timeout")
+
 
 class PersistenceTests(_Project):
     def test_src_source_change_invalidates_resume(self):
@@ -390,6 +416,37 @@ class PersistenceTests(_Project):
         with patch.object(runner, "_execute", wraps=runner._execute) as execute:
             self.invoke(catalog, ["--plan", "regression", "--output", str(directory)])
         self.assertEqual(execute.call_count, 1)
+
+    def test_last_result_persistence_overrun_blocks_batch_release(self):
+        directory = self.root / "result"
+        catalog = _catalog()
+        catalog["plans"]["quick"]["budget"]["wall_seconds"] = 1
+        clock = [0.0]
+        record_result = runner._record_result
+
+        def execute(*args):
+            clock[0] = 0.5
+            return {"status": "passed", "verdict": "pass", "category": "pass", "failure": None,
+                    "metrics": [], "subtests": [], "duration_ms": 500, "started_at": "synthetic"}
+
+        def record(*args):
+            emitted = record_result(*args)
+            clock[0] = 1.1
+            return emitted
+
+        with patch.object(runner, "_check_caps"), \
+             patch.object(runner, "_source_info", return_value={"fingerprint": "synthetic", "commit": None}), \
+             patch.object(runner, "_execute", side_effect=execute), \
+             patch.object(runner, "_record_result", side_effect=record), \
+             patch.object(runner.time, "monotonic", side_effect=lambda: clock[0]):
+            code, output = self.invoke(catalog, ["--output", str(directory)])
+        summary = json.loads(output)
+        self.assertEqual(code, 1)
+        self.assertEqual(summary["quality_passes"], 1)
+        self.assertTrue(summary["budget_exceeded"])
+        self.assertFalse(summary["release_allowed"])
+        self.assertFalse(runner.rebuild_report(directory)["release_allowed"])
+        self.assertIn("整批墙钟预算超限：True", (directory / "report.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

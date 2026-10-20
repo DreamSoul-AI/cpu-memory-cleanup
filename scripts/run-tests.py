@@ -538,8 +538,13 @@ def _execute(entry, root, timeout_s, memory_bytes, progress_path=None):
         if process and process.poll() is None:
             process.kill()
             process.wait(timeout=5)
-    result.update(duration_ms=(time.monotonic() - start) * 1000, started_at=started_at,
+    elapsed = time.monotonic() - start
+    result.update(duration_ms=elapsed * 1000, started_at=started_at,
                   peak_memory_bytes=peak, worker_stderr=stderr[-16000:])
+    if elapsed > timeout_s and result["status"] != "timeout":
+        result.update(status="timeout", verdict=None, category=None)
+        result["failure"] = [*(result.get("failure") or []),
+                             {"phase": "budget", "type": "Timeout", "message": "自建测试工作单元收尾后超出墙钟预算"}]
     if progress_path and Path(progress_path).exists() and result["status"] in ("timeout", "error"):
         observations = []
         with Path(progress_path).open(encoding="utf-8") as stream:
@@ -662,10 +667,12 @@ def rebuild_report(directory):
     counts = {status: sum(event["status"] == status for identity, event in latest.items() if identity in entries) for status in FINAL_STATUSES}
     missing = [identity for identity in entries if identity not in latest]
     unfinished = [item for item in manifest.get("attempts_started", []) if not item.get("finished")]
+    budget_exceeded = manifest.get("elapsed_wall_seconds", 0) > plan["budget"]["wall_seconds"]
     summary = {"cases": len(entries), "attempts": sum(event.get("record_type") != "group_result" for event in events) + len(unfinished), "quality_passes": counts["passed"],
                "measured": counts["measured"], "completed": counts["completed"],
                "missing": missing, "blockers": sorted(set(blockers)), "recovered": recovered,
-               "complete": not missing, "release_allowed": not blockers and not missing,
+               "complete": not missing, "release_allowed": not blockers and not missing and not budget_exceeded,
+               "budget_exceeded": budget_exceeded,
                "counts": counts}
     if manifest.get("run_error"):
         summary["release_allowed"] = False
@@ -686,6 +693,7 @@ def rebuild_report(directory):
                      f"{entry['cost_class']}/{entry['result_type']} | {event.get('status', '未执行')}/{event.get('verdict')} | "
                      f"{event.get('attempt', 0)} | {event.get('duration_ms', '未知')} | {text(','.join(entry['tags']))} |")
     lines.extend(["", "## 未验证与阻断", "", f"必需项阻断：{', '.join(summary['blockers']) or '无'}。",
+                  f"整批墙钟预算超限：{budget_exceeded}。",
                   f"尚无结果：{', '.join(missing) or '无'}。", f"重试后通过：{', '.join(recovered) or '无'}。",
                   f"未选原因：`{_json(manifest.get('excluded', {}))}`。",
                   f"未执行原因：`{_json(manifest.get('unexecuted', {}))}`。"])

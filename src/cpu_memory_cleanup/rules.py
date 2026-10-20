@@ -587,7 +587,7 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
             nh, action = _header(meta), _dict(_dict(meta).get("action"))
             if action.get("attempted") is not False or action.get("call_outcome") != "not_started":
                 problems.append("A/A: 未确认零维护")
-            if any(nh.get(key) != ha.get(key) for key in ("environment_id", "workload_id", "program_version", "rule_version", "interval_s", "expected_count", "conditions")):
+            if any(nh.get(key) != ha.get(key) for key in ("schema_version", "program_version", "rule_version", "build_id", "environment_id", "workload_id", "interval_s", "expected_count", "conditions")):
                 problems.append("A/A: 校准条件与实验不一致")
         if problems:
             issues.extend(problems)
@@ -595,8 +595,9 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
         valid_pairs += 1
         nma, nmb = _window(na)["metrics"], _window(nb)["metrics"]
         for key in null_level_noise:
+            statistic = "tail_median" if key == "available_bytes" else "median"
             null_level_noise[key] = max(null_level_noise[key],
-                                        abs(nmb[key]["tail_median"] - nma[key]["tail_median"]))
+                                        abs(nmb[key][statistic] - nma[key][statistic]))
         null_cpu_a = [row["system_busy_pct"] for row in cpu_intervals(na)[1:]]
         null_cpu_b = [row["system_busy_pct"] for row in cpu_intervals(nb)[1:]]
         if not null_cpu_a or not null_cpu_b or None in null_cpu_a + null_cpu_b:

@@ -348,10 +348,25 @@ class ComparisonTests(unittest.TestCase):
         pair["b"] = _window("null-b", available=11)
         self.assertEqual(_compare(null_pairs=[pair])["verdict"], "cosmetic")
 
+    def test_commit_median_drift_with_equal_tails_is_not_benefit(self):
+        pair = _null_pair()
+        pair["b"] = [_sample(index, run="null-b", commit=58 if index < 2 else 60)
+                     for index in range(3)]
+        result = _compare(b=_window("b", commit=58), null_pairs=[pair])
+        self.assertEqual(result["null_calibration"]["level_noise_bytes"]["commit_used_bytes"], 2 * GIB)
+        self.assertEqual(result["verdict"], "cosmetic")
+
     def test_calibration_same_run_is_rejected(self):
         pair = _null_pair()
         pair["b"] = _window("null-a")
         self.assertEqual(_compare(null_pairs=[pair])["verdict"], "insufficient_evidence")
+
+    def test_calibration_build_or_schema_mismatch_is_insufficient(self):
+        for key, value in (("build_id", "other-build"), ("schema_version", 2)):
+            pair = _null_pair()
+            pair["metadata_a"]["header"][key] = value
+            pair["metadata_b"]["header"][key] = value
+            self.assertEqual(_compare(null_pairs=[pair])["verdict"], "insufficient_evidence")
 
     def test_environment_mismatch_is_insufficient(self):
         metadata = _metadata(action=True)

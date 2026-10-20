@@ -174,9 +174,12 @@ def _legacy_sample(record, index):
     if not isinstance(processes, list):
         metrics["processes"] = processes
         processes = []
+    warnings = record.get("warnings", [])
+    if not isinstance(warnings, list):
+        raise ValueError("历史 warnings 必须是列表")
     return Sample(series.get("run_id") or record.get("run_id") or "legacy", series.get("index", record.get("index", index)),
                   record.get("started_at_utc") or record.get("timestamp") or record.get("at_utc") or record.get("utc"),
-                  metrics, processes, [{"reason": "历史记录缺少完整运行条件"}])
+                  metrics, processes, [*warnings, {"reason": "历史记录缺少完整运行条件"}])
 
 
 def _load_run(path):
@@ -247,8 +250,10 @@ def _load_run(path):
             raise ValueError("终态与样本不一致")
         if header.get("expected_count") != len(result["samples"]) or terminal.get("completion") != "success":
             result["gaps"].append("运行未完整成功")
+    header = result["header"] or {}
+    expects_action = header.get("mode") == "maintain" or bool(header.get("mechanism"))
     operation_path = sample_path.parent / "operation.jsonl"
-    if operation_path.exists():
+    if expects_action and operation_path.exists():
         action_phase = None
         for record in _read_lines(operation_path):
             if record.get("run_id") != result["samples"][0].run_id:
@@ -271,8 +276,7 @@ def _load_run(path):
                 raise ValueError("未知动作记录类型")
         if result["action"].get("call_outcome") == "unknown":
             result["gaps"].append("历史动作结果未知，不重放")
-    header = result["header"] or {}
-    if (header.get("mode") == "maintain" or header.get("mechanism")) and not result["action"]:
+    if expects_action and not result["action"]:
         result["action"] = {"attempted": None, "call_outcome": "unknown", "privilege_restored": None}
         result["gaps"].append("维护动作记录缺失，结果未知，不重放")
     return result
