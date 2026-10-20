@@ -146,7 +146,7 @@ def _finish(what, started, before_report, after_report, actions, preflight, priv
     performed = any(a["ok"] for a in actions)
     warnings = [
         "Standby already counts as available: a standby purge moves standby to free, so guaranteed additional available is ~0 from that mechanism alone.",
-        "空闲或可用内存上升本身不代表收益；验证方法见 docs/架构设计.md 第五节。",
+        "空闲或可用内存上升本身不代表收益；验证方法见 docs/CPU 内存清理 架构设计.md 第五节。",
         "Working-set emptying does not release commit; pages not touched again stay out, pages touched again must be faulted back in.",
     ]
     if not performed:

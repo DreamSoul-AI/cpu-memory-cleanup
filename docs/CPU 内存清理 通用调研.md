@@ -1,5 +1,5 @@
-**主机内存维护与工具实例回收 通用调研**
-更新日期：2026年10月21日。读者为本项目开发者与使用者。配套方案见 [架构设计](架构设计.md)。
+**CPU 内存清理 通用调研**
+更新日期：2026年10月21日。读者为本项目开发者与使用者。配套方案见 [架构设计](<CPU 内存清理 架构设计.md>)。
 
 # 一、问题、范围与主要判断
 ## （一）调研目的
@@ -180,7 +180,7 @@ DreamSoul 历史代码分析定位了桌面自动退订器、执行 PID 记录�
 
 [^R01]: DreamSoul，《通用调研规范 General Research Standard》，飞书修订号2，21日读取全文，重点为问题定义、证据分层、来源与验证边界。[飞书正文](https://dreamsoul.feishu.cn/docx/YcWIdE4INoLqoLxR5O8cbl7hnTf)。[本地文件](<D:/360安全浏览器下载/Agent/DreamSoul/文档/规范/研发/开发/通用调研规范 General Research Standard.md>)。另读《飞书文档规范》修订号38，约束中文混排、标题、表格、引用和正式内容。[飞书正文](https://dreamsoul.feishu.cn/docx/DdmxdrNvBo9AMXxkAYmc4EJ6nwe)
 [^R02]: DreamSoul，《Codex 闲置工具进程安全回收调研》，研究日期2026年10月19日，21日复读相关章节，主要使用第一、二、四、六、七、八章。[本地报告](<D:/360安全浏览器下载/Agent/DreamSoul/研发/研究/软件开发 Software Engineering/Codex 闲置工具进程安全回收调研.md>)。其结论限于报告所列安装包、日志与采样范围
-[^R03]: DreamSoul，《cpu memory cleanup 新对话交接》，2026年10月21日，读取路径、资料分工及当前先不运行清理的边界。旧文档路径已在本仓库合并，不重新创建副本。[交接](<D:/360安全浏览器下载/Agent/DreamSoul/main/cpu memory cleanup 新对话交接.md>)
+[^R03]: 项目交接记录，2026年10月21日。原《cpu memory cleanup 新对话交接》文件已从 DreamSoul 的 main 目录移除。路径、资料分工和先不运行清理的边界已承接到本项目的 [资料入口](../README.md) 与 [协作约定](../AGENTS.md)，后续从这两个现有文件接续
 [^R04]: DreamSoul，逐 PID 直接证据台账，采样时间2026年10月19日01:37，北京时间。21日复核 `candidateRows` 数量、`sampleStatus`、连接/使用者/请求字段。关联原始快照由台账 `processSnapshot` 指定。[台账](<D:/360安全浏览器下载/Agent/DreamSoul/tmp/node-runtime-audit-20261019/candidate-direct-evidence-20261019-014800.json>)
 [^R05]: DreamSoul，宿主静态代码摘录，归档日期2026年10月19日，报告第六章列出未格式化代码位置和调用路径。用于说明桌面退订与强制中断，不宣称21日重新审计全部安装包。[代码摘录](<D:/360安全浏览器下载/Agent/DreamSoul/tmp/node-runtime-audit-20261019/host-source-excerpts-20261019-014500.json>)。[安装包清单](<D:/360安全浏览器下载/Agent/DreamSoul/tmp/node-runtime-audit-20261019/installed-source-20261019-014000/source-manifest.json>)
 [^R06]: DreamSoul，宿主生命周期元数据，2026年10月19日归档。21日离线复核 `events` 类型与计数，没有采集当前日志或其它聊天载荷。[元数据](<D:/360安全浏览器下载/Agent/DreamSoul/tmp/node-runtime-audit-20261019/host-lifecycle-metadata-20261019-014500.json>)
