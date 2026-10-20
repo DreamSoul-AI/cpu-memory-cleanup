@@ -2,9 +2,10 @@
 
 Pure file parsing; no OS calls, no release, no action. Window A is the
 no-release control, window B is the identical sampling window started right
-after one ``--release``. The verdict rule is the one pre-registered in
-docs/mitigation-design.md section 7.3; thresholds below are proposals and are
-reported alongside the verdict so a reader can re-judge.
+after one ``--release``. The thresholds below are historical proposals,
+reported alongside the verdict so a reader can re-judge. Current validation
+requirements are in docs/CPU 内存清理 架构设计.md 第五章; this comparator has
+not yet been updated to meet those requirements.
 """
 
 from .analysis import describe, load_records, metric_values
