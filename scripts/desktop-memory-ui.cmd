@@ -1,4 +1,10 @@
 @echo off
+setlocal
 cd /d "%~dp0.."
-where pythonw >nul 2>&1 && start "" pythonw -m cpu_memory_cleanup.desktop_ui && exit /b 0
-start "" python -m cpu_memory_cleanup.desktop_ui
+if defined PYTHONPATH (
+  set "PYTHONPATH=%CD%\src;%PYTHONPATH%"
+) else (
+  set "PYTHONPATH=%CD%\src"
+)
+python -m cpu_memory_cleanup --gui %*
+exit /b %ERRORLEVEL%

@@ -1,38 +1,26 @@
 @echo off
 setlocal
 cd /d "%~dp0.."
+if defined PYTHONPATH (
+  set "PYTHONPATH=%CD%\src;%PYTHONPATH%"
+) else (
+  set "PYTHONPATH=%CD%\src"
+)
+if "%~1"=="" goto readonly
 if /I "%~1"=="release" goto release
+goto usage
 
-echo.
-echo Desktop memory button. View only. Opening this file does not release memory.
-echo.
-echo Measured evidence, daily desktop load, AA,AB,AA,AB, 8 windows x 30 samples x 10 s:
-echo   working-set empty  2026-10-20 02:04-02:43 Asia/Shanghai  cosmetic-or-harmful
-echo   Commit did not fall. Hard faults rose above that run's A/A ceiling, and a refault cost follows.
-echo   Standby purge is excluded: standby-only A/B showed available only +0.24/+0.30 GiB with about 3x the refault ceiling.
-echo A higher available number is not a proven benefit.
-echo Working-set release is explicit: desktop-memory-button.cmd release
-echo.
+:readonly
 python -m cpu_memory_cleanup
-set RC=%ERRORLEVEL%
-echo.
-echo No release was performed.
-echo.
-pause
-exit /b %RC%
+exit /b %ERRORLEVEL%
 
 :release
-echo.
-echo Desktop memory button. Working-set release only. Standby purge is not called.
-echo This argument is explicit. No per-item selection.
-echo Does not end processes, stop services, or change system settings.
-echo.
-python -m cpu_memory_cleanup --release --release-what working-set
-set RC=%ERRORLEVEL%
-echo.
-echo Before/after available and commit are the lines above. A higher available number is not a proven benefit.
-echo Measured evidence, daily desktop load: working-set empty was cosmetic-or-harmful, and a refault cost follows.
-echo This script does not end processes and does not change system settings, the page file, or the registry.
-echo.
-pause
-exit /b %RC%
+if "%~2"=="" goto usage
+if not "%~3"=="" goto usage
+python -m cpu_memory_cleanup --release --release-what working-set --output-dir "%~2"
+exit /b %ERRORLEVEL%
+
+:usage
+echo Usage: desktop-memory-button.cmd [release NEW_OUTPUT_DIRECTORY]
+echo Default: read-only. Explicit release uses working-set only and requires a new record directory.
+exit /b 2
