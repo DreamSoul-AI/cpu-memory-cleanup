@@ -1,6 +1,6 @@
 import unittest
 
-from cpu_memory_cleanup.contracts import ActionRequest, Sample
+from cpu_memory_cleanup.contracts import ActionRequest, Capabilities, Sample, validate_action
 
 
 class ContractTests(unittest.TestCase):
@@ -43,3 +43,15 @@ class ContractTests(unittest.TestCase):
     def test_confirmation_cannot_be_truthy_text(self):
         with self.assertRaises(ValueError):
             ActionRequest("standby", confirmed="yes")
+
+    def test_single_mechanism_is_not_bound_to_one_operating_system(self):
+        request = ActionRequest("application-cooperative", confirmed=True, confirmation_source="test")
+        self.assertEqual(request.mechanism, "application-cooperative")
+
+    def test_capability_metadata_rejects_invalid_mechanism_items(self):
+        with self.assertRaises(ValueError):
+            Capabilities("fake", mechanisms=({},))
+
+    def test_generic_call_fact_preserves_opaque_platform_status(self):
+        fact = {"attempted": True, "call_outcome": "success", "status": "platform-ok", "privilege_restored": True}
+        self.assertEqual(validate_action(fact), fact)

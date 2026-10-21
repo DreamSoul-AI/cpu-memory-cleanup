@@ -139,6 +139,23 @@ class _Project(unittest.TestCase):
 
 
 class CatalogTests(unittest.TestCase):
+    def test_readonly_acceptance_remains_planned_outside_executable_plans(self):
+        catalog = runner.validate_catalog(runner._read_json(runner.ROOT / "tests" / "manifest.json"))
+        acceptance = catalog["acceptance_plans"]["readonly_diagnostics"]
+        self.assertFalse(acceptance["enabled"])
+        self.assertEqual(acceptance["status"], "planned_not_executed")
+        self.assertNotIn(acceptance["plan_id"], catalog["plans"])
+        with self.assertRaises(ValueError):
+            runner.select_tests(catalog, runner.parser().parse_args(["--plan", acceptance["plan_id"]]))
+        identities = {entry["test_id"] for entry in catalog["tests"]}
+        for check in acceptance["checks"]:
+            self.assertEqual(check["status"], "not_run")
+            self.assertNotIn(check["check_id"], identities)
+            self.assertTrue(set(check["offline_test_ids"]) <= identities)
+        _, selected, _ = runner.select_tests(catalog, runner.parser().parse_args(["--all"]))
+        self.assertTrue(selected)
+        self.assertFalse(any(entry["resources"] for entry in selected))
+
     def test_defaults_are_resolved_before_selection(self):
         entry = _entry()
         catalog = _catalog()

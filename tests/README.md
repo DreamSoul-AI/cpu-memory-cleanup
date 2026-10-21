@@ -1,23 +1,24 @@
 # CPU 内存清理 测试说明
-更新日期：2026年10月21日。采用项目关联 DreamSoul 文档库中已读取的 [测试规范 代码](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)，源码职责和测试镜像见 [代码结构设计](<../docs/CPU 内存清理 代码结构设计.md>)。
+更新日期：2026年10月22日。采用项目关联 DreamSoul 文档库中已读取的 [测试规范 代码](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)，源码职责和测试镜像见 [代码结构设计](<../docs/CPU 内存清理 代码结构设计.md>)。只读验收准备针对性读取本地规范第二章五维、第三章计划与报告、第四章镜像要求，沿用既有飞书分享链接，未据此宣称云端最新修订已回读。
 
 ## 一、范围与安全边界
 产品测试使用合成样本、临时目录、假 Reader、假 Maintainer、假 DLL 或假 Tk。导入测试不采样、不加载真实产品 DLL、不创建窗口，不触发真实维护或特权调整。测试入口仅为自身创建的工作进程设置预算，在超时或收尾时回收自己的测试进程树，不接管其它 PID。
 
-| **产品或脚本** | **镜像测试** | **重点信号** |
+| **产品源码，相对于 src/cpu_memory_cleanup/** | **镜像测试，相对于 tests/src/cpu_memory_cleanup/** | **重点信号** |
 | --- | --- | --- |
-| `src/cpu_memory_cleanup/__init__.py` | `src/cpu_memory_cleanup/test_package.py` | 无副作用导入与源码依赖方向 |
-| `src/cpu_memory_cleanup/__main__.py` | `src/cpu_memory_cleanup/test_main.py` | 参数先解析、装配、GUI 按需导入 |
-| `contracts.py` | `src/cpu_memory_cleanup/test_contracts.py` | 数据类型、数值边界、时区及动作合同 |
-| `core.py` | `src/cpu_memory_cleanup/test_core.py` | 观察、回看与维护顺序，取消、并发、记录失败及未知状态 |
-| `rules.py` | `src/cpu_memory_cleanup/test_rules.py` | CPU 差分、覆盖、压力、树、排名、对照及收益证据门槛 |
-| `windows.py` | `src/cpu_memory_cleanup/test_windows.py` | 假原生调用、零调用拒绝、至多一次派发、权限恢复与资源关闭 |
-| `cli.py` | `src/cpu_memory_cleanup/test_cli.py` | 参数合同、废弃入口、假接入端到端旅程 |
-| `desktop.py` | `src/cpu_memory_cleanup/test_desktop.py` | 假 Tk、单工作线程、队列、忙碌、关闭与线程启动竞态 |
-| 三个启动及采样脚本 | `scripts/test_desktop_memory_button.py`、`test_desktop_memory_ui.py`、`test_tree_series.py` | 仅检查转发、显式维护及有界参数，不运行脚本 |
-| `scripts/run-tests.py` | `scripts/test_run_tests.py` | 选择后导入、预算、失败、参数展开、持久化、重建、恢复及依赖门控 |
+| `__init__.py` | `test_package.py` | 根包无副作用、模块依赖方向 |
+| `__main__.py` | `test_main.py` | 装配、按需界面、离线独立、未适配平台拒绝 |
+| `contracts.py` | `test_contracts.py` | 样本、通用机制、能力及调用事实 |
+| `application/core.py` | `application/test_core.py` | 流程、取消、关闭事实、记录失败、安全阻断及未知不重放 |
+| `application/rules.py` | `application/test_rules.py` | CPU、内存、对照与证据门槛 |
+| `interaction/cli.py` | `interaction/test_cli.py` | 参数、假接入旅程、结果及退出码 |
+| `interaction/desktop.py` | `interaction/test_desktop.py` | 假界面、单工作线程、待提交与关闭、指标呈现 |
+| `system/operating_system.py` | `system/test_operating_system.py` | 假接入选择，未适配平台不加载专属实现 |
+| `system/records.py` | `system/test_records.py` | 临时文件的排他写入、格式校验、关闭与一次终态提交 |
+| `system/runtime.py` | `system/test_runtime.py` | 临时源码树的递归指纹、诊断输出，非主机性能采样 |
+| `system/platforms/windows.py` | `system/platforms/test_windows.py` | 假 DLL、原生布局、单次派发、权限恢复与资源关闭 |
 
-表内测试路径相对于 `tests/`。产品文件名未列目录时均位于 `src/cpu_memory_cleanup/`。层级为 unit、integration、e2e 标签，不另建同名一级目录；e2e 只描述完整假接入旅程。
+脚本测试仍位于 `tests/scripts/`，只核对三个兼容入口的转发和统一测试执行器，不执行真实采样脚本。共享测试装配在 `tests/support.py`，提供合成运行信息和临时记录访问，不进入产品包。层级使用 unit、integration、e2e 标签，不另建同名一级目录，e2e 只描述完整离线或假接入旅程。
 
 排除测试包标识（含 `tests/src/__init__.py`）的递归镜像；它们只有包标识作用。文档、`.gitignore`、清单、生成报告、缓存、虚拟环境与历史已删除文件不作为可执行源码复制镜像。清单自身的解析与验证由测试入口的镜像测试覆盖。最小 `pyproject.toml` 支持 src 包发现，构建元数据纳入源码指纹；wheel 另做离线构建与内容检查，不读取主机指标。
 
@@ -27,7 +28,7 @@
 | **维度** | **取值与当前含义** |
 | --- | --- |
 | 层级 level | unit、integration、e2e；核心流程为 integration，CLI 假接入旅程为 e2e |
-| 对象 type | location、content、physical；当前为源码关系或行为内容，未声明真实平台 physical 计划 |
+| 对象 type | location、content、physical；可执行计划验证源码关系或行为，physical 测量另列在待执行验收草案 |
 | 重要性 priority | p1、p2、p3；安全与主路径优先，部分辅助统计为 p2 |
 | 成本 cost_class | c1 至 c4；当前只采用有预算依据的 c1、c2 |
 | 结果信号 result_type / result_detail | categorical 或 numeric，summary、metrics 或 samples；当前产品回归为有断言的 categorical |
@@ -36,6 +37,7 @@
 
 ```powershell
 python scripts/run-tests.py --plan quick --list
+python scripts/run-tests.py --plan readonly_offline
 python scripts/run-tests.py --plan quick
 python scripts/run-tests.py --plan regression
 python scripts/run-tests.py --plan quick --file test_core.py
@@ -50,8 +52,9 @@ python scripts/run-tests.py --plan quick --file test_core.py
 | --- | --- | --- | --- |
 | c1 单方法 | 1 秒 | 256 MiB | 假接入、合成数据及脚本静态验证 |
 | c2 单方法 | 60 秒 | 2 GiB | 测试入口自检，部分自建嵌套工作进程 |
-| 单独运行 quick 整批 | 60 秒 | 256 MiB | 187 个方法，参数展开后 192 项 |
-| regression 整批 | 600 秒 | 2 GiB | 先执行 quick 阶段；其必需项通过后执行 48 个入口自检，合计 240 项，全阶段共用整批预算 |
+| readonly_offline 整批 | 60 秒 | 256 MiB | 49 项只读合同、显示、模块与资源隔离检查，全部为假接入 |
+| 单独运行 quick 整批 | 60 秒 | 256 MiB | 214 个方法，参数展开后 219 项 |
+| regression 整批 | 600 秒 | 2 GiB | 先执行 quick 阶段，其必需项通过后执行 49 个入口自检，合计 268 项，全阶段共用整批预算 |
 
 内存口径是自身测试工作进程树的提交量；控制器和整机内存不在该硬上限内，也不把它称为 RSS。顺序执行时每个工作 Job 的上限取单项与批次预算的较小值，嵌套测试仍受外层 Job 限制。峰值无法取得时保留未知。该口径依据 [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 和 [扩展限制信息](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information)。
 
@@ -98,4 +101,70 @@ src 迁移后、PR 审查修复前的完整 regression 为 `20261020T210919Z_297
 
 完整 regression `20261020T211632Z_879933bd` 基于 `89ecc77366fbe708819b00ec62647f776bd7b146` 加本轮审查修复，235 个方法、参数展开后 **240 / 240 项首次通过**，整批墙钟 36.02 秒。失败、错误、超时、跳过、缺失和 recovered 均为 0，`budget_exceeded=false`。源码及展开清单指纹为 `9f45d70c25a146ae9e322ac3866724432df4dfc9932452af4c172e9160f23811`；原始回执位于 `.test-results/20261020T211632Z_879933bd/`，报告已从磁盘重建，指纹及全部测试方法与清单一致。
 
+## 七、只读诊断验收计划
+唯一计划正文位于 `tests/manifest.json`：`plans.readonly_offline` 是可执行的离线准备计划，`acceptance_plans.readonly_diagnostics` 是禁用的实机验收草案。后者记录目标、五维、依赖、资源、预算、步骤、预期、证据及离线用例映射，不注册为可运行的 unittest，也不进入 quick、regression 或 `--all` 的执行清单。`--plan readonly_diagnostics` 当前会被拒绝，资源参数不能启用该草案。
+
+### （一）目标与顺序
+验收目标为只读数据口径、缺失解释、持久化、界面及生命周期正确性，不判断清理收益。先完成 readonly_offline 和 regression，再在实际执行获明确授权、环境与监管能力齐备后检查实机。维护 API、特权调整、业务进程结束、服务和系统设置变更均不在范围内。实际 GUI 布局可先使用假 Reader，实机只读入口只向 Application 提供 Reader，Maintainer 留空。
+
+| **检查标识** | **定位对象与预期** | **主要证据** | **当前状态** |
+| --- | --- | --- | --- |
+| ro_default | 默认只读，维护会话和原生维护调用为 0 | 装配、启动参数、运行头与终态 | 未执行 |
+| ro_cpu | 首拍未知，后续累计差分正确，处理器组与覆盖不冒充全机 | 时间戳、累计 CPU 时间、处理器信息及参考口径 | 未执行 |
+| ro_memory | bytes 与 GiB 一致，物理容量与提交量分开，未知和零可区分 | 同一份原始数据、换算与界面文字 | 未执行 |
+| ro_gaps | PDH 预热、不可读项及权限缺口保留原因 | 样本 errors、预热记录和未覆盖条件 | 未执行 |
+| ro_processes | top 仅限制排名，CPU 使用全部可读输入，身份与覆盖完整记录 | 进程创建身份、枚举计数及排名 | 未执行 |
+| ro_records | 新目录保存，离线回看零系统接入，不完整记录不支持收益 | 样本、运行头、终态、回看退出码 | 未执行 |
+| ro_lifecycle | 刷新不重入，取消与关闭以核心收尾为准，关闭后无新派发 | 交互顺序、报告和自身线程收尾 | 未执行 |
+| ro_gui | 指标、时间、状态和维护区可辨，缩放与键盘操作可用 | 各缩放配置的图像或人工记录 | 未执行 |
+| ro_cost | 记录只读执行的实际墙钟及自身 Job 提交量，不作收益判定 | ms、bytes、方法、样本量和预算状态 | 未执行 |
+
+这些是验收检查标识，未执行项不计入自动化用例通过数。每项映射到已存在的离线回归方法，完整方法 ID 与步骤以清单为准。维护零调用是独立必需条件，读数正常或窗口能打开不能代替该证据。
+
+### （二）环境、数据和预算
+草案以当前 `master` 的 `8c0c154` 为比较基线。执行前另行固定实际目标提交、源码指纹、wheel 校验值、Windows 完整构建、Python 版本、体系结构和普通权限上下文，不能复用旧回执冒充当前产物。配置矩阵为 Windows 11 / x64 / Python 3.13 与 Windows 10 / x64 / Python 3.10，当前均未核验。未覆盖配置保留未执行及原因，不能宣称已支持。
+
+只读数据样本固定为 5 拍、1 秒间隔、单工作单元，第一拍保留而不计算不存在的前向差分。跨工具对照记录范围、单位、窗口和读取时差，不给异步瞬时 CPU 百分比编造相等阈值。GUI 的 100%、150%、200% 缩放通过预配置环境或进程内 Tk 缩放检查，不修改系统全局显示设置，每个配置单列结果。
+
+单项按 c2 上限 60 秒 / 2 GiB，每个系统配置整批最多 600 秒，两个配置总预算 1200 秒，并发为 1。准备、采样、保存、收尾和人工交互都计入成本，内存仍为自身测试 Job 的提交量。以上是待落实的执行上限，不是性能合格阈值；控制器和整机内存不在该上限内。监管能力、资源或目标版本未准备好时不能开始实机验收。本轮不新增实机执行器，也不宣称已落实其实机监管。
+
+### （三）证据、判定与阻断
+每个配置使用新的独立验证目录，保留实际命令、产物、环境、原始样本、运行头与终态、界面证据、交叉核对口径和未执行原因，沿用第四节结果字段。功能检查有明确断言才记 passed，成本测量只有有效数据时记 measured，不混入质量通过率。无自然条件触发的读取异常保留未覆盖，离线故障注入结果单列。
+
+任一必需项缺失、失败、超时、预算失控或环境不可用，都不能标记该配置验收通过。支持范围、测量完成和性能达标分别判断，当前没有清理或性能改善阈值。准备计划完成只说明具备进一步验证材料，实机检查仍保持 `not_run`。
+
+## 八、只读界面与离线准备回执
+桌面改为 CPU、可用物理内存、系统提交量三张指标卡，分别显示处理器覆盖或容量上限。采样时间、数据缺口和核心完成状态各自呈现，缺失不补零。只读刷新与取消位于诊断区，单项维护放在独立区域并说明缺页与 I/O 代价。刷新等待现有工作收尾，维护请求和核心权限边界保持不变。
+
+UI 行为通过假 Tk、假工作线程和合成报告检查，另有 Fake Reader → Application → rules → 桌面展示的完整只读旅程，验证两拍 CPU 差分、资源关闭和零维护调用。假界面测试不验证字体、裁切、实际键盘焦点或显示缩放，这些仍由 ro_gui 的待执行检查负责。
+
+验收准备的验证基线为 `8c0c1542bff99aeb9fe27be6ecbec77dedf14561` 加当前待提交改动，环境为 Windows / Python 3.13.9。最终两轮采用同一源码与清单指纹 `b415f4bad2b42b6e6e04e69e1a10e08f56c372879ea2f56af105484007a30449`，报告均已从磁盘重建，未改变 9 项实机检查的未执行状态。
+
+| **计划与运行 ID** | **质量通过** | **整批墙钟** | **完成与阻断** |
+| --- | --- | --- | --- |
+| readonly_offline，`20261021T132940Z_a09f87af` | 29 / 29 项 | 4.91 秒 | 完整，无失败、超时、缺失或预算超限 |
+| regression，`20261021T132758Z_a5ec81f8` | 248 / 248 项 | 43.20 秒 | 243 个方法展开为 248 项，完整，无失败、超时、跳过、缺失、recovered 或预算超限 |
+
+原始运行目录为 `.test-results/<run_id>/`，属于本地忽略产物。源代码语法、测试清单完整映射、文档编码与相对链接检查通过。当前回执仅证明离线准备及假界面行为，不证明真实平台、实际显示或清理效果。
+
 真实 Windows 产品采集、真实 GUI、特权 ABI 与恢复、跨会话互斥、各构建兼容和清理收益均未验证。测试工作进程的 Job 预算验证不代表产品维护能力通过。未配置或运行 CI/CD，未发布产品。提交和 PR 以实际 Git 及托管平台结果为准。
+
+## 九、三层模块迁移验证
+本节对应2026年10月22日的三层分包与职责调整，基线为 `8c0c1542bff99aeb9fe27be6ecbec77dedf14561` 加未提交工作区变更。测试标识和目标路径已迁入模块镜像位置，旧回执不改写。新增20个方法核对记录边界、回看取消、关闭事实、能力选择、通用合同、离线装配、递归指纹和层间依赖。当前共有263个方法，参数展开后268项。
+
+集成路径以交互或 `Application` 为起点，经过纯规则、假读取/维护或真实临时文件系统，最终检查报告、记录及关闭状态。单次维护仍使用假后端，原生平台测试使用假 DLL，产品 GUI 使用假 Tk。记录文件的物理访问以独立临时目录隔离，运行环境元信息测试不采样主机性能。
+
+首轮 quick `20261021T210420Z_bbd6e6bb` 为217项中的216项通过，1项隔离导入测试仍使用迁移前命名空间而报错，预算未超限。修正测试的隔离模块名后运行新的完整 regression，没有覆盖首轮失败回执。
+
+最终回执均来自 Windows、Python 3.13.9，运行 ID 使用 UTC，执行日期为北京时间2026年10月22日。
+
+| **运行 ID 与计划** | **结果** | **整批墙钟** | **完成条件** |
+| --- | --- | --- | --- |
+| `20261021T210642Z_cad7d5ca`，regression | 268 / 268 项首次通过 | 46.45 秒 | 包含 quick 的219项及49项执行器回归，必需结果齐全 |
+| `20261021T211106Z_e9ae82a5`，readonly_offline | 49 / 49 项首次通过 | 7.94 秒 | 只读准备、假接入及模块边界检查 |
+
+两份回执的源码、脚本、打包元数据与展开清单指纹均为 `d73a7896d7b40ccfda84470db605425854f4b3c528ced305d4a7e3edb382309a`。报告已从 `.test-results/<run_id>/` 重建，失败、错误、超时、跳过、缺失和 recovered 均为0，`budget_exceeded=false`。这些结果只用于本轮离线计划，不能作为实机、清理收益或发布通过依据。
+
+打包验证首次发现旧构建缓存把已删除的平铺模块带入 wheel，该产物被拒绝并保留。随后使用隔离的干净源码目录离线构建，核对15个产品 Python 文件与源码逐字节一致，安装到独立目标后隔离执行 `--help`，返回0，未加载具体平台或 GUI。证据位于 `.test-results/module-package-check-20261022/`，仅用于本地验证，不作为发布产物。
+
+本轮没有运行真实采样、产品 GUI、维护、特权调整或其他操作系统实机验证，未配置或执行 GitHub Actions，未发布产品。提交、推送和 PR 状态以实际 Git 及托管平台结果为准。

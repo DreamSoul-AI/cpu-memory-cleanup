@@ -1,12 +1,13 @@
+from tests.support import make_app
 """假 Tk 和可控工作线程验证桌面调度，不创建窗口或读取系统。"""
 
 import unittest
 import tempfile
 from unittest.mock import patch
 
-from cpu_memory_cleanup import desktop
-from cpu_memory_cleanup.contracts import RunReport
-from cpu_memory_cleanup.core import Application
+from cpu_memory_cleanup.interaction import desktop
+from cpu_memory_cleanup.contracts import Capabilities, RunReport, Sample
+from cpu_memory_cleanup.application.core import Application
 
 
 class DeferredThread:
@@ -62,7 +63,7 @@ class Variable:
 
 
 class FakeTk:
-    Label = Button = Radiobutton = Widget
+    Frame = LabelFrame = Label = Button = Radiobutton = Widget
     StringVar = Variable
 
 
@@ -75,6 +76,12 @@ class Root:
         pass
 
     def geometry(self, value):
+        pass
+
+    def minsize(self, width, height):
+        pass
+
+    def configure(self, **kwargs):
         pass
 
     def protocol(self, name, function):
@@ -95,6 +102,7 @@ class Root:
 
 
 class FakeApplication:
+    capabilities = Capabilities("fake", "available", ("working-set", "standby"))
     busy = False
 
     def __init__(self):
@@ -140,7 +148,7 @@ class DesktopTests(unittest.TestCase):
         self.window.start()
         self.finish_worker()
         self.assertEqual(self.app.calls, [("inspect", {"count": 2, "interval": 1})])
-        self.assertIn("inspect：success", self.window.status.cget("text"))
+        self.assertIn("只读诊断：已完成", self.window.status.cget("text"))
 
     def test_worker_only_queues_result_until_main_thread_pumps(self):
         self.window.start()
@@ -148,7 +156,116 @@ class DesktopTests(unittest.TestCase):
         self.window._worker.finish()
         self.assertEqual(self.window.result.cget("text"), before)
         self.window.pump()
-        self.assertIn("可用：未知", self.window.result.cget("text"))
+        self.assertEqual(self.window.metric_labels["physical"].cget("text"), "未知")
+        self.assertIn("尚未取得样本", self.window.result.cget("text"))
+
+    def test_dashboard_renders_zero_and_known_memory_with_sample_time(self):
+        sample = Sample("fake", 1, "2026-10-21T08:00:01+08:00", {
+            "physical": {"available_bytes": 2 * 1024 ** 3, "total_bytes": 8 * 1024 ** 3},
+            "commit": {"used_bytes": 3 * 1024 ** 3, "limit_bytes": 16 * 1024 ** 3}})
+        report = RunReport("fake", "inspect", completion="success", samples=[sample],
+                           analysis={"cpu": {"intervals": [{"busy_pct": 0, "scope": "system", "coverage": "complete"}]}})
+        with patch.object(self.app, "inspect", return_value=report):
+            self.window.start()
+            self.finish_worker()
+        self.assertEqual(self.window.metric_labels["cpu"].cget("text"), "0.0%")
+        self.assertEqual(self.window.metric_labels["physical"].cget("text"), "2.000 GiB")
+        self.assertEqual(self.window.metric_labels["commit"].cget("text"), "3.000 GiB")
+        self.assertIn("全机", self.window.metric_notes["cpu"].cget("text"))
+        self.assertIn(sample.timestamp, self.window.context.cget("text"))
+
+    def test_missing_readings_keep_unknown_and_show_reasons(self):
+        sample = Sample("fake", 0, "2026-10-21T08:00:00+08:00", {}, errors=["PDH 读取不可用"])
+        report = RunReport("fake", "inspect", samples=[sample],
+                           analysis={"cpu": {"intervals": [{"busy_pct": None, "coverage": "unknown", "missing_reason": "首拍没有前一累计值"}]}},
+                           errors=[{"message": "读取权限不足"}])
+        result = desktop._present(report)
+        self.assertEqual(result["cards"]["cpu"][0], "未知")
+        self.assertEqual(result["cards"]["physical"][0], "未知")
+        self.assertIn("首拍没有前一累计值", result["details"])
+        self.assertIn("PDH 读取不可用", result["details"])
+        self.assertIn("读取权限不足", result["details"])
+
+    def test_group_cpu_is_explicitly_not_system_coverage(self):
+        report = RunReport("fake", "inspect", analysis={"cpu": {"intervals": [
+            {"busy_pct": 25, "scope": "group", "coverage": "partial"}]}})
+        result = desktop._present(report)
+        self.assertIn("当前处理器组", result["cards"]["cpu"][1])
+        self.assertIn("覆盖不全", result["cards"]["cpu"][1])
+        self.assertIn("不能代表全机", result["details"])
+
+    def test_refresh_replaces_poll_and_never_submits_maintenance(self):
+        self.window.start()
+        self.finish_worker()
+        old_poll = self.window._poll_job
+        self.window.refresh()
+        active_worker = self.window._worker
+        self.window.refresh()
+        self.assertIs(self.window._worker, active_worker)
+        self.assertNotIn(old_poll, self.root.jobs)
+        self.finish_worker()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect", "inspect"])
+
+    def test_refresh_does_not_replace_pending_maintenance(self):
+        self.window.start()
+        self.window.maintain()
+        pending = self.window._pending
+        worker = self.window._worker
+        self.window.refresh()
+        self.assertIs(self.window._pending, pending)
+        self.assertIs(self.window._worker, worker)
+        self.assertEqual(self.app.calls, [])
+
+    def test_readonly_controls_follow_worker_and_close_state(self):
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.window.start()
+        self.assertEqual(self.window.refresh_button.cget("state"), "disabled")
+        self.assertEqual(self.window.cancel_button.cget("state"), "normal")
+        self.finish_worker()
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.window.close()
+        self.window.refresh()
+        self.assertEqual(self.window.refresh_button.cget("state"), "disabled")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertEqual(len(self.app.calls), 1)
+
+    def test_readonly_journey_uses_core_without_maintenance(self):
+        class Backend:
+            def __init__(self):
+                self.reads = self.closes = self.actions = 0
+
+            def open_observation(self, **options):
+                return self
+
+            def read(self, run_id, sequence):
+                self.reads += 1
+                return Sample(run_id, sequence, f"2026-10-21T00:00:0{sequence}+00:00", {
+                    "cpu": {"scope": "system", "coverage": "complete", "logical_processors": 4,
+                            "processor_group": 0, "total_seconds": sequence * 4, "idle_seconds": sequence * 2},
+                    "physical": {"available_bytes": 2 * 1024 ** 3, "total_bytes": 8 * 1024 ** 3},
+                    "commit": {"used_bytes": 3 * 1024 ** 3, "limit_bytes": 16 * 1024 ** 3}})
+
+            def close(self):
+                self.closes += 1
+                return {"closed": True, "errors": []}
+
+            def open_operation(self, request):
+                self.actions += 1
+                raise AssertionError("只读旅程不能打开维护会话")
+
+        backend = Backend()
+        app = make_app(backend, backend, sleep=lambda seconds: None)
+        window = desktop.MemoryWindow(Root(), app, FakeTk, lambda: "unused")
+        window.start()
+        window._worker.finish()
+        window.pump()
+        self.assertEqual(window.metric_labels["cpu"].cget("text"), "50.0%")
+        self.assertEqual(window.metric_labels["physical"].cget("text"), "2.000 GiB")
+        self.assertIn("本次 2 拍", window.context.cget("text"))
+        self.assertEqual(backend.reads, 2)
+        self.assertEqual(backend.closes, 1)
+        self.assertEqual(backend.actions, 0)
 
     def test_maintenance_waits_for_reader_and_ignores_duplicate_click(self):
         self.window.start()
@@ -157,6 +274,7 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(self.app.calls, [])
         self.finish_worker()
         self.assertEqual(len(self.app.calls), 1)
+        self.assertIn("单项维护：执行中", self.window.status.cget("text"))
         self.window.maintain()
         self.finish_worker()
         actions = [call for call in self.app.calls if call[0] == "maintain"]
@@ -169,6 +287,7 @@ class DesktopTests(unittest.TestCase):
         self.window.start()
         self.window.maintain()
         self.window.cancel()
+        self.assertIn("待执行维护已撤销", self.window.status.cget("text"))
         self.finish_worker()
         self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
         self.assertEqual(self.app.cancelled, 1)
@@ -214,7 +333,7 @@ class DesktopTests(unittest.TestCase):
                 raise AssertionError("关闭后不能取得维护资源")
 
         backend = ForbiddenBackend()
-        app = Application(backend, backend)
+        app = make_app(backend, backend)
         root = Root()
         with tempfile.TemporaryDirectory() as directory:
             window = desktop.MemoryWindow(root, app, FakeTk, lambda: directory)
@@ -222,7 +341,7 @@ class DesktopTests(unittest.TestCase):
             self.assertFalse(app.busy)
             window.close()
             self.assertFalse(root.destroyed)
-            with self.assertLogs("cpu_memory_cleanup.core", level="WARNING"):
+            with self.assertLogs("cpu_memory_cleanup", level="WARNING"):
                 window._worker.finish()
             window.pump()
         self.assertTrue(root.destroyed)

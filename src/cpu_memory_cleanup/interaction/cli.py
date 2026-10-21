@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 import sys
 
-from .contracts import ActionRequest, MECHANISMS
+from ..contracts import ActionRequest
 
 
 def _count(text):
@@ -44,7 +44,7 @@ def parse_args(argv=None):
     parser.add_argument("--comparison", type=Path, help="--review 的对照运行")
     parser.add_argument("--json", action="store_true", help="输出完整 JSON 结果")
     parser.add_argument("--output-dir", type=Path, help="显式运行记录目录；维护时必需")
-    parser.add_argument("--release-what", choices=(*MECHANISMS, "both"), help="仅支持 working-set 或 standby")
+    parser.add_argument("--release-what", help="当前操作系统提供的单一维护机制，例如 working-set 或 standby")
     parser.add_argument("--count", type=_count)
     parser.add_argument("--interval", type=_interval)
     parser.add_argument("--jsonl", type=Path, help="保存采样 JSONL，不重建历史 logs")
@@ -63,7 +63,7 @@ def parse_args(argv=None):
                    "release_preflight")
     if any(getattr(args, name) is not None and getattr(args, name) is not False for name in unsupported):
         parser.error("旧组合实验、跟随、独立预检与自定义阈值入口已停用；请使用 --review 或 --sample")
-    if args.release_what == "both":
+    if args.release_what is not None and (args.release_what == "both" or not args.release_what or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in args.release_what) or not args.release_what[0].isalpha()):
         parser.error("both 已停用；一次维护只允许明确的一种机制")
     if args.release:
         if args.release_what is None or args.output_dir is None:

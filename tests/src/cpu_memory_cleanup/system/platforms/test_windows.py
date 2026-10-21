@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from cpu_memory_cleanup import windows as api
+from cpu_memory_cleanup.system.platforms import windows as api
 from cpu_memory_cleanup.contracts import ActionRequest
 
 
@@ -216,7 +216,7 @@ class WindowsTests(unittest.TestCase):
 
     def test_import_and_backend_construction_do_not_load_dlls(self):
         with patch.object(api.c, "WinDLL", side_effect=AssertionError("禁止真实DLL")):
-            spec = importlib.util.spec_from_file_location("cpu_memory_cleanup._windows_probe", api.__file__)
+            spec = importlib.util.spec_from_file_location("cpu_memory_cleanup.system.platforms._windows_probe", api.__file__)
             fresh = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(fresh)
             fresh.WindowsBackend()

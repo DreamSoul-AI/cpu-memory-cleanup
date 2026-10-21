@@ -8,7 +8,7 @@ import sys
 import math
 import threading
 
-from .contracts import ActionRequest, Sample
+from ...contracts import ActionRequest, Sample
 
 
 class PerformanceInfo(c.Structure):
@@ -331,7 +331,8 @@ class WindowsBackend:
         return _Observation(self, with_processes)
 
     def open_operation(self, request):
-        if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source:
+        if (not isinstance(request, ActionRequest) or request.mechanism not in COMMANDS
+                or not request.confirmed or not request.confirmation_source.strip()):
             raise ValueError("维护需要本次明确确认")
         return _Operation(self, request)
 

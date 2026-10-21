@@ -3,7 +3,7 @@
 from datetime import datetime
 import math
 
-from .contracts import Sample
+from ..contracts import Sample
 
 GIB = 1024 ** 3
 BYTE_METRICS = ("available_bytes", "commit_used_bytes", "standby_total_bytes")
