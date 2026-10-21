@@ -5,7 +5,7 @@ import math
 import unittest
 
 from cpu_memory_cleanup.contracts import Sample
-from cpu_memory_cleanup import rules
+from cpu_memory_cleanup.application import rules
 
 GIB = 1024 ** 3
 

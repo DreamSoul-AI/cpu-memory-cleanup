@@ -3,11 +3,32 @@
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 import math
+import re
 from typing import Protocol
 
 SCHEMA_VERSION = 1
 RULE_VERSION = "1"
-MECHANISMS = ("working-set", "standby")
+PROGRAM_VERSION = "0.2.0"
+MAX_FILE_BYTES = 16 * 1024 * 1024
+MAX_LINE_BYTES = 1024 * 1024
+MAX_SAMPLES = 1000
+
+
+@dataclass(frozen=True)
+class Capabilities:
+    operating_system: str
+    reading: str = "unsupported"
+    mechanisms: tuple = ()
+    reason: str = ""
+
+    def __post_init__(self):
+        if (not isinstance(self.operating_system, str) or not self.operating_system
+                or self.reading not in ("available", "unsupported", "unknown")
+                or not isinstance(self.mechanisms, tuple)
+                or any(not isinstance(x, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", x) or x == "both" for x in self.mechanisms)
+                or len(set(self.mechanisms)) != len(self.mechanisms)
+                or not isinstance(self.reason, str)):
+            raise ValueError("系统能力信息无效")
 
 
 def finite_number(value, name, *, minimum=0):
@@ -80,7 +101,8 @@ class ActionRequest:
     confirmation_source: str = ""
 
     def __post_init__(self):
-        if self.mechanism not in MECHANISMS or self.scope != "system":
+        if (not isinstance(self.mechanism, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", self.mechanism)
+                or self.mechanism == "both" or self.scope != "system"):
             raise ValueError("只支持明确的单项系统范围维护")
         if type(self.confirmed) is not bool or not isinstance(self.confirmation_source, str):
             raise ValueError("维护确认格式无效")
@@ -98,8 +120,8 @@ def validate_action(action):
         raise ValueError("维护调用事实互相矛盾")
     if outcome in ("success", "failure"):
         status = action.get("status")
-        if type(status) is not int or not 0 <= status <= 0xffffffff or ((status == 0) != (outcome == "success")):
-            raise ValueError("原生状态与结果不一致")
+        if type(status) not in (int, str) or (isinstance(status, str) and not status.strip()):
+            raise ValueError("已确认调用缺少平台原始状态")
     return action.copy()
 
 
@@ -140,3 +162,29 @@ class Reader(Protocol):
 
 class Maintainer(Protocol):
     def open_operation(self, request: ActionRequest) -> Operation: ...
+
+
+class RecordWriter(Protocol):
+    output_dir: str
+    def append(self, kind: str, value: dict): ...
+    def close(self) -> dict: ...
+    def commit_end(self, terminal: dict): ...
+
+
+class RecordReader(Protocol):
+    is_directory: bool
+    @property
+    def has_actions(self) -> bool: ...
+    def read(self, kind: str = "samples"): ...
+    def close(self) -> dict: ...
+
+
+class Records(Protocol):
+    def open_write(self, run_id: str, options: dict) -> RecordWriter: ...
+    def open_read(self, path) -> RecordReader: ...
+
+
+class RuntimeSupport(Protocol):
+    def now(self) -> str: ...
+    def information(self) -> dict: ...
+    def diagnostic(self, event: dict): ...

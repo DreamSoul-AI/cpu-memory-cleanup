@@ -1,47 +1,22 @@
-"""用例、运行状态与 JSONL 记录。系统接入由入口装配提供。"""
+"""功能流程与业务状态。系统能力由启动装配提供。"""
 
-from datetime import datetime, timezone
-import hashlib
+from datetime import datetime
 import json
-import logging
-import os
-from pathlib import Path
-import platform
-import sys
 import threading
 import uuid
 
-from .contracts import ActionRequest, RULE_VERSION, SCHEMA_VERSION, RunReport, Sample, finite_number, validate_action
+from ..contracts import (ActionRequest, Capabilities, RULE_VERSION, SCHEMA_VERSION, PROGRAM_VERSION,
+                         MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_SAMPLES, RunReport, Sample,
+                         finite_number, validate_action)
 from . import rules
 
-LOGGER = logging.getLogger(__name__)
-MAX_FILE_BYTES = 16 * 1024 * 1024
-MAX_LINE_BYTES = 1024 * 1024
-MAX_SAMPLES = 1000
-PROGRAM_VERSION = "0.2.0"
 
-
-def _now():
-    return datetime.now(timezone.utc).isoformat()
+class _Cancelled(Exception):
+    pass
 
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False)
-
-
-def _error(report, phase, error):
-    item = {"phase": phase, "type": type(error).__name__,
-            "message": str(error) if isinstance(error, ValueError) else "操作失败，原始系统错误未写入诊断日志"}
-    report.errors.append(item)
-    try:
-        LOGGER.warning(_json({"timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-                       "level": "WARN", "event": "operation_failed", "logger": LOGGER.name,
-                       "message": "流程失败，已知事实保留于业务报告", "app_name": "CPU 内存清理",
-                       "app_version": PROGRAM_VERSION, "runtime_id": report.run_id,
-                       "process_name": Path(sys.executable).name, "pid": os.getpid(),
-                       "phase": phase, "exception_type": type(error).__name__}))
-    except Exception:
-        pass  # 诊断 sink 失败不能改写已发生的业务事实。
 
 
 def _options(options):
@@ -66,103 +41,6 @@ def _options(options):
     return result
 
 
-class _Journal:
-    def __init__(self, report, options):
-        self.run_id = report.run_id
-        self.streams = {}
-        self.directory = None
-        try:
-            if options.get("jsonl_path") is not None:
-                path = Path(options["jsonl_path"])
-                self.directory = path.parent
-            else:
-                base = Path(options["output_dir"])
-                base.mkdir(parents=True, exist_ok=True)
-                self.directory = base / report.run_id
-                self.directory.mkdir()
-                path = self.directory / "samples.jsonl"
-            self.streams["samples"] = path.open("x", encoding="utf-8", newline="\n")
-            self.sample_path = path
-            report.output_dir = str(self.directory)
-        except Exception:
-            self.close()
-            raise
-
-    def append(self, kind, value):
-        if kind not in self.streams:
-            self.streams[kind] = (self.directory / "operation.jsonl").open("x", encoding="utf-8", newline="\n")
-        stream = self.streams[kind]
-        record = {"run_id": self.run_id, **value}
-        encoded = _json(record) + "\n"
-        if len(encoded.encode("utf-8")) > MAX_LINE_BYTES or stream.tell() + len(encoded.encode("utf-8")) > MAX_FILE_BYTES:
-            raise ValueError("运行记录超出大小上限")
-        stream.write(encoded)
-        stream.flush()
-        os.fsync(stream.fileno())
-
-    def close(self):
-        errors = []
-        for kind, stream in list(self.streams.items()):
-            try:
-                stream.close()
-            except Exception as error:
-                errors.append(error)
-            else:
-                del self.streams[kind]
-        return errors
-
-    def commit_end(self, terminal):
-        # 临时文件先关闭，再原子替换，避免关闭失败后磁盘留下“整体成功”。
-        content = self.sample_path.read_bytes()
-        final = (_json({"run_id": self.run_id, **terminal}) + "\n").encode("utf-8")
-        if len(content) + len(final) > MAX_FILE_BYTES:
-            raise ValueError("结束记录超出大小上限")
-        temporary = self.sample_path.with_name(f".{self.run_id}.pending")
-        stream = temporary.open("xb")
-        self.streams["terminal"] = stream
-        stream.write(content + final)
-        stream.flush()
-        os.fsync(stream.fileno())
-        stream.close()
-        del self.streams["terminal"]
-        os.replace(temporary, self.sample_path)
-
-
-def _pairs(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"重复 JSON 字段：{key}")
-        result[key] = value
-    return result
-
-
-def _number(text):
-    value = float(text)
-    finite_number(value, "JSON 数值", minimum=-float("inf"))
-    return value
-
-
-def _read_lines(path):
-    path = Path(path)
-    if path.stat().st_size > MAX_FILE_BYTES:
-        raise ValueError("文件超出大小上限")
-    with path.open(encoding="utf-8-sig") as stream:
-        for number, line in enumerate(stream, 1):
-            if len(line.encode("utf-8")) > MAX_LINE_BYTES:
-                raise ValueError(f"第 {number} 行超出大小上限")
-            if not line.strip():
-                continue
-            try:
-                record = json.loads(line, object_pairs_hook=_pairs, parse_float=_number,
-                                    parse_constant=lambda text: (_ for _ in ()).throw(ValueError("非有限 JSON 数值")))
-                if not isinstance(record, dict):
-                    raise ValueError("记录必须是对象")
-                yield record
-            except (ValueError, RecursionError) as error:
-                raise ValueError(f"第 {number} 行：记录无效") from error
-
-
 def _legacy_sample(record, index):
     series = record.get("series") or {}
     metrics = {key: record.get(key) for key in ("physical", "commit", "cache", "rates", "cpu", "tree", "commit_residual",
@@ -182,13 +60,11 @@ def _legacy_sample(record, index):
                   metrics, processes, [*warnings, {"reason": "历史记录缺少完整运行条件"}])
 
 
-def _load_run(path):
-    path = Path(path)
-    is_directory = path.is_dir()
-    sample_path = path / "samples.jsonl" if is_directory else path
+def _load_run(reader, check_cancel):
     result = {"samples": [], "header": None, "terminal": None, "analysis": None, "action": {}, "gaps": []}
     seen_end = False
-    for record in _read_lines(sample_path):
+    for record in reader.read():
+        check_cancel()
         kind = record.get("record_type")
         if seen_end:
             raise ValueError("结束记录后存在多余数据")
@@ -252,10 +128,10 @@ def _load_run(path):
             result["gaps"].append("运行未完整成功")
     header = result["header"] or {}
     expects_action = header.get("mode") == "maintain" or bool(header.get("mechanism"))
-    operation_path = sample_path.parent / "operation.jsonl"
-    if expects_action and operation_path.exists():
+    if expects_action and reader.has_actions:
         action_phase = None
-        for record in _read_lines(operation_path):
+        for record in reader.read("operation"):
+            check_cancel()
             if record.get("run_id") != result["samples"][0].run_id:
                 raise ValueError("动作记录不属于该运行")
             if record.get("record_type") == "intent":
@@ -283,10 +159,13 @@ def _load_run(path):
 
 
 class Application:
-    def __init__(self, reader=None, maintainer=None, *, sleep=None, clock=_now):
+    def __init__(self, reader=None, maintainer=None, *, records=None, runtime=None, capabilities=None, sleep=None, clock=None):
         self.reader = reader
         self.maintainer = maintainer
-        self._clock = clock
+        self.records = records
+        self.runtime = runtime
+        self.capabilities = capabilities or Capabilities("unknown", reading="unknown")
+        self._clock = clock or (runtime.now if runtime is not None else lambda: None)
         self._sleep = sleep
         self._lock = threading.Lock()
         self._cancel = threading.Event()
@@ -316,7 +195,7 @@ class Application:
     def _begin(self, report):
         with self._lock:
             if self._closed or self._active or (report.mode != "review" and self._unsafe):
-                _error(report, "admission", ValueError("当前忙碌或安全上下文未恢复，拒绝新请求"))
+                self._error(report, "admission", ValueError("当前忙碌或安全上下文未恢复，拒绝新请求"))
                 return False
             self._active = True
             self._dispatched = False
@@ -326,21 +205,41 @@ class Application:
     def _report(self, mode):
         return RunReport(uuid.uuid4().hex, mode)
 
+    def _error(self, report, phase, error):
+        item = {"phase": phase, "type": type(error).__name__,
+                "message": str(error) if isinstance(error, ValueError) else "操作失败，原始系统错误未写入诊断日志"}
+        report.errors.append(item)
+        try:
+            if self.runtime is not None:
+                self.runtime.diagnostic({"level": "WARN", "event": "operation_failed",
+                                         "message": "流程失败，已知事实保留于业务报告",
+                                         "runtime_id": report.run_id, "phase": phase,
+                                         "exception_type": type(error).__name__})
+        except Exception:
+            pass  # 诊断输出失败不能改写业务事实。
+
+    def _check_cancel(self):
+        if self._cancel.is_set():
+            raise _Cancelled()
+
     def _header(self, report, options):
-        digest = hashlib.sha256()
-        for path in sorted(Path(__file__).parent.glob("*.py")):
-            digest.update(path.name.encode("utf-8"))
-            digest.update(path.read_bytes())
+        if self.runtime is None:
+            raise ValueError("缺少运行支撑")
         return {"record_type": "header", "schema_version": SCHEMA_VERSION,
                 "program_version": PROGRAM_VERSION, "rule_version": RULE_VERSION,
-                "build_id": digest.hexdigest(),
-                "environment_id": f"{platform.system()}-{platform.version()}-python{platform.python_version()}",
-                "environment": {"system": platform.system(), "version": platform.version(),
-                                "python": platform.python_version()},
-                "run_id": report.run_id, "started_at": self._clock(),
+                **self.runtime.information(), "run_id": report.run_id, "started_at": self._clock(),
+                "operating_system": self.capabilities.operating_system,
+                "capabilities": {"reading": self.capabilities.reading, "mechanisms": list(self.capabilities.mechanisms)},
                 "mode": report.mode,
                 "parameters": {k: v for k, v in options.items() if k not in ("output_dir", "jsonl_path")},
                 "expected_count": options["count"], "interval_s": options["interval"]}
+
+    def _journal(self, report, options):
+        if self.records is None:
+            raise ValueError("缺少记录访问能力")
+        journal = self.records.open_write(report.run_id, options)
+        report.output_dir = journal.output_dir
+        return journal
 
     def _read(self, session, report, journal):
         sample = session.read(report.run_id, len(report.samples))
@@ -358,15 +257,22 @@ class Application:
 
     def _close(self, resource, report):
         if resource is None:
-            return
+            return True
         try:
             facts = resource.close()
-            if not isinstance(facts, dict) or facts.get("closed") is not True or facts.get("errors"):
-                raise ValueError("资源关闭未确认")
+            if not isinstance(facts, dict) or type(facts.get("closed")) is not bool or not isinstance(facts.get("errors"), list):
+                raise ValueError("资源关闭事实格式无效")
+            report.metadata.setdefault("resource_closures", []).append(
+                {"resource": type(resource).__name__, "closed": facts["closed"], "errors": facts["errors"].copy()})
+            if not facts["closed"] or facts["errors"]:
+                raise ValueError("资源关闭未确认，详见关闭事实")
         except Exception as error:
             self._unsafe = True
-            self._pending_resources.append(resource)
-            _error(report, "close", error)
+            if resource not in self._pending_resources:
+                self._pending_resources.append(resource)
+            self._error(report, "close", error)
+            return False
+        return True
 
     def _completion(self, report):
         outcome = report.action.get("call_outcome")
@@ -391,23 +297,12 @@ class Application:
                     "cancel_requested": report.cancel_requested, "errors": report.errors.copy()}
         report.metadata["terminal"] = terminal
         try:
-            if journal:
-                close_errors = journal.close()
-                if close_errors:
-                    self._unsafe = True
-                    self._pending_resources.append(journal)
-                    for error in close_errors:
-                        _error(report, "record_close", error)
-                else:
-                    journal.commit_end(terminal)
+            if journal and self._close(journal, report):
+                journal.commit_end(terminal)
         except Exception as error:
-            _error(report, "terminal_record", error)
+            self._error(report, "terminal_record", error)
         finally:
-            if journal and journal.streams:
-                self._unsafe = True
-                self._pending_resources.append(journal)
-                for error in journal.close():
-                    _error(report, "record_close", error)
+            self._close(journal, report)
             report.completion = self._completion(report)
             report.metadata["terminal"]["completion"] = report.completion
             report.metadata["terminal"]["errors"] = report.errors.copy()
@@ -423,10 +318,10 @@ class Application:
             options = _options(options)
             report.metadata["header"] = self._header(report, options)
             if options.get("output_dir") is not None or options.get("jsonl_path") is not None:
-                journal = _Journal(report, options)
+                journal = self._journal(report, options)
                 journal.append("samples", report.metadata["header"])
-            if self.reader is None:
-                raise ValueError("缺少读取接入")
+            if self.reader is None or self.capabilities.reading != "available":
+                raise ValueError(self.capabilities.reason or "缺少可用的读取接入")
             session = self.reader.open_observation(with_processes=options["with_processes"], top=options["top"])
             report.phase = "reading"
             for index in range(options["count"]):
@@ -442,7 +337,7 @@ class Application:
             if journal:
                 journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
         except Exception as error:
-            _error(report, report.phase, error)
+            self._error(report, report.phase, error)
         finally:
             report.phase = "closing"
             self._close(session, report)
@@ -457,12 +352,14 @@ class Application:
         try:
             if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
                 raise ValueError("维护必须有明确确认及来源")
+            if request.mechanism not in self.capabilities.mechanisms:
+                raise ValueError("当前操作系统接入不提供该维护机制")
             if output_dir is None or self.maintainer is None or self.reader is None:
                 raise ValueError("维护必须提供输出目录和接入")
             options = _options({"count": 2, "interval": 0, "output_dir": output_dir})
             report.metadata["header"] = self._header(report, options)
             report.metadata["header"]["mechanism"] = request.mechanism
-            journal = _Journal(report, options)
+            journal = self._journal(report, options)
             journal.append("samples", report.metadata["header"])
             operation = self.maintainer.open_operation(request)
             report.phase = "preflight"
@@ -491,15 +388,15 @@ class Application:
                 action = operation.perform_once()
                 report.action = validate_action(action)
                 if action.get("errors"):
-                    _error(report, "calling", ValueError("维护或恢复存在错误，见动作事实"))
+                    self._error(report, "calling", ValueError("维护或恢复存在错误，见动作事实"))
                 if action.get("privilege_restored") is not True:
                     self._unsafe = True
-                    _error(report, "restore", ValueError("安全上下文恢复未确认"))
+                    self._error(report, "restore", ValueError("安全上下文恢复未确认"))
             except Exception as error:
                 if report.action.get("call_outcome") == "not_started":
                     report.action = {"attempted": None, "call_outcome": "unknown", "privilege_restored": None}
                 self._unsafe = True
-                _error(report, "calling", error)
+                self._error(report, "calling", error)
             report.metadata["action"] = report.action.copy()
             report.phase = "action_record"
             journal.append("operation", {"record_type": "action_result", "action": report.action})
@@ -508,7 +405,7 @@ class Application:
             report.analysis = rules.analyze(report.samples)
             journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
         except Exception as error:
-            _error(report, report.phase, error)
+            self._error(report, report.phase, error)
         finally:
             report.phase = "closing"
             self._close(session, report)
@@ -520,8 +417,16 @@ class Application:
         report = self._report("review")
         if not self._begin(report):
             return report
+        readers = []
+        def load(source):
+            self._check_cancel()
+            if self.records is None:
+                raise ValueError("缺少记录访问能力")
+            reader = self.records.open_read(source)
+            readers.append(reader)
+            return _load_run(reader, self._check_cancel)
         try:
-            original = _load_run(path)
+            original = load(path)
             report.samples = original["samples"]
             if original["action"]:
                 report.action = original["action"].copy()
@@ -530,8 +435,9 @@ class Application:
             if conditions is not None and not isinstance(conditions, dict):
                 raise ValueError("conditions: 必须是对象")
             effective = conditions if conditions is not None else ((original["header"] or {}).get("parameters") or {}).get("conditions", {})
+            self._check_cancel()
             if comparison is not None:
-                other = _load_run(comparison)
+                other = load(comparison)
                 report.analysis = rules.compare(original["samples"], other["samples"], conditions=effective,
                                                 metadata_a=original, metadata_b=other)
             elif conditions is None and original["analysis"] is not None:
@@ -541,14 +447,22 @@ class Application:
                 report.analysis = rules.analyze(report.samples, conditions=effective)
                 report.metadata["recomputed"] = True
                 report.metadata["recomputed_rule_version"] = RULE_VERSION
+            self._check_cancel()
             if original["gaps"]:
-                _error(report, "source", ValueError("原运行条件或结果不完整，不能支持收益"))
+                self._error(report, "source", ValueError("原运行条件或结果不完整，不能支持收益"))
             report.completion = "partial" if report.errors else "success"
             report.phase = "finished"
+        except _Cancelled:
+            report.completion = "cancelled"
+            report.phase = "finished"
         except Exception as error:
-            _error(report, "review", error)
+            self._error(report, "review", error)
             report.completion = "failed"
         finally:
+            for reader in readers:
+                if not self._close(reader, report):
+                    report.completion = "partial" if report.samples else "failed"
+            report.cancel_requested = self._cancel.is_set()
             with self._lock:
                 self._active = False
         return report

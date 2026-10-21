@@ -1,17 +1,24 @@
-"""程序装配；只有显式选择桌面入口才加载 Tk。"""
+"""启动装配，离线回看独立于具体操作系统接入。"""
 
-from . import cli
-from .core import Application
-from .windows import WindowsBackend
+from .interaction import cli
+from .application.core import Application
+from .system.operating_system import select_backend
+from .system.records import RecordStore
+from .system.runtime import Runtime
 
 
 def main(argv=None, *, app=None):
     args = cli.parse_args(argv)
     if app is None:
-        backend = WindowsBackend()
-        app = Application(reader=backend, maintainer=backend)
+        offline = any((args.review, args.analyze, args.pressure, args.tree_summary, args.ab_compare))
+        if offline:
+            app = Application(records=RecordStore(), runtime=Runtime())
+        else:
+            backend, capabilities = select_backend()
+            app = Application(reader=backend, maintainer=backend, capabilities=capabilities,
+                              records=RecordStore(), runtime=Runtime())
     if args.gui:
-        from . import desktop
+        from .interaction import desktop
         return desktop.run(app, {"output_dir": args.output_dir})
     return cli.run(app, args)
 

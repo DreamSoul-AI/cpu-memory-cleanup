@@ -12,4 +12,4 @@ dependencies = []
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["cpu_memory_cleanup"]
+include = ["cpu_memory_cleanup", "cpu_memory_cleanup.*"]
