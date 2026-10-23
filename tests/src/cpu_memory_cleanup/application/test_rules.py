@@ -483,6 +483,19 @@ class ComparisonTests(unittest.TestCase):
             pair["metadata_b"]["header"][key] = value
             self.assertEqual(_compare(null_pairs=[pair])["verdict"], "insufficient_evidence")
 
+    def test_calibration_experiment_mismatch_is_insufficient(self):
+        for mismatch_side in ("metadata_a", "metadata_b", "both"):
+            with self.subTest(mismatch_side=mismatch_side):
+                pair = _null_pair()
+                for side in ("metadata_a", "metadata_b"):
+                    if mismatch_side in (side, "both"):
+                        pair[side]["header"]["experiment_id"] = "other-experiment"
+                result = _compare(null_pairs=[pair])
+                self.assertEqual(result["verdict"], "insufficient_evidence")
+                self.assertEqual(result["null_calibration"]["pairs"], 0)
+                self.assertIn("A/A: 校准条件与实验不一致", result["evidence_issues"])
+                self.assertEqual(result["deltas"]["available_tail_median_bytes"], 2 * GIB)
+
     def test_environment_mismatch_is_insufficient(self):
         metadata = _metadata(action=True)
         metadata["header"]["environment_id"] = "other"

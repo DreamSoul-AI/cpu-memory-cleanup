@@ -601,7 +601,7 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
             nh, action = _header(meta), _dict(_dict(meta).get("action"))
             if action.get("attempted") is not False or action.get("call_outcome") != "not_started":
                 problems.append("A/A: 未确认零维护")
-            if (any(nh.get(key) != ha.get(key) for key in ("schema_version", "program_version", "rule_version", "build_id", "environment_id", "workload_id", "interval_s", "expected_count", "conditions"))
+            if (any(nh.get(key) != ha.get(key) for key in ("schema_version", "program_version", "rule_version", "build_id", "environment_id", "workload_id", "experiment_id", "interval_s", "expected_count", "conditions"))
                     or nh.get("warmup_samples", 1) != ha.get("warmup_samples", 1)):
                 problems.append("A/A: 校准条件与实验不一致")
         if problems:

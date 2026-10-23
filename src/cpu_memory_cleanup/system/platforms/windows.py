@@ -100,6 +100,7 @@ class CounterSession:
         self._collect = None
         self._get = None
         self._close = None
+        self._close_unknown = False
         self._first_collection = True
 
     def open(self, warnings):
@@ -113,12 +114,11 @@ class CounterSession:
         self._get = bind(pdh, "PdhGetFormattedCounterValue",
                          [w.HANDLE, w.DWORD, c.POINTER(w.DWORD), c.POINTER(CounterValue)], w.LONG)
         self._close = bind(pdh, "PdhCloseQuery", [w.HANDLE], w.LONG)
-        query = w.HANDLE()
+        query = self._query = w.HANDLE()
         status = open_query(None, 0, c.byref(query))
         if status:
             warnings.append(f"PDH open unavailable: 0x{status & 0xffffffff:08x}")
             return False
-        self._query = query
         self.ready = True
         for key, path in specs.items():
             handle = w.HANDLE()
@@ -161,8 +161,14 @@ class CounterSession:
         return capacity, rates
 
     def close(self):
-        if self._query is not None and self._close is not None:
+        if self._query and self._close is not None:
+            if self._close_unknown:
+                raise OSError("PDH关闭结果未知，不能重试关闭")
+            self._close_unknown = True
             status = self._close(self._query)
+            if not status:
+                self._query = None
+            self._close_unknown = False
             if status:
                 raise OSError(f"PdhCloseQuery failed: 0x{status & 0xffffffff:08x}")
         self._query = None
@@ -270,7 +276,7 @@ def _read_cpu(kernel, errors):
     return result
 
 
-def _read_processes(kernel, psapi, errors, pending_handles):
+def _read_processes(kernel, psapi, errors, pending_handles, unknown_handles):
     enum = bind(psapi, "EnumProcesses", [c.POINTER(w.DWORD), w.DWORD, c.POINTER(w.DWORD)], w.BOOL)
     open_process = bind(kernel, "OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE)
     close = bind(kernel, "CloseHandle", [w.HANDLE], w.BOOL)
@@ -294,6 +300,7 @@ def _read_processes(kernel, psapi, errors, pending_handles):
         if not handle:
             skipped += 1
             continue
+        pending_handles.append(handle)
         try:
             stats = ProcessMemoryEx(cb=c.sizeof(ProcessMemoryEx))
             name, length = c.create_unicode_buffer(32768), w.DWORD(32768)
@@ -308,9 +315,13 @@ def _read_processes(kernel, psapi, errors, pending_handles):
                               "name": ntpath.basename(name.value), "working_set_bytes": stats.WorkingSetSize,
                               "private_bytes": stats.PrivateUsage, "parent_pid": None})
         finally:
-            if not close(handle):
+            unknown_handles.add(handle)
+            closed = close(handle)
+            if closed:
+                pending_handles.remove(handle)
+            unknown_handles.remove(handle)
+            if not closed:
                 errors.append("进程读取句柄关闭失败")
-                pending_handles.append(handle)
     if skipped:
         errors.append(f"进程读取不完整，{skipped}项不可读或已退出")
     return processes, {"enumerated": needed.value // c.sizeof(w.DWORD), "readable": len(processes),
@@ -344,6 +355,7 @@ class _Observation:
         self._counters_initialized = False
         self.open_errors = []
         self.pending_handles = []
+        self.unknown_handles = set()
         self.closed = False
 
     def read(self, run_id, sequence):
@@ -388,7 +400,7 @@ class _Observation:
         if self.with_processes:
             try:
                 processes, metrics["process_coverage"] = _read_processes(
-                    self.kernel, self.psapi, errors, self.pending_handles)
+                    self.kernel, self.psapi, errors, self.pending_handles, self.unknown_handles)
             except (OSError, AttributeError) as error:
                 metrics["process_coverage"] = {"enumerated": None, "readable": None,
                                                "scope": "enumerated_processes", "coverage": "unknown"}
@@ -403,14 +415,19 @@ class _Observation:
             self.counters.close()
         except OSError as error:
             errors.append(_error_text(error))
-        remaining = []
-        for handle in self.pending_handles:
+        for handle in list(self.pending_handles):
+            if handle in self.unknown_handles:
+                errors.append("进程句柄关闭结果未知，不能重试关闭")
+                continue
+            self.unknown_handles.add(handle)
+            closed = bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle)
+            if closed:
+                self.pending_handles.remove(handle)
+            self.unknown_handles.remove(handle)
             try:
-                check(bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle))
+                check(closed)
             except OSError as error:
-                remaining.append(handle)
                 errors.append("进程句柄关闭失败: " + _error_text(error))
-        self.pending_handles = remaining
         self.closed = not errors
         return {"closed": self.closed, "errors": errors}
 
@@ -467,6 +484,8 @@ class _Operation:
         self.kernel = self.advapi = self.nt_call = None
         self.handle = None
         self.tokens = []
+        self._unknown_handles = []
+        self._release_unknown = False
         self.owned = self.local_owned = self.consumed = self.closed = False
         self.owner_thread = None
         self._preflight = None
@@ -511,12 +530,18 @@ class _Operation:
         return dict(result)
 
     def _close_token(self, token, errors):
+        if token in self._unknown_handles:
+            errors.append("令牌关闭结果未知，不能重试关闭")
+            return
         try:
-            check(bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(token))
+            self._unknown_handles.append(token)
+            closed = bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(token)
+            if closed:
+                self.tokens.remove(token)
+            self._unknown_handles.remove(token)
+            check(closed)
         except (OSError, AttributeError) as error:
             errors.append("令牌关闭失败: " + _error_text(error))
-        else:
-            self.tokens.remove(token)
 
     def perform_once(self):
         if self.consumed or self.closed:
@@ -600,6 +625,7 @@ class _Operation:
         return result
 
     def close(self):
+        self.consumed = True
         if self.closed:
             return {"closed": not self._restore_failed, "errors": []}
         errors = []
@@ -608,17 +634,32 @@ class _Operation:
         for token in list(self.tokens):
             self._close_token(token, errors)
         if self.owned:
-            try:
-                check(bind(self.kernel, "ReleaseMutex", [w.HANDLE], w.BOOL)(self.handle))
-                self.owned = False
-            except OSError as error:
-                errors.append("互斥释放失败: " + _error_text(error))
+            if self._release_unknown:
+                errors.append("互斥释放结果未知，不能重试释放")
+            else:
+                try:
+                    self._release_unknown = True
+                    released = bind(self.kernel, "ReleaseMutex", [w.HANDLE], w.BOOL)(self.handle)
+                    if released:
+                        self.owned = False
+                    self._release_unknown = False
+                    check(released)
+                except OSError as error:
+                    errors.append("互斥释放失败: " + _error_text(error))
         if self.handle is not None and not self.owned:
-            try:
-                check(bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(self.handle))
-                self.handle = None
-            except OSError as error:
-                errors.append("互斥句柄关闭失败: " + _error_text(error))
+            if self.handle in self._unknown_handles:
+                errors.append("互斥句柄关闭结果未知，不能重试关闭")
+            else:
+                try:
+                    handle = self.handle
+                    self._unknown_handles.append(handle)
+                    closed = bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle)
+                    if closed:
+                        self.handle = None
+                    self._unknown_handles.remove(handle)
+                    check(closed)
+                except OSError as error:
+                    errors.append("互斥句柄关闭失败: " + _error_text(error))
         if self._restore_failed:
             errors.append("维护后的资源或安全上下文未确认，阻止后续维护")
         if not errors and self.local_owned:
