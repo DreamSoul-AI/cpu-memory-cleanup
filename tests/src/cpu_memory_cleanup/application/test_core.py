@@ -520,3 +520,52 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.analysis, {})
         self.assertEqual(report.errors[0]["type"], "ValueError")
         self.assertEqual((self.backend.opens, self.backend.calls), (1, 0))
+
+    def test_review_corrupt_tail_preserves_confirmed_action_and_samples(self):
+        original = self.maintain()
+        path = Path(original.output_dir) / "operation.jsonl"
+        path.write_text(path.read_text(encoding="utf-8") + "{broken JSON\n", encoding="utf-8")
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.action, original.action)
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.metadata["header"]["run_id"], original.run_id)
+        self.assertEqual(report.analysis, {})
+        self.assertTrue(all(fact["closed"] for fact in report.metadata["resource_closures"]))
+        self.assertFalse(self.app.busy)
+        self.assertEqual((self.backend.opens, self.backend.calls), (1, 1))
+
+    def test_review_unreadable_action_is_unknown_instead_of_not_started(self):
+        original = self.maintain()
+        path = Path(original.output_dir) / "operation.jsonl"
+        path.write_text("{broken JSON\n", encoding="utf-8")
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "failed")
+        self.assertIsNone(report.action["attempted"])
+        self.assertEqual(report.action["call_outcome"], "unknown")
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.metadata["header"]["mode"], "maintain")
+        self.assertEqual(self.backend.calls, 1)
+
+    def test_review_invalid_utf8_tail_preserves_confirmed_action(self):
+        original = self.maintain()
+        path = Path(original.output_dir) / "operation.jsonl"
+        path.write_bytes(path.read_bytes() + b"\xff\n")
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.action, original.action)
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.analysis, {})
+        self.assertIn("第 3 行", report.errors[0]["message"])
+        self.assertEqual((self.backend.opens, self.backend.calls), (1, 1))
+
+    def test_comparison_read_failure_keeps_primary_action_and_samples(self):
+        original = self.maintain()
+        other = self.app.inspect({"output_dir": self.temp.name})
+        (Path(other.output_dir) / "samples.jsonl").write_text("{broken JSON\n", encoding="utf-8")
+        report = self.app.review(original.output_dir, comparison=other.output_dir)
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.action, original.action)
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.metadata["header"]["run_id"], original.run_id)
+        self.assertEqual((self.backend.opens, self.backend.calls), (2, 1))

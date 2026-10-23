@@ -1624,6 +1624,42 @@
       "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review",
       "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review",
       "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_corrupt_tail_preserves_confirmed_action_and_samples",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_corrupt_tail_preserves_confirmed_action_and_samples",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_unreadable_action_is_unknown_instead_of_not_started",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_unreadable_action_is_unknown_instead_of_not_started",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_read_failure_keeps_primary_action_and_samples",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_comparison_read_failure_keeps_primary_action_and_samples",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_invalid_utf8_tail_preserves_confirmed_action",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_invalid_utf8_tail_preserves_confirmed_action",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.test_records.RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close",
+      "file": "tests/src/cpu_memory_cleanup/system/test_records.py",
+      "subtests": [
+        {
+          "newline": "LF"
+        },
+        {
+          "newline": "CRLF"
+        },
+        {
+          "newline": "CR"
+        }
+      ]
     }
   ],
   "cost_classes": {
@@ -1872,7 +1908,12 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_corrupt_tail_preserves_confirmed_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_unreadable_action_is_unknown_instead_of_not_started",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_read_failure_keeps_primary_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_invalid_utf8_tail_preserves_confirmed_action",
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close"
       ],
       "required": [
         "tests/scripts/test_desktop_memory_button.py::DesktopMemoryButtonTests.test_default_route_is_readonly",
@@ -2108,7 +2149,12 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_corrupt_tail_preserves_confirmed_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_unreadable_action_is_unknown_instead_of_not_started",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_read_failure_keeps_primary_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_invalid_utf8_tail_preserves_confirmed_action",
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close"
       ],
       "dependencies": [],
       "resources": [],
@@ -2311,7 +2357,12 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_corrupt_tail_preserves_confirmed_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_unreadable_action_is_unknown_instead_of_not_started",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_read_failure_keeps_primary_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_invalid_utf8_tail_preserves_confirmed_action",
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close"
       ],
       "required": [
         "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_default_only_requests_one_readonly_sample",
@@ -2371,7 +2422,12 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_corrupt_tail_preserves_confirmed_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_unreadable_action_is_unknown_instead_of_not_started",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_read_failure_keeps_primary_action_and_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_invalid_utf8_tail_preserves_confirmed_action",
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close"
       ],
       "dependencies": [],
       "resources": [],

@@ -60,8 +60,7 @@ def _legacy_sample(record, index):
                   metrics, processes, [*warnings, {"reason": "历史记录缺少完整运行条件"}])
 
 
-def _load_run(reader, check_cancel):
-    result = {"samples": [], "header": None, "terminal": None, "analysis": None, "action": {}, "gaps": []}
+def _load_run(reader, check_cancel, result):
     seen_end = False
     for record in reader.read():
         check_cancel()
@@ -429,15 +428,25 @@ class Application:
         if not self._begin(report):
             return report
         readers = []
-        def load(source):
-            self._check_cancel()
-            if self.records is None:
-                raise ValueError("缺少记录访问能力")
-            reader = self.records.open_read(source)
-            readers.append(reader)
-            return _load_run(reader, self._check_cancel)
+        def load(source, *, primary=False):
+            result = {"samples": [], "header": None, "terminal": None, "analysis": None, "action": {}, "gaps": []}
+            try:
+                self._check_cancel()
+                if self.records is None:
+                    raise ValueError("缺少记录访问能力")
+                reader = self.records.open_read(source)
+                readers.append(reader)
+                return _load_run(reader, self._check_cancel, result)
+            except Exception:
+                if primary:
+                    report.samples = result["samples"]
+                    report.action = result["action"].copy() or {
+                        "attempted": None, "call_outcome": "unknown", "privilege_restored": None}
+                    report.metadata = {key: result[key] for key in ("header", "terminal", "action")}
+                    report.metadata["source_gaps"] = [*result["gaps"], "原运行未完整读取"]
+                raise
         try:
-            original = load(path)
+            original = load(path, primary=True)
             report.samples = original["samples"]
             if original["action"]:
                 report.action = original["action"].copy()
