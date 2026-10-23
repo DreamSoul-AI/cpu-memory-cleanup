@@ -99,6 +99,11 @@ def format_report(report):
     for field in ("analysis", "errors"):
         if record.get(field):
             lines.append(json.dumps(record[field], ensure_ascii=False, allow_nan=False, indent=2))
+    gaps = [{"sequence": sample["sequence"], "timestamp": sample["timestamp"], "errors": sample["errors"]}
+            for sample in record["samples"] if sample.get("errors")]
+    if gaps:
+        lines.append("采样缺口（按保存顺序，含历史样本）：")
+        lines.append(json.dumps(gaps, ensure_ascii=False, allow_nan=False, indent=2))
     return "\n".join(lines)
 
 

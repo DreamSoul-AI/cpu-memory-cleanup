@@ -216,6 +216,85 @@ class CatalogTests(unittest.TestCase):
 
 
 class WorkerTests(_Project):
+    def failed_worker(self):
+        observed = {"status": "failed", "verdict": "fail", "category": "fail",
+                    "failure": [{"phase": "test", "type": "AssertionError", "message": "synthetic failure"}],
+                    "metrics": [{"name": "latency", "value": 12}], "subtests": [], "assertion_count": 1}
+        process = Mock(returncode=0)
+        process.communicate.return_value = json.dumps(observed), ""
+        process.poll.return_value = None
+        job = Mock()
+        job.peak.return_value = 1
+        return observed, process, job
+
+    def test_job_close_failure_retains_handle_for_retry(self):
+        job = object.__new__(runner._WindowsJob)
+        job.handle = 123
+        job.kernel = Mock()
+        job.kernel.CloseHandle.side_effect = [False, True]
+        with self.assertRaises(OSError):
+            job.close()
+        self.assertEqual(job.handle, 123)
+        job.close()
+        self.assertIsNone(job.handle)
+        self.assertEqual(job.kernel.CloseHandle.call_count, 2)
+
+    def test_job_close_failure_preserves_result_and_reaps_worker(self):
+        observed, process, job = self.failed_worker()
+        job.close.side_effect = [OSError("synthetic close failure"), None]
+        with patch.object(runner, "_WindowsJob", return_value=job), \
+             patch.object(runner.subprocess, "Popen", return_value=process):
+            result = self.execute()
+        self.assertEqual(result["status"], "error")
+        self.assertIsNone(result["verdict"])
+        self.assertEqual(result["metrics"], observed["metrics"])
+        self.assertEqual(result["assertion_count"], 1)
+        self.assertEqual(result["failure"][0], observed["failure"][0])
+        self.assertEqual(result["failure"][-1]["phase"], "cleanup")
+        self.assertEqual(job.terminate.call_count, 1)
+        self.assertEqual(job.close.call_count, 2)
+        self.assertEqual(process.kill.call_count, 1)
+        self.assertEqual(process.wait.call_count, 1)
+
+    def test_job_peak_failure_does_not_skip_close_or_worker_reaping(self):
+        observed, process, job = self.failed_worker()
+        job.peak.side_effect = OSError("synthetic peak failure")
+        with patch.object(runner, "_WindowsJob", return_value=job), \
+             patch.object(runner.subprocess, "Popen", return_value=process):
+            result = self.execute()
+        self.assertEqual(result["status"], "error")
+        self.assertIsNone(result["peak_memory_bytes"])
+        self.assertEqual(result["failure"][0], observed["failure"][0])
+        self.assertEqual(job.close.call_count, 1)
+        self.assertEqual(process.kill.call_count, 1)
+        self.assertEqual(process.wait.call_count, 1)
+
+    def test_interrupt_survives_job_close_failure_and_reaps_worker(self):
+        _, process, job = self.failed_worker()
+        process.communicate.side_effect = KeyboardInterrupt()
+        job.close.side_effect = [OSError("synthetic close failure"), None]
+        with patch.object(runner, "_WindowsJob", return_value=job), \
+             patch.object(runner.subprocess, "Popen", return_value=process):
+            with self.assertRaises(KeyboardInterrupt):
+                self.execute()
+        self.assertEqual(process.kill.call_count, 1)
+        self.assertEqual(process.wait.call_count, 1)
+        self.assertEqual(job.terminate.call_count, 1)
+
+    def test_timeout_survives_termination_failure_and_reaps_worker(self):
+        _, process, job = self.failed_worker()
+        process.communicate.side_effect = runner.subprocess.TimeoutExpired("synthetic worker", 1)
+        job.terminate.side_effect = OSError("synthetic termination failure")
+        with patch.object(runner, "_WindowsJob", return_value=job), \
+             patch.object(runner.subprocess, "Popen", return_value=process):
+            result = self.execute()
+        self.assertEqual(result["status"], "timeout")
+        self.assertEqual(result["failure"][0]["type"], "Timeout")
+        self.assertEqual(result["failure"][-1]["type"], "OSError")
+        self.assertEqual(job.close.call_count, 1)
+        self.assertEqual(process.kill.call_count, 1)
+        self.assertEqual(process.wait.call_count, 1)
+
     def test_worker_imports_synthetic_product_from_src(self):
         (self.root / "src").mkdir()
         (self.root / "src" / "synthetic_src_product.py").write_text('VALUE = "from src"\n', encoding="utf-8")
@@ -307,6 +386,31 @@ class WorkerTests(_Project):
 
 
 class PersistenceTests(_Project):
+    def test_cleanup_failure_stops_scheduling_after_saving_result(self):
+        directory = self.root / "result"
+        catalog = _catalog([_entry("test_failure"), _entry()])
+        catalog["plans"]["quick"]["stop_on_failure"] = False
+        result = {"status": "error", "verdict": None, "category": None,
+                  "failure": [{"phase": "test", "type": "AssertionError"},
+                              {"phase": "cleanup", "operation": "worker_wait", "type": "TimeoutExpired"}],
+                  "metrics": [{"name": "latency", "value": 12}], "subtests": [],
+                  "duration_ms": 1, "started_at": "synthetic"}
+        with patch.object(runner, "_check_caps"), \
+             patch.object(runner, "_source_info", return_value={"fingerprint": "synthetic"}), \
+             patch.object(runner, "_execute", return_value=result) as execute:
+            code, output = self.invoke(catalog, ["--output", str(directory)])
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(code, 1)
+        self.assertFalse(json.loads(output)["release_allowed"])
+        events = runner._events(directory)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["failure"], result["failure"])
+        artifact = json.loads((directory / events[0]["artifacts"][0]).read_text(encoding="utf-8"))
+        self.assertEqual(artifact["metrics"], result["metrics"])
+        manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        self.assertIn("收尾失败", manifest["unexecuted"]["test_pass"])
+        self.assertTrue(manifest["attempts_started"][0]["finished"])
+
     def test_src_source_change_invalidates_resume(self):
         directory = self.root / "result"
         (self.root / "src").mkdir()

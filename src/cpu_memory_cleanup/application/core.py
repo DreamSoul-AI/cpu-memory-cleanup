@@ -99,8 +99,8 @@ def _load_run(reader, check_cancel):
                 result["gaps"].append("缺样或重复序号")
             result["samples"].append(sample)
         elif kind == "analysis":
-            if result["analysis"] is not None or not isinstance(record.get("analysis"), dict):
-                raise ValueError("分析结果无效或重复")
+            if result["header"] is None or result["analysis"] is not None or not isinstance(record.get("analysis"), dict):
+                raise ValueError("分析结果缺少运行头、无效或重复")
             result["analysis"] = record["analysis"]
         elif kind == "end":
             result["terminal"] = record
@@ -170,6 +170,7 @@ class Application:
         self._lock = threading.Lock()
         self._cancel = threading.Event()
         self._active = False
+        self._finishing = False
         self._dispatched = False
         self._unsafe = False
         self._closed = False
@@ -182,7 +183,7 @@ class Application:
 
     def request_cancel(self):
         with self._lock:
-            if not self._active:
+            if not self._active or self._finishing:
                 return False
             self._cancel.set()
             return not self._dispatched
@@ -190,7 +191,8 @@ class Application:
     def shutdown(self):
         with self._lock:
             self._closed = True
-            self._cancel.set()
+            if not self._finishing:
+                self._cancel.set()
 
     def _begin(self, report):
         with self._lock:
@@ -198,6 +200,7 @@ class Application:
                 self._error(report, "admission", ValueError("当前忙碌或安全上下文未恢复，拒绝新请求"))
                 return False
             self._active = True
+            self._finishing = False
             self._dispatched = False
             self._cancel.clear()
             return True
@@ -289,8 +292,10 @@ class Application:
         return "success"
 
     def _finish(self, report, journal):
-        report.cancel_requested = self._cancel.is_set()
-        report.completion = self._completion(report)
+        with self._lock:
+            self._finishing = True
+            report.cancel_requested = self._cancel.is_set()
+            report.completion = self._completion(report)
         report.phase = "finished"
         terminal = {"record_type": "end", "completion": report.completion,
                     "sample_count": len(report.samples), "finished_at": self._clock(),
@@ -400,6 +405,8 @@ class Application:
             report.metadata["action"] = report.action.copy()
             report.phase = "action_record"
             journal.append("operation", {"record_type": "action_result", "action": report.action})
+            if self._unsafe:
+                return report
             report.phase = "after"
             self._read(session, report, journal)
             report.analysis = rules.analyze(report.samples)
@@ -459,10 +466,14 @@ class Application:
             self._error(report, "review", error)
             report.completion = "failed"
         finally:
+            with self._lock:
+                self._finishing = True
+                report.cancel_requested = self._cancel.is_set()
+                if report.cancel_requested and report.completion in ("success", "partial"):
+                    report.completion = "cancelled"
             for reader in readers:
                 if not self._close(reader, report):
                     report.completion = "partial" if report.samples else "failed"
-            report.cancel_requested = self._cancel.is_set()
             with self._lock:
                 self._active = False
         return report

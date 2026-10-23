@@ -150,10 +150,41 @@ class CoreTests(unittest.TestCase):
     def test_restore_failure_blocks_next_maintenance(self):
         self.backend.restored = False
         first = self.maintain()
-        second = self.maintain()
         self.assertEqual(first.completion, "partial")
+        self.assertEqual(len(first.samples), 1)
+        self.assertEqual(self.backend.reads, 1)
+        self.assertEqual(self.backend.closes, 2)
+        reader = self.app.records.open_read(first.output_dir)
+        self.addCleanup(reader.close)
+        saved = list(reader.read("operation"))[-1]
+        self.assertEqual(saved["record_type"], "action_result")
+        self.assertEqual(saved["action"]["call_outcome"], "success")
+        self.assertFalse(saved["action"]["privilege_restored"])
+        second = self.maintain()
         self.assertEqual(second.completion, "failed")
+        self.assertEqual(self.app.inspect().completion, "failed")
+        reviewed = self.app.review(first.output_dir)
+        self.assertEqual(reviewed.completion, "partial")
+        self.assertEqual(len(reviewed.samples), 1)
+        self.assertEqual(reviewed.action, first.action)
+        self.assertEqual(self.backend.opens, 1)
+        self.assertEqual(self.backend.reads, 1)
         self.assertEqual(self.backend.calls, 1)
+
+    def test_unverified_action_stops_system_reads(self):
+        with patch.object(self.backend, "perform_once", side_effect=OSError("fake action failure")) as perform:
+            report = self.maintain()
+        self.assertEqual(perform.call_count, 1)
+        self.assertEqual(report.action["call_outcome"], "unknown")
+        self.assertIsNone(report.action["attempted"])
+        self.assertEqual(len(report.samples), 1)
+        self.assertEqual(self.backend.reads, 1)
+        self.assertEqual(self.backend.closes, 2)
+        reader = self.app.records.open_read(report.output_dir)
+        self.addCleanup(reader.close)
+        saved = list(reader.read("operation"))[-1]
+        self.assertEqual(saved["record_type"], "action_result")
+        self.assertEqual(saved["action"], report.action)
 
     def test_close_failure_blocks_next_maintenance(self):
         self.backend.closed = False
@@ -373,3 +404,74 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.completion, "failed")
         self.assertEqual(self.backend.opens, 0)
         self.assertEqual(self.backend.calls, 0)
+
+    def test_terminal_commit_rejects_late_cancel_and_keeps_busy(self):
+        commit = records.Journal.commit_end
+        observed = {}
+
+        def commit_with_cancel(journal, terminal):
+            observed["cancel_accepted"] = self.app.request_cancel()
+            observed["busy"] = self.app.busy
+            observed["overlap"] = self.app.inspect().completion
+            return commit(journal, terminal)
+
+        with patch.object(records.Journal, "commit_end", commit_with_cancel):
+            report = self.app.inspect({"output_dir": self.temp.name})
+        self.assertEqual(observed, {"cancel_accepted": False, "busy": True, "overlap": "failed"})
+        self.assertEqual(self.backend.opens, 1)
+        self.assertEqual(report.completion, "success")
+        self.assertFalse(report.cancel_requested)
+        reviewed = self.app.review(report.output_dir)
+        self.assertEqual(reviewed.metadata["terminal"]["completion"], report.completion)
+        self.assertEqual(reviewed.metadata["terminal"]["cancel_requested"], report.cancel_requested)
+        self.backend.on_read = self.app.request_cancel
+        self.assertEqual(self.app.inspect().completion, "cancelled")
+
+    def test_shutdown_during_terminal_commit_keeps_committed_outcome(self):
+        commit = records.Journal.commit_end
+
+        def commit_with_shutdown(journal, terminal):
+            self.app.shutdown()
+            return commit(journal, terminal)
+
+        with patch.object(records.Journal, "commit_end", commit_with_shutdown):
+            report = self.app.inspect({"output_dir": self.temp.name})
+        self.assertEqual(report.completion, "success")
+        self.assertFalse(report.cancel_requested)
+        reviewed = make_app().review(report.output_dir)
+        self.assertEqual(reviewed.metadata["terminal"]["completion"], report.completion)
+        self.assertEqual(reviewed.metadata["terminal"]["cancel_requested"], report.cancel_requested)
+        self.assertEqual(self.app.inspect().completion, "failed")
+        self.assertEqual(self.backend.opens, 1)
+
+    def test_review_close_rejects_late_cancel_and_keeps_busy(self):
+        original = self.app.inspect({"output_dir": self.temp.name})
+        close = records.RunReader.close
+        observed = {}
+
+        def close_with_cancel(reader):
+            observed["cancel_accepted"] = self.app.request_cancel()
+            observed["busy"] = self.app.busy
+            observed["overlap"] = self.app.inspect().completion
+            return close(reader)
+
+        with patch.object(records.RunReader, "close", close_with_cancel):
+            report = self.app.review(original.output_dir)
+        self.assertEqual(observed, {"cancel_accepted": False, "busy": True, "overlap": "failed"})
+        self.assertEqual(report.completion, "success")
+        self.assertFalse(report.cancel_requested)
+        self.assertEqual(self.backend.opens, 1)
+        self.assertFalse(self.app.busy)
+
+    def test_analysis_before_header_is_rejected(self):
+        original = self.app.inspect({"output_dir": self.temp.name})
+        path = Path(original.output_dir) / "samples.jsonl"
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        foreign = {"record_type": "analysis", "run_id": "foreign-run", "analysis": {"source": "foreign-run"}}
+        lines = [foreign] + [line for line in lines if line["record_type"] != "analysis"]
+        path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.analysis, {})
+        self.assertEqual(report.errors[0]["type"], "ValueError")
+        self.assertEqual(self.backend.opens, 1)

@@ -478,11 +478,13 @@ def analyze(samples, *, conditions=None):
     return result
 
 
-def _window(records):
+def _window(records, metadata):
     rows = [metric_values(record) for record in records]
+    warmup = _warmup(metadata, len(records))
+    rate_rows = rows[warmup:] if warmup is not None else []
     metrics = {}
     for key in ALL_METRICS:
-        values = [row[key] for row in rows]
+        values = [row[key] for row in (rate_rows if key in RATE_METRICS else rows)]
         stats = describe(values)
         present = [value for value in values if value is not None]
         stats.update(mean=sum(value / len(present) for value in present) if present else None,
@@ -498,6 +500,11 @@ def _window(records):
 def _header(metadata):
     metadata = _dict(metadata)
     return _dict(metadata.get("header", metadata))
+
+
+def _warmup(metadata, sample_count):
+    value = _header(metadata).get("warmup_samples", 1)
+    return value if type(value) is int and value in (0, 1) and value < sample_count else None
 
 
 def _window_evidence(records, metadata, name):
@@ -519,6 +526,9 @@ def _window_evidence(records, metadata, name):
         issues.append(f"{name}: 缺少事前固定的实验条件")
     if records and [_identity(record)[1] for record in records] != list(range(len(records))):
         issues.append(f"{name}: 窗口未从第零拍完整保存")
+    warmup = _warmup(metadata, len(records))
+    if warmup is None:
+        issues.append(f"{name}: 速率预热条件无效")
     for index, record in enumerate(records):
         if _stamp(record) is None:
             issues.append(f"{name}: 样本时间无效")
@@ -527,11 +537,7 @@ def _window_evidence(records, metadata, name):
         if any(values[key] is None for key in BYTE_METRICS):
             issues.append(f"{name}: 容量指标缺失")
             break
-        warmup = header.get("warmup_samples", 1)
-        if type(warmup) is not int or warmup not in (0, 1):
-            issues.append(f"{name}: 速率预热条件无效")
-            break
-        if index >= warmup and any(values[key] is None for key in RATE_METRICS):
+        if warmup is not None and index >= warmup and any(values[key] is None for key in RATE_METRICS):
             issues.append(f"{name}: 必要速率缺失")
             break
     return issues
@@ -550,7 +556,7 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
             or _number(spike_factor) is None or spike_factor <= 1):
         raise ValueError("比较阈值必须是有限正值，spike_factor 必须大于 1")
     records_a, records_b = list(map(_record, samples_a)), list(map(_record, samples_b))
-    a, b = _window(records_a), _window(records_b)
+    a, b = _window(records_a, metadata_a), _window(records_b, metadata_b)
     am, bm = a["metrics"], b["metrics"]
     deltas = {"available_tail_median_bytes": _diff(bm["available_bytes"]["tail_median"], am["available_bytes"]["tail_median"]),
               "commit_median_bytes": _diff(bm["commit_used_bytes"]["median"], am["commit_used_bytes"]["median"]),
@@ -560,6 +566,8 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
     for key in ("schema_version", "program_version", "rule_version", "build_id", "environment_id", "workload_id", "experiment_id", "interval_s", "expected_count", "conditions"):
         if ha.get(key) != hb.get(key) or (key == "conditions" and ha.get(key) != conditions):
             issues.append(f"A/B: {key} 不一致")
+    if ha.get("warmup_samples", 1) != hb.get("warmup_samples", 1):
+        issues.append("A/B: 速率预热条件不一致")
     if a["run_ids"] == b["run_ids"]:
         issues.append("A/B: 必须是不同运行的独立窗口")
     action_a, action_b = _dict(_dict(metadata_a).get("action")), _dict(_dict(metadata_b).get("action"))
@@ -587,13 +595,14 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
             nh, action = _header(meta), _dict(_dict(meta).get("action"))
             if action.get("attempted") is not False or action.get("call_outcome") != "not_started":
                 problems.append("A/A: 未确认零维护")
-            if any(nh.get(key) != ha.get(key) for key in ("schema_version", "program_version", "rule_version", "build_id", "environment_id", "workload_id", "interval_s", "expected_count", "conditions")):
+            if (any(nh.get(key) != ha.get(key) for key in ("schema_version", "program_version", "rule_version", "build_id", "environment_id", "workload_id", "interval_s", "expected_count", "conditions"))
+                    or nh.get("warmup_samples", 1) != ha.get("warmup_samples", 1)):
                 problems.append("A/A: 校准条件与实验不一致")
         if problems:
             issues.extend(problems)
             continue
         valid_pairs += 1
-        nma, nmb = _window(na)["metrics"], _window(nb)["metrics"]
+        nma, nmb = _window(na, ma)["metrics"], _window(nb, mb)["metrics"]
         for key in null_level_noise:
             statistic = "tail_median" if key == "available_bytes" else "median"
             null_level_noise[key] = max(null_level_noise[key],
@@ -634,6 +643,9 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
                         "spike": ratio > 1, "excess_ratio": ratio,
                         "null_max_excess_ratio": null_ceiling.get(key),
                         "beyond_null": ratio > null_ceiling[key] if key in null_ceiling else None}
+    write_a, write_b = am["disk_write_bytes_per_sec"]["mean"], bm["disk_write_bytes_per_sec"]["mean"]
+    if write_a is not None and write_b is not None and write_b > write_a:
+        issues.append("磁盘写入增加，缺少写入代价判定阈值")
     application_a = _dict(_dict(metadata_a).get("application"))
     application_b = _dict(_dict(metadata_b).get("application"))
     values = [_number(application.get("value")) for application in (application_a, application_b)]

@@ -276,6 +276,71 @@ class PressureAndTreeTests(unittest.TestCase):
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_declared_warmup_is_excluded_from_ab_rate_statistics(self):
+        samples = _window("a")
+        samples[0].metrics["rates"]["page_reads_per_sec"] = 100
+        result = _compare(a=samples, b=_window("b", available=10, reads=10))
+        self.assertEqual(result["verdict"], "cosmetic-or-harmful")
+        self.assertEqual(result["A"]["metrics"]["page_reads_per_sec"]["mean"], 1)
+        self.assertEqual(result["A"]["metrics"]["available_bytes"]["count"], 3)
+
+    def test_declared_warmup_is_excluded_from_null_calibration(self):
+        pair = _null_pair()
+        pair["b"][0].metrics["rates"]["page_reads_per_sec"] = 100
+        result = _compare(b=_window("b", available=10, reads=10), null_pairs=[pair])
+        self.assertEqual(result["verdict"], "cosmetic-or-harmful")
+
+    def test_zero_warmup_keeps_first_rate_sample(self):
+        samples = _window("a")
+        samples[0].metrics["rates"]["page_reads_per_sec"] = 100
+        metadata_a, metadata_b, pair = _metadata(), _metadata(action=True), _null_pair()
+        for metadata in (metadata_a, metadata_b, pair["metadata_a"], pair["metadata_b"]):
+            metadata["header"]["warmup_samples"] = 0
+        result = _compare(a=samples, b=_window("b", available=10, reads=10),
+                          metadata_a=metadata_a, metadata_b=metadata_b, null_pairs=[pair])
+        self.assertEqual(result["verdict"], "benefit-for-this-workload")
+        self.assertEqual(result["A"]["metrics"]["page_reads_per_sec"]["mean"], 34)
+
+    def test_ab_warmup_mismatch_is_insufficient(self):
+        metadata = _metadata(action=True)
+        metadata["header"]["warmup_samples"] = 0
+        result = _compare(metadata_b=metadata)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("A/B: 速率预热条件不一致", result["evidence_issues"])
+
+    def test_null_warmup_mismatch_is_insufficient(self):
+        pair = _null_pair()
+        pair["metadata_a"]["header"]["warmup_samples"] = 0
+        result = _compare(null_pairs=[pair])
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("A/A: 校准条件与实验不一致", result["evidence_issues"])
+
+    def test_boolean_warmup_has_no_valid_rate_window(self):
+        metadata = _metadata(action=True)
+        metadata["header"]["warmup_samples"] = True
+        result = _compare(metadata_b=metadata)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("B: 速率预热条件无效", result["evidence_issues"])
+        self.assertIsNone(result["B"]["metrics"]["page_reads_per_sec"]["mean"])
+
+    def test_warmup_cannot_exhaust_the_observation_window(self):
+        metadata = _metadata(action=True)
+        metadata["header"]["warmup_samples"] = 3
+        result = _compare(metadata_b=metadata)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("B: 速率预热条件无效", result["evidence_issues"])
+        self.assertIsNone(result["B"]["metrics"]["page_reads_per_sec"]["mean"])
+        self.assertEqual(result["B"]["metrics"]["available_bytes"]["count"], 3)
+
+    def test_disk_write_increase_without_cost_threshold_blocks_benefit(self):
+        samples = _window("b", available=10)
+        for sample in samples:
+            sample.metrics["rates"]["disk_write_bytes_per_sec"] = 100 * 1024 ** 2
+        result = _compare(b=samples)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("磁盘写入增加，缺少写入代价判定阈值", result["evidence_issues"])
+        self.assertEqual(result["B"]["metrics"]["disk_write_bytes_per_sec"]["mean"], 100 * 1024 ** 2)
+
     def test_uncalibrated_gain_is_insufficient(self):
         self.assertEqual(_compare(null_pairs=[])["verdict"], "insufficient_evidence")
 

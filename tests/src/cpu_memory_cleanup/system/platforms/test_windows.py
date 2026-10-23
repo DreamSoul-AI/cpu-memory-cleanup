@@ -139,13 +139,15 @@ class FakeSystem:
         return 0
 
     def counter_value(self, handle, flags, kind, value):
-        if flags == api.PDH_FMT_DOUBLE:
+        if flags & api.PDH_FMT_DOUBLE:
             if self.collections == 1:
                 value._obj.CStatus = api.PDH_CSTATUS_INVALID_DATA
                 return api.PDH_INVALID_DATA
             value._obj.value.doubleValue = self.rate
-        else:
+        elif flags & api.PDH_FMT_LARGE:
             value._obj.value.largeValue = 100
+        else:
+            raise AssertionError("必须显式选择计数器数值类型")
         value._obj.CStatus = 0
         return 0
 
@@ -299,6 +301,72 @@ class WindowsTests(unittest.TestCase):
             session.close()
         self.assertTrue(all(value is None for value in sample.metrics["rates"].values()))
         self.assertTrue(sample.errors)
+
+    def test_pdh_open_failure_remains_visible_in_every_sample(self):
+        self.fake.pdh.PdhOpenQueryW = Function(lambda *args: 5)
+        session = self.backend.open_observation()
+        try:
+            first = session.read("r", 0)
+            first.errors.append("sample-local")
+            later = session.read("r", 1)
+        finally:
+            closed = session.close()
+        self.assertIn("PDH open unavailable: 0x00000005", later.errors)
+        self.assertNotIn("sample-local", later.errors)
+        self.assertTrue(all(value is None for value in later.metrics["rates"].values()))
+        self.assertTrue(closed["closed"])
+
+    def test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup(self):
+        original = self.fake.pdh.PdhGetFormattedCounterValue
+
+        def invalid_rate(handle, flags, kind, value):
+            if flags & api.PDH_FMT_DOUBLE and self.fake.collections < 4:
+                value._obj.CStatus = api.PDH_CSTATUS_INVALID_DATA
+                return c.c_long(api.PDH_INVALID_DATA).value
+            return original(handle, flags, kind, value)
+
+        self.fake.pdh.PdhGetFormattedCounterValue = Function(invalid_rate)
+        session = self.backend.open_observation()
+        try:
+            first = session.read("r", 0)
+            second = session.read("r", 1)
+            third = session.read("r", 2)
+            recovered = session.read("r", 3)
+        finally:
+            closed = session.close()
+        self.assertTrue(any("no previous PDH interval" in error for error in first.errors))
+        self.assertEqual(len(second.errors), len(api.RATE_COUNTERS))
+        self.assertEqual(third.errors, second.errors)
+        self.assertTrue(all("0xc0000bc6" in error and "no previous" not in error for error in second.errors))
+        self.assertTrue(all(value is None for value in third.metrics["rates"].values()))
+        self.assertEqual(recovered.errors, [])
+        self.assertTrue(all(value == self.fake.rate for value in recovered.metrics["rates"].values()))
+        self.assertTrue(closed["closed"])
+
+    def test_pdh_formatting_preserves_capacity_and_rate_units(self):
+        def scaled_counter(handle, flags, kind, value):
+            # 按 PDH 官方 NOSCALE 合同模拟非零默认缩放，不读取真实计数器。
+            reading = 100_000_000 if flags & 0x1000 else 10_000
+            if flags & api.PDH_FMT_DOUBLE:
+                value._obj.value.doubleValue = reading
+            elif flags & api.PDH_FMT_LARGE:
+                value._obj.value.largeValue = reading
+            else:
+                raise AssertionError("必须显式选择计数器数值类型")
+            value._obj.CStatus = 0
+            return 0
+
+        self.fake.pdh.PdhGetFormattedCounterValue = Function(scaled_counter)
+        session = self.backend.open_observation()
+        try:
+            first = session.read("r", 0)
+            later = session.read("r", 1)
+        finally:
+            closed = session.close()
+        self.assertEqual(later.metrics["cache"]["cache_bytes"], 100_000_000)
+        self.assertEqual(later.metrics["rates"]["disk_read_bytes_per_sec"], 100_000_000)
+        self.assertTrue(all(value is None for value in first.metrics["rates"].values()))
+        self.assertTrue(closed["closed"])
 
     def test_required_memory_read_failure_propagates_and_closes(self):
         session = self.backend.open_observation()

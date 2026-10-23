@@ -606,6 +606,11 @@
       "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
     },
     {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_unverified_action_stops_system_reads",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_unverified_action_stops_system_reads",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
       "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_failure_blocks_next_maintenance",
       "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_close_failure_blocks_next_maintenance",
       "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
@@ -1494,6 +1499,116 @@
       "test_id": "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file",
       "unittest_id": "tests.src.cpu_memory_cleanup.system.test_records.RecordTests.test_closed_reader_cannot_reopen_a_file",
       "file": "tests/src/cpu_memory_cleanup/system/test_records.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::WorkerTests.test_job_close_failure_retains_handle_for_retry",
+      "unittest_id": "tests.scripts.test_run_tests.WorkerTests.test_job_close_failure_retains_handle_for_retry",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::WorkerTests.test_job_close_failure_preserves_result_and_reaps_worker",
+      "unittest_id": "tests.scripts.test_run_tests.WorkerTests.test_job_close_failure_preserves_result_and_reaps_worker",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::WorkerTests.test_job_peak_failure_does_not_skip_close_or_worker_reaping",
+      "unittest_id": "tests.scripts.test_run_tests.WorkerTests.test_job_peak_failure_does_not_skip_close_or_worker_reaping",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::WorkerTests.test_interrupt_survives_job_close_failure_and_reaps_worker",
+      "unittest_id": "tests.scripts.test_run_tests.WorkerTests.test_interrupt_survives_job_close_failure_and_reaps_worker",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::WorkerTests.test_timeout_survives_termination_failure_and_reaps_worker",
+      "unittest_id": "tests.scripts.test_run_tests.WorkerTests.test_timeout_survives_termination_failure_and_reaps_worker",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result",
+      "unittest_id": "tests.scripts.test_run_tests.PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result",
+      "file": "tests/scripts/test_run_tests.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_commit_rejects_late_cancel_and_keeps_busy",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_terminal_commit_rejects_late_cancel_and_keeps_busy",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_shutdown_during_terminal_commit_keeps_committed_outcome",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_shutdown_during_terminal_commit_keeps_committed_outcome",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_rejects_late_cancel_and_keeps_busy",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_close_rejects_late_cancel_and_keeps_busy",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_analysis_before_header_is_rejected",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_analysis_before_header_is_rejected",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_declared_warmup_is_excluded_from_ab_rate_statistics",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_declared_warmup_is_excluded_from_ab_rate_statistics",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_declared_warmup_is_excluded_from_null_calibration",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_declared_warmup_is_excluded_from_null_calibration",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_zero_warmup_keeps_first_rate_sample",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_zero_warmup_keeps_first_rate_sample",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_ab_warmup_mismatch_is_insufficient",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_ab_warmup_mismatch_is_insufficient",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_null_warmup_mismatch_is_insufficient",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_null_warmup_mismatch_is_insufficient",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_boolean_warmup_has_no_valid_rate_window",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_boolean_warmup_has_no_valid_rate_window",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_warmup_cannot_exhaust_the_observation_window",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_warmup_cannot_exhaust_the_observation_window",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_disk_write_increase_without_cost_threshold_blocks_benefit",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_disk_write_increase_without_cost_threshold_blocks_benefit",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_text_report_preserves_sample_gap_reasons",
+      "unittest_id": "tests.src.cpu_memory_cleanup.interaction.test_cli.CliTests.test_text_report_preserves_sample_gap_reasons",
+      "file": "tests/src/cpu_memory_cleanup/interaction/test_cli.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
     }
   ],
   "cost_classes": {
@@ -1555,6 +1670,7 @@
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_intent_write_failure_prevents_call",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_result_write_failure_preserves_attempt",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_restore_failure_blocks_next_maintenance",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_unverified_action_stops_system_reads",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_failure_blocks_next_maintenance",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_unclosed_resources_block_further_system_reads",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_predispatch_cancel_is_persisted_and_closes_resources",
@@ -1722,7 +1838,23 @@
         "tests/src/cpu_memory_cleanup/test_main.py::MainTests.test_unsupported_system_default_has_no_native_read_or_maintenance",
         "tests/src/cpu_memory_cleanup/test_package.py::ImportTests.test_layer_packages_keep_dependency_direction",
         "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_writer_cannot_append_or_commit_twice",
-        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file"
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_commit_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_shutdown_during_terminal_commit_keeps_committed_outcome",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_analysis_before_header_is_rejected",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_declared_warmup_is_excluded_from_ab_rate_statistics",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_declared_warmup_is_excluded_from_null_calibration",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_zero_warmup_keeps_first_rate_sample",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_ab_warmup_mismatch_is_insufficient",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_null_warmup_mismatch_is_insufficient",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_boolean_warmup_has_no_valid_rate_window",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_warmup_cannot_exhaust_the_observation_window",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_disk_write_increase_without_cost_threshold_blocks_benefit",
+        "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_text_report_preserves_sample_gap_reasons",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units"
       ],
       "required": [
         "tests/scripts/test_desktop_memory_button.py::DesktopMemoryButtonTests.test_default_route_is_readonly",
@@ -1771,6 +1903,7 @@
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_intent_write_failure_prevents_call",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_result_write_failure_preserves_attempt",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_restore_failure_blocks_next_maintenance",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_unverified_action_stops_system_reads",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_failure_blocks_next_maintenance",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_unclosed_resources_block_further_system_reads",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_predispatch_cancel_is_persisted_and_closes_resources",
@@ -1938,7 +2071,23 @@
         "tests/src/cpu_memory_cleanup/test_main.py::MainTests.test_unsupported_system_default_has_no_native_read_or_maintenance",
         "tests/src/cpu_memory_cleanup/test_package.py::ImportTests.test_layer_packages_keep_dependency_direction",
         "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_writer_cannot_append_or_commit_twice",
-        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file"
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_commit_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_shutdown_during_terminal_commit_keeps_committed_outcome",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_analysis_before_header_is_rejected",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_declared_warmup_is_excluded_from_ab_rate_statistics",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_declared_warmup_is_excluded_from_null_calibration",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_zero_warmup_keeps_first_rate_sample",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_ab_warmup_mismatch_is_insufficient",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_null_warmup_mismatch_is_insufficient",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_boolean_warmup_has_no_valid_rate_window",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_warmup_cannot_exhaust_the_observation_window",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_disk_write_increase_without_cost_threshold_blocks_benefit",
+        "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_text_report_preserves_sample_gap_reasons",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units"
       ],
       "dependencies": [],
       "resources": [],
@@ -2002,7 +2151,13 @@
         "tests/scripts/test_run_tests.py::PersistenceTests.test_compatibility_script_change_invalidates_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_last_result_persistence_overrun_blocks_batch_release",
-        "tests/scripts/test_run_tests.py::CatalogTests.test_readonly_acceptance_remains_planned_outside_executable_plans"
+        "tests/scripts/test_run_tests.py::CatalogTests.test_readonly_acceptance_remains_planned_outside_executable_plans",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_job_close_failure_retains_handle_for_retry",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_job_close_failure_preserves_result_and_reaps_worker",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_job_peak_failure_does_not_skip_close_or_worker_reaping",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_interrupt_survives_job_close_failure_and_reaps_worker",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_timeout_survives_termination_failure_and_reaps_worker",
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result"
       ],
       "required": [
         "tests/scripts/test_run_tests.py::CatalogTests.test_defaults_are_resolved_before_selection",
@@ -2053,7 +2208,13 @@
         "tests/scripts/test_run_tests.py::PersistenceTests.test_compatibility_script_change_invalidates_resume",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_failed_required_plan_dependency_prevents_downstream_worker",
         "tests/scripts/test_run_tests.py::PersistenceTests.test_last_result_persistence_overrun_blocks_batch_release",
-        "tests/scripts/test_run_tests.py::CatalogTests.test_readonly_acceptance_remains_planned_outside_executable_plans"
+        "tests/scripts/test_run_tests.py::CatalogTests.test_readonly_acceptance_remains_planned_outside_executable_plans",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_job_close_failure_retains_handle_for_retry",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_job_close_failure_preserves_result_and_reaps_worker",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_job_peak_failure_does_not_skip_close_or_worker_reaping",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_interrupt_survives_job_close_failure_and_reaps_worker",
+        "tests/scripts/test_run_tests.py::WorkerTests.test_timeout_survives_termination_failure_and_reaps_worker",
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result"
       ],
       "dependencies": [
         "quick"
@@ -2120,7 +2281,15 @@
         "tests/src/cpu_memory_cleanup/test_main.py::MainTests.test_unsupported_system_default_has_no_native_read_or_maintenance",
         "tests/src/cpu_memory_cleanup/test_package.py::ImportTests.test_layer_packages_keep_dependency_direction",
         "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_writer_cannot_append_or_commit_twice",
-        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file"
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_commit_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_shutdown_during_terminal_commit_keeps_committed_outcome",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_analysis_before_header_is_rejected",
+        "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_text_report_preserves_sample_gap_reasons",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units"
       ],
       "required": [
         "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_default_only_requests_one_readonly_sample",
@@ -2171,7 +2340,15 @@
         "tests/src/cpu_memory_cleanup/test_main.py::MainTests.test_unsupported_system_default_has_no_native_read_or_maintenance",
         "tests/src/cpu_memory_cleanup/test_package.py::ImportTests.test_layer_packages_keep_dependency_direction",
         "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_writer_cannot_append_or_commit_twice",
-        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file"
+        "tests/src/cpu_memory_cleanup/system/test_records.py::RecordTests.test_closed_reader_cannot_reopen_a_file",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_commit_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_shutdown_during_terminal_commit_keeps_committed_outcome",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_rejects_late_cancel_and_keeps_busy",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_analysis_before_header_is_rejected",
+        "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_text_report_preserves_sample_gap_reasons",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units"
       ],
       "dependencies": [],
       "resources": [],

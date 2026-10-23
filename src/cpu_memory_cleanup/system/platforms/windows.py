@@ -70,6 +70,7 @@ RATE_COUNTERS = {
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 PDH_FMT_DOUBLE = 0x200
 PDH_FMT_LARGE = 0x400
+PDH_FMT_NOSCALE = 0x1000
 PDH_CSTATUS_INVALID_DATA = 0xC0000BBA
 PDH_INVALID_DATA = 0xC0000BC6
 
@@ -99,7 +100,7 @@ class CounterSession:
         self._collect = None
         self._get = None
         self._close = None
-        self._warmup_noted = set()
+        self._first_collection = True
 
     def open(self, warnings):
         specs = dict(COUNTERS)
@@ -126,7 +127,7 @@ class CounterSession:
                 warnings.append(f"{key} unavailable: PDH 0x{status & 0xffffffff:08x}")
             else:
                 self._handles[key] = handle
-                self._formats[key] = PDH_FMT_DOUBLE if key in RATE_COUNTERS else PDH_FMT_LARGE
+                self._formats[key] = (PDH_FMT_DOUBLE if key in RATE_COUNTERS else PDH_FMT_LARGE) | PDH_FMT_NOSCALE
         return True
 
     def collect(self, warnings):
@@ -138,15 +139,13 @@ class CounterSession:
         if status:
             warnings.append(f"PDH collection unavailable: 0x{status & 0xffffffff:08x}")
             return capacity, rates
+        first_collection, self._first_collection = self._first_collection, False
         for key, handle in self._handles.items():
+            if key in RATE_COUNTERS and first_collection:
+                warnings.append(f"{key} unavailable until the next sample: no previous PDH interval")
+                continue
             value = CounterValue()
             status = self._get(handle, self._formats[key], None, c.byref(value))
-            if key in RATE_COUNTERS and (
-                    status == PDH_INVALID_DATA or value.CStatus == PDH_CSTATUS_INVALID_DATA):
-                if key not in self._warmup_noted:
-                    self._warmup_noted.add(key)
-                    warnings.append(f"{key} unavailable until the next sample: no previous PDH interval")
-                continue
             if key in RATE_COUNTERS:
                 reading = value.value.doubleValue
             else:
@@ -358,7 +357,7 @@ class _Observation:
     def read(self, run_id, sequence):
         if self.closed:
             raise RuntimeError("读取会话已关闭")
-        errors, self.open_errors = self.open_errors, []
+        errors = self.open_errors.copy()
         info = PerformanceInfo(cb=c.sizeof(PerformanceInfo))
         get_info = bind(self.psapi, "GetPerformanceInfo", [c.POINTER(PerformanceInfo), w.DWORD], w.BOOL)
         check(get_info(c.byref(info), c.sizeof(info)))
