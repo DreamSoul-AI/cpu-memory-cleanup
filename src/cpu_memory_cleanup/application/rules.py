@@ -287,12 +287,12 @@ def cpu_intervals(records):
 def sample_view(value):
     record = _record(value)
     host, commit = _dict(record.get("host")), _dict(record.get("commit"))
-    used = _number(host.get("commit_used_gib"))
-    limit = _number(host.get("commit_limit_gib"))
-    if used is None:
-        used = _number(commit.get("used_bytes"))
-        limit = _number(commit.get("limit_bytes"))
-    available = metric_values(record)["available_bytes"]
+    values = metric_values(record)
+    used, available = values["commit_used_bytes"], values["available_bytes"]
+    limit = _number(commit.get("limit_bytes"))
+    if "limit_bytes" not in commit:
+        legacy_limit = _number(host.get("commit_limit_gib"))
+        limit = _number(legacy_limit * GIB) if legacy_limit is not None else None
     owners = {}
     for item in _list(record.get("top_owners")):
         item = _dict(item)

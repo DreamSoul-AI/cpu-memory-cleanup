@@ -380,8 +380,108 @@ class WindowsTests(unittest.TestCase):
 
     def test_query_close_failure_is_not_success(self):
         session = self.backend.open_observation()
+        session.read("r", 0)
         self.fake.fail_close_query = True
         self.assertFalse(session.close()["closed"])
+
+    def test_unread_observation_closes_without_opening_pdh(self):
+        session = self.backend.open_observation()
+        self.assertTrue(session.close()["closed"])
+        self.assertNotIn("pdh.dll", self.fake.loads)
+        self.assertEqual(self.fake.closed, [])
+
+    def test_inspect_pdh_initialization_interrupt_closes_owned_query(self):
+        interruption = KeyboardInterrupt("fake PDH initialization interruption")
+
+        def interrupt_add(*args):
+            raise interruption
+
+        self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
+        app = make_app(self.backend, self.backend)
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            app.inspect()
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertFalse(app._unsafe)
+        self.assertEqual(self.fake.closed.count(50), 1)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_maintain_pdh_initialization_interrupt_closes_query_and_operation(self):
+        interruption = KeyboardInterrupt("fake PDH initialization interruption")
+
+        def interrupt_add(*args):
+            raise interruption
+
+        self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
+        app = make_app(self.backend, self.backend)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                app.maintain(ActionRequest("working-set", confirmed=True,
+                                           confirmation_source="test"), directory)
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertEqual(self.fake.closed.count(50), 1)
+        self.assertIn(500, self.fake.closed)
+        self.assertIn(700, self.fake.closed)
+        self.assertFalse(self.lock.locked())
+        self.assertEqual(self.fake.adjustments, [])
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_pdh_initialization_interrupt_close_failure_keeps_resource_and_blocks_requests(self):
+        interruption = KeyboardInterrupt("fake PDH initialization interruption")
+
+        def interrupt_add(*args):
+            raise interruption
+
+        self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
+        self.fake.fail_close_query = True
+        app = make_app(self.backend, self.backend)
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            app.inspect()
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertTrue(app._unsafe)
+        self.assertEqual(len(app._pending_resources), 1)
+        session = app._pending_resources[0]
+        self.assertEqual(session.counters._query.value, 50)
+        self.assertFalse(session.closed)
+        loads = self.fake.loads.copy()
+        self.assertEqual(app.inspect().completion, "failed")
+        with tempfile.TemporaryDirectory() as directory:
+            rejected = app.maintain(ActionRequest("working-set", confirmed=True,
+                                                 confirmation_source="test"), directory)
+        self.assertEqual(rejected.completion, "failed")
+        self.assertEqual(self.fake.loads, loads)
+        self.fake.fail_close_query = False
+        self.assertTrue(session.close()["closed"])
+        self.assertIsNone(session.counters._query)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_pdh_initialization_error_is_not_retried_and_gaps_remain(self):
+        for exception_type in (OSError, AttributeError):
+            with self.subTest(exception_type=exception_type.__name__):
+                fake = FakeSystem()
+                additions = []
+
+                def failed_add(*args):
+                    additions.append(True)
+                    raise exception_type("fake counter initialization failure")
+
+                fake.pdh.PdhAddEnglishCounterW = Function(failed_add)
+                backend = api.WindowsBackend(fake.load, now=lambda: "2026-10-21T00:00:00+00:00")
+                session = backend.open_observation()
+                try:
+                    first = session.read("r", 0)
+                    later = session.read("r", 1)
+                finally:
+                    closed = session.close()
+                self.assertTrue(closed["closed"])
+                self.assertEqual(additions, [True])
+                self.assertEqual(fake.loads.count("pdh.dll"), 1)
+                self.assertTrue(any("fake counter initialization failure" in error for error in first.errors))
+                self.assertEqual(later.errors, first.errors)
+                self.assertTrue(all(value is None for value in later.metrics["rates"].values()))
+                self.assertEqual(fake.nt_calls, [])
 
     def test_pdh_open_and_cleanup_failures_keep_session_for_later_close(self):
         def failed_add(*args):

@@ -962,3 +962,173 @@ class CoreTests(unittest.TestCase):
                     self.assertEqual(report.metadata["terminal"], rows[-1])
                 self.assertEqual(path.read_text(encoding="utf-8"), content)
                 self.assertEqual((self.backend.opens, self.backend.calls), calls_before)
+
+    def test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt(self):
+        for mode in ("inspect", "maintain"):
+            for close_failure in ("error", "interrupt"):
+                with self.subTest(mode=mode, close_failure=close_failure):
+                    backend = FakeBackend()
+                    app = make_app(backend, backend, sleep=lambda seconds: None)
+                    report = app._report(mode)
+                    first = KeyboardInterrupt("fake close interruption")
+                    diagnostic = SystemExit("fake diagnostic interruption")
+                    close = backend.close
+                    journals = []
+                    open_write = app.records.open_write
+
+                    def open_and_track(*args, **kwargs):
+                        journal = open_write(*args, **kwargs)
+                        self.addCleanup(journal.close)
+                        journals.append(journal)
+                        return journal
+
+                    def close_with_failure():
+                        facts = close()
+                        if backend.closes == 1:
+                            raise first if close_failure == "interrupt" else OSError("fake close failure")
+                        return facts
+
+                    with patch.object(app, "_report", return_value=report), \
+                            patch.object(app.records, "open_write", open_and_track), \
+                            patch.object(backend, "close", close_with_failure), \
+                            patch.object(app.runtime, "diagnostic", side_effect=diagnostic):
+                        with self.assertRaises(BaseException) as caught:
+                            if mode == "inspect":
+                                app.inspect({"output_dir": self.temp.name})
+                            else:
+                                app.maintain(self.request, self.temp.name)
+                    self.assertIs(caught.exception, first if close_failure == "interrupt" else diagnostic)
+                    self.assertFalse(app.busy)
+                    self.assertEqual(backend.closes, 1 if mode == "inspect" else 2)
+                    self.assertTrue(journals[0].sealed)
+                    self.assertEqual(journals[0].streams, {})
+                    self.assertEqual(report.completion, "failed" if mode == "inspect" else "partial")
+                    self.assertEqual(report.action["call_outcome"], "not_started" if mode == "inspect" else "success")
+                    self.assertEqual(app.inspect().completion, "failed")
+
+    def test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt(self):
+        for clock_failure in ("error", "interrupt"):
+            with self.subTest(clock_failure=clock_failure):
+                backend = FakeBackend()
+                app = make_app(backend, backend)
+                report = app._report("inspect")
+                first = KeyboardInterrupt("fake clock interruption")
+                diagnostic = SystemExit("fake diagnostic interruption")
+                journals = []
+                open_write = app.records.open_write
+
+                def open_and_track(*args, **kwargs):
+                    journal = open_write(*args, **kwargs)
+                    self.addCleanup(journal.close)
+                    journals.append(journal)
+                    return journal
+
+                failure = first if clock_failure == "interrupt" else OSError("fake clock failure")
+                with patch.object(app, "_report", return_value=report), \
+                        patch.object(app.records, "open_write", open_and_track), \
+                        patch.object(app, "_clock", side_effect=[app._clock(), failure]), \
+                        patch.object(app.runtime, "diagnostic", side_effect=diagnostic):
+                    with self.assertRaises(BaseException) as caught:
+                        app.inspect({"output_dir": self.temp.name})
+                self.assertIs(caught.exception, first if clock_failure == "interrupt" else diagnostic)
+                self.assertFalse(app.busy)
+                self.assertEqual(backend.closes, 1)
+                self.assertEqual(journals[0].streams, {})
+                self.assertFalse(journals[0].committed)
+                self.assertNotIn("finished_at", report.metadata["terminal"])
+                self.assertEqual(report.errors[-1]["phase"], "terminal_record")
+
+    def test_review_close_diagnostic_interrupt_still_closes_both_readers(self):
+        original = self.app.inspect({"output_dir": self.temp.name})
+        comparison = self.app.inspect({"output_dir": self.temp.name})
+        for close_failure in ("error", "interrupt"):
+            with self.subTest(close_failure=close_failure):
+                app = make_app()
+                first = KeyboardInterrupt("fake first reader close interruption")
+                diagnostic = SystemExit("fake diagnostic interruption")
+                close = records.RunReader.close
+                readers = []
+                open_read = app.records.open_read
+
+                def open_and_track(*args, **kwargs):
+                    reader = open_read(*args, **kwargs)
+                    self.addCleanup(close, reader)
+                    return reader
+
+                def close_with_failure(reader):
+                    facts = close(reader)
+                    readers.append(reader)
+                    if len(readers) == 1:
+                        raise first if close_failure == "interrupt" else OSError("fake reader close failure")
+                    return facts
+
+                with patch.object(records.RunReader, "close", close_with_failure), \
+                        patch.object(app.records, "open_read", open_and_track), \
+                        patch.object(app.runtime, "diagnostic", side_effect=diagnostic):
+                    with self.assertRaises(BaseException) as caught:
+                        app.review(original.output_dir, comparison=comparison.output_dir)
+                self.assertIs(caught.exception, first if close_failure == "interrupt" else diagnostic)
+                self.assertEqual(len(readers), 2)
+                self.assertTrue(all(reader.closed for reader in readers))
+                self.assertFalse(app.busy)
+        self.assertEqual((self.backend.opens, self.backend.calls), (2, 0))
+
+    def test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records(self):
+        first = KeyboardInterrupt("fake read interruption")
+        diagnostic = SystemExit("fake diagnostic interruption")
+        self.backend.on_read = lambda: (_ for _ in ()).throw(first)
+        report = self.app._report("inspect")
+        with patch.object(self.app, "_report", return_value=report), \
+                patch.object(self.app.runtime, "diagnostic", side_effect=diagnostic):
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                self.app.inspect({"output_dir": self.temp.name})
+        self.assertIs(caught.exception, first)
+        self.assertFalse(self.app.busy)
+        self.assertEqual(self.backend.closes, 1)
+        self.assertEqual(report.errors[0]["type"], "KeyboardInterrupt")
+        self.assertTrue(all(fact["closed"] for fact in report.metadata["resource_closures"]))
+        rows = [json.loads(line) for line in (Path(report.output_dir) / "samples.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(rows[-1]["record_type"], "end")
+        self.assertEqual(rows[-1]["completion"], "failed")
+
+    def test_review_rejects_analysis_for_other_samples(self):
+        for source_role in ("primary", "comparison"):
+            for analysis_field in ("sample_count", "run_ids"):
+                with self.subTest(source_role=source_role, analysis_field=analysis_field):
+                    original = self.maintain()
+                    source = original if source_role == "primary" else self.app.inspect({
+                        "count": 2, "interval": 0, "output_dir": self.temp.name})
+                    path = Path(source.output_dir) / "samples.jsonl"
+                    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                    analysis = next(row["analysis"] for row in rows if row["record_type"] == "analysis")
+                    analysis[analysis_field] = 1 if analysis_field == "sample_count" else ["foreign-run"]
+                    content = "\n".join(json.dumps(row) for row in rows) + "\n"
+                    path.write_text(content, encoding="utf-8")
+                    before = (self.backend.opens, self.backend.calls)
+                    report = self.app.review(original.output_dir, comparison=(
+                        source.output_dir if source_role == "comparison" else None))
+                    self.assertEqual(report.completion, "failed")
+                    self.assertEqual(report.analysis, {})
+                    self.assertEqual(report.samples, original.samples)
+                    self.assertEqual(report.action, original.action)
+                    self.assertEqual(report.errors[0]["type"], "ValueError")
+                    self.assertEqual(path.read_text(encoding="utf-8"), content)
+                    self.assertFalse(self.app.busy)
+                    self.assertEqual((self.backend.opens, self.backend.calls), before)
+
+    def test_review_accepts_analysis_without_declared_sample_identity(self):
+        original = self.maintain()
+        path = Path(original.output_dir) / "samples.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        analysis = next(row["analysis"] for row in rows if row["record_type"] == "analysis")
+        del analysis["sample_count"]
+        del analysis["run_ids"]
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+        before = (self.backend.opens, self.backend.calls)
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "success")
+        self.assertEqual(report.analysis, analysis)
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.action, original.action)
+        self.assertFalse(report.metadata["recomputed"])
+        self.assertEqual((self.backend.opens, self.backend.calls), before)

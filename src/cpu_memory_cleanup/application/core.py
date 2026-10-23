@@ -148,7 +148,13 @@ def _load_run(reader, check_cancel, result):
         elif kind == "analysis":
             if result["header"] is None or result["analysis"] is not None or not isinstance(record.get("analysis"), dict):
                 raise ValueError("分析结果缺少运行头、无效或重复")
-            result["analysis"] = record["analysis"]
+            analysis = record["analysis"]
+            if "sample_count" in analysis and (type(analysis["sample_count"]) is not int
+                                               or analysis["sample_count"] != len(result["samples"])):
+                raise ValueError("分析结果与样本数量不一致")
+            if "run_ids" in analysis and analysis["run_ids"] != [result["header"]["run_id"]]:
+                raise ValueError("分析结果不属于该运行")
+            result["analysis"] = analysis
         elif kind == "end":
             result["terminal"] = record
             seen_end = True
@@ -232,7 +238,9 @@ class Application:
     def _report(self, mode):
         return RunReport(uuid.uuid4().hex, mode)
 
-    def _error(self, report, phase, error):
+    def _error(self, report, phase, error, interruptions=None):
+        if interruptions is not None and not isinstance(error, Exception):
+            interruptions.append(error)
         item = {"phase": phase, "type": type(error).__name__,
                 "message": str(error) if isinstance(error, ValueError) else "操作失败，原始系统错误未写入诊断日志"}
         report.errors.append(item)
@@ -242,8 +250,11 @@ class Application:
                                          "message": "流程失败，已知事实保留于业务报告",
                                          "runtime_id": report.run_id, "phase": phase,
                                          "exception_type": type(error).__name__})
-        except Exception:
-            pass  # 诊断输出失败不能改写业务事实。
+        except BaseException as diagnostic_error:
+            if not isinstance(diagnostic_error, Exception):
+                if interruptions is None:
+                    raise
+                interruptions.append(diagnostic_error)
 
     def _check_cancel(self):
         if self._cancel.is_set():
@@ -297,11 +308,9 @@ class Application:
             self._unsafe = True
             if resource not in self._pending_resources:
                 self._pending_resources.append(resource)
-            self._error(report, "close", error)
-            if not isinstance(error, Exception):
-                if interruptions is None:
-                    raise
-                interruptions.append(error)
+            self._error(report, "close", error, interruptions)
+            if not isinstance(error, Exception) and interruptions is None:
+                raise
             return False
         return True
 
@@ -334,9 +343,7 @@ class Application:
             if journal and self._close(journal, report, interruptions):
                 journal.commit_end(terminal)
         except BaseException as error:
-            self._error(report, "terminal_record", error)
-            if not isinstance(error, Exception):
-                interruptions.append(error)
+            self._error(report, "terminal_record", error, interruptions)
         finally:
             self._close(journal, report, interruptions)
             report.completion = self._completion(report)
@@ -377,9 +384,7 @@ class Application:
         except _Cancelled:
             pass
         except BaseException as error:
-            self._error(report, report.phase, error)
-            if not isinstance(error, Exception):
-                interruptions.append(error)
+            self._error(report, report.phase, error, interruptions)
         finally:
             report.phase = "closing"
             self._close(session, report, interruptions)
@@ -436,17 +441,15 @@ class Application:
                 if report.action["call_outcome"] == "unknown":
                     self._unsafe = True
                 if action.get("errors"):
-                    self._error(report, "calling", ValueError("维护或恢复存在错误，见动作事实"))
+                    self._error(report, "calling", ValueError("维护或恢复存在错误，见动作事实"), interruptions)
                 if action.get("privilege_restored") is not True:
                     self._unsafe = True
-                    self._error(report, "restore", ValueError("安全上下文恢复未确认"))
+                    self._error(report, "restore", ValueError("安全上下文恢复未确认"), interruptions)
             except BaseException as error:
                 if report.action.get("call_outcome") == "not_started":
                     report.action = {"attempted": None, "call_outcome": "unknown", "privilege_restored": None}
                 self._unsafe = True
-                self._error(report, "calling", error)
-                if not isinstance(error, Exception):
-                    interruptions.append(error)
+                self._error(report, "calling", error, interruptions)
             report.metadata["action"] = report.action.copy()
             report.phase = "action_record"
             journal.append("operation", {"record_type": "action_result", "action": report.action})
@@ -459,9 +462,7 @@ class Application:
         except _Cancelled:
             pass
         except BaseException as error:
-            self._error(report, report.phase, error)
-            if not isinstance(error, Exception):
-                interruptions.append(error)
+            self._error(report, report.phase, error, interruptions)
         finally:
             report.phase = "closing"
             self._close(session, report, interruptions)
@@ -518,17 +519,15 @@ class Application:
                 report.metadata["recomputed_rule_version"] = RULE_VERSION
             self._check_cancel()
             if original["gaps"]:
-                self._error(report, "source", ValueError("原运行条件或结果不完整，不能支持收益"))
+                self._error(report, "source", ValueError("原运行条件或结果不完整，不能支持收益"), interruptions)
             report.completion = "partial" if report.errors else "success"
             report.phase = "finished"
         except _Cancelled:
             report.completion = "cancelled"
             report.phase = "finished"
         except BaseException as error:
-            self._error(report, "review", error)
+            self._error(report, "review", error, interruptions)
             report.completion = "failed"
-            if not isinstance(error, Exception):
-                interruptions.append(error)
         finally:
             with self._lock:
                 self._finishing = True

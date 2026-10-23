@@ -341,22 +341,25 @@ class _Observation:
         self.backend, self.with_processes = backend, with_processes
         self.kernel, self.psapi = backend._dll("kernel32.dll"), backend._dll("psapi.dll")
         self.counters = CounterSession(include_rates=True, dll_loader=backend._dll)
+        self._counters_initialized = False
         self.open_errors = []
         self.pending_handles = []
         self.closed = False
-        try:
-            self.counters.open(self.open_errors)
-        except (OSError, AttributeError) as error:
-            self.open_errors.append("PDH不可用: " + _error_text(error))
-            self.counters.ready = False
-            try:
-                self.counters.close()
-            except OSError as close_error:
-                self.open_errors.append("PDH初始化收尾失败: " + _error_text(close_error))
 
     def read(self, run_id, sequence):
         if self.closed:
             raise RuntimeError("读取会话已关闭")
+        if not self._counters_initialized:
+            self._counters_initialized = True
+            try:
+                self.counters.open(self.open_errors)
+            except (OSError, AttributeError) as error:
+                self.open_errors.append("PDH不可用: " + _error_text(error))
+                self.counters.ready = False
+                try:
+                    self.counters.close()
+                except OSError as close_error:
+                    self.open_errors.append("PDH初始化收尾失败: " + _error_text(close_error))
         errors = self.open_errors.copy()
         info = PerformanceInfo(cb=c.sizeof(PerformanceInfo))
         get_info = bind(self.psapi, "GetPerformanceInfo", [c.POINTER(PerformanceInfo), w.DWORD], w.BOOL)

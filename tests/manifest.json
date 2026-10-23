@@ -1898,6 +1898,152 @@
       "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_call_interrupt_survives_restore_interrupt",
       "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_call_interrupt_survives_restore_interrupt",
       "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py",
+      "subtests": [
+        {
+          "mode": "inspect",
+          "close_failure": "error"
+        },
+        {
+          "mode": "inspect",
+          "close_failure": "interrupt"
+        },
+        {
+          "mode": "maintain",
+          "close_failure": "error"
+        },
+        {
+          "mode": "maintain",
+          "close_failure": "interrupt"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py",
+      "subtests": [
+        {
+          "clock_failure": "error"
+        },
+        {
+          "clock_failure": "interrupt"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py",
+      "subtests": [
+        {
+          "close_failure": "error"
+        },
+        {
+          "close_failure": "interrupt"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_rejects_analysis_for_other_samples",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_rejects_analysis_for_other_samples",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py",
+      "subtests": [
+        {
+          "source_role": "primary",
+          "analysis_field": "sample_count"
+        },
+        {
+          "source_role": "primary",
+          "analysis_field": "run_ids"
+        },
+        {
+          "source_role": "comparison",
+          "analysis_field": "sample_count"
+        },
+        {
+          "source_role": "comparison",
+          "analysis_field": "run_ids"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_accepts_analysis_without_declared_sample_identity",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_accepts_analysis_without_declared_sample_identity",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py",
+      "subtests": [
+        {
+          "limit_source": "current"
+        },
+        {
+          "limit_source": "legacy"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py",
+      "subtests": [
+        {
+          "field": "used_bytes"
+        },
+        {
+          "field": "limit_bytes"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_unread_observation_closes_without_opening_pdh",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_unread_observation_closes_without_opening_pdh",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_inspect_pdh_initialization_interrupt_closes_owned_query",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_inspect_pdh_initialization_interrupt_closes_owned_query",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_maintain_pdh_initialization_interrupt_closes_query_and_operation",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_maintain_pdh_initialization_interrupt_closes_query_and_operation",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_initialization_interrupt_close_failure_keeps_resource_and_blocks_requests",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_pdh_initialization_interrupt_close_failure_keeps_resource_and_blocks_requests",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_initialization_error_is_not_retried_and_gaps_remain",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_pdh_initialization_error_is_not_retried_and_gaps_remain",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py",
+      "subtests": [
+        {
+          "exception_type": "OSError"
+        },
+        {
+          "exception_type": "AttributeError"
+        }
+      ]
     }
   ],
   "cost_classes": {
@@ -2185,7 +2331,21 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_restore_interrupt_blocks_new_application_and_closes_token",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_restore_verification_interrupt_keeps_process_guard",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_existing_privilege_verification_interrupt_keeps_process_guard",
-        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_call_interrupt_survives_restore_interrupt"
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_call_interrupt_survives_restore_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_rejects_analysis_for_other_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_accepts_analysis_without_declared_sample_identity",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_unread_observation_closes_without_opening_pdh",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_inspect_pdh_initialization_interrupt_closes_owned_query",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_maintain_pdh_initialization_interrupt_closes_query_and_operation",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_initialization_interrupt_close_failure_keeps_resource_and_blocks_requests",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_initialization_error_is_not_retried_and_gaps_remain"
       ],
       "required": [
         "tests/scripts/test_desktop_memory_button.py::DesktopMemoryButtonTests.test_default_route_is_readonly",
@@ -2460,7 +2620,21 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_restore_interrupt_blocks_new_application_and_closes_token",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_restore_verification_interrupt_keeps_process_guard",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_existing_privilege_verification_interrupt_keeps_process_guard",
-        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_call_interrupt_survives_restore_interrupt"
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_call_interrupt_survives_restore_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_rejects_analysis_for_other_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_accepts_analysis_without_declared_sample_identity",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_unread_observation_closes_without_opening_pdh",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_inspect_pdh_initialization_interrupt_closes_owned_query",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_maintain_pdh_initialization_interrupt_closes_query_and_operation",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_initialization_interrupt_close_failure_keeps_resource_and_blocks_requests",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_initialization_error_is_not_retried_and_gaps_remain"
       ],
       "dependencies": [],
       "resources": [],
@@ -2694,7 +2868,16 @@
         "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_mainloop_interrupt_cancels_and_joins_undispatched_maintenance",
         "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_mainloop_unexpected_return_discards_pending_maintenance_and_joins_reader",
         "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_mainloop_error_after_root_destroy_still_joins_and_preserves_error",
-        "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_normal_close_returns_without_destroying_root_twice"
+        "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_normal_close_returns_without_destroying_root_twice",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_rejects_analysis_for_other_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_accepts_analysis_without_declared_sample_identity",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable"
       ],
       "required": [
         "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_default_only_requests_one_readonly_sample",
@@ -2785,7 +2968,16 @@
         "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_mainloop_interrupt_cancels_and_joins_undispatched_maintenance",
         "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_mainloop_unexpected_return_discards_pending_maintenance_and_joins_reader",
         "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_mainloop_error_after_root_destroy_still_joins_and_preserves_error",
-        "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_normal_close_returns_without_destroying_root_twice"
+        "tests/src/cpu_memory_cleanup/interaction/test_desktop.py::DesktopRunTests.test_normal_close_returns_without_destroying_root_twice",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_read_interrupt_precedes_diagnostic_interrupt_and_closes_records",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_rejects_analysis_for_other_samples",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_accepts_analysis_without_declared_sample_identity",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable"
       ],
       "dependencies": [],
       "resources": [],

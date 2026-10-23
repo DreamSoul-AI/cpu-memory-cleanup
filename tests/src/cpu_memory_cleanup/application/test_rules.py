@@ -245,6 +245,38 @@ class PressureAndTreeTests(unittest.TestCase):
         record["host"] = {}
         self.assertIsNone(rules.evaluate([record], sustain=1)["runs"][0]["min_free_gib"])
 
+    def test_pressure_prefers_current_commit_fields_over_legacy_values(self):
+        for limit_source in ("current", "legacy"):
+            with self.subTest(limit_source=limit_source):
+                record = _tree(0, used=99, limit=100)
+                record["commit"] = {"used_bytes": 50 * GIB}
+                expected = 50
+                if limit_source == "current":
+                    record["commit"]["limit_bytes"] = 200 * GIB
+                    expected = 25
+                self.assertEqual(rules.sample_view(record)["commit_pct"], expected)
+                pressure = rules.evaluate([record], sustain=1)["runs"][0]
+                self.assertEqual(pressure["max_commit_pct"], expected)
+                self.assertEqual(pressure["episodes"], [])
+
+    def test_pressure_explicit_unknown_commit_fields_do_not_fall_back(self):
+        for field in ("used_bytes", "limit_bytes"):
+            with self.subTest(field=field):
+                record = _tree(0, used=99, limit=100)
+                record["commit"] = {"used_bytes": 50 * GIB, "limit_bytes": 100 * GIB}
+                record["commit"][field] = None
+                self.assertIsNone(rules.sample_view(record)["commit_pct"])
+                pressure = rules.evaluate([record], sustain=1)["runs"][0]
+                self.assertIsNone(pressure["max_commit_pct"])
+                self.assertEqual(pressure["episodes"], [])
+
+    def test_pressure_legacy_commit_fields_remain_usable(self):
+        record = _tree(0, used=90, limit=100)
+        self.assertEqual(rules.sample_view(record)["commit_pct"], 90)
+        pressure = rules.evaluate([record], sustain=1)["runs"][0]
+        self.assertEqual(pressure["max_commit_pct"], 90)
+        self.assertEqual(pressure["episodes"][0]["reasons"], ["commit_above"])
+
     def test_boolean_sustain_is_rejected(self):
         with self.assertRaises(ValueError):
             rules.evaluate([], sustain=True)
