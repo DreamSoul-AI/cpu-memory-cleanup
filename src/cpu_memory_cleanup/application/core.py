@@ -72,6 +72,11 @@ def _load_run(reader, check_cancel, result):
                 if record.get("record_type") == "intent":
                     if action_phase is not None:
                         raise ValueError("重复或乱序动作意图")
+                    if ("mechanism" in record and "mechanism" in header
+                            and record["mechanism"] != header["mechanism"]):
+                        raise ValueError("动作机制与运行头不一致")
+                    if "scope" in record and record["scope"] != "system":
+                        raise ValueError("动作范围无效")
                     action_phase = "intent"
                     result["action"] = {"attempted": None, "call_outcome": "unknown"}
                 elif record.get("record_type") == "action_result":
@@ -165,6 +170,8 @@ def _load_run(reader, check_cancel, result):
         if (terminal.get("run_id") != header.get("run_id") or type(terminal.get("sample_count")) is not int
                 or terminal["sample_count"] != len(result["samples"])):
             raise ValueError("终态与样本不一致")
+        if terminal.get("completion") == "success" and terminal.get("errors"):
+            raise ValueError("成功终态携带错误")
         if header.get("expected_count") != len(result["samples"]) or terminal.get("completion") != "success":
             result["gaps"].append("运行未完整成功")
     if action_error is not None:
@@ -319,10 +326,11 @@ class Application:
             report.completion = self._completion(report)
         report.phase = "finished"
         terminal = {"record_type": "end", "completion": report.completion,
-                    "sample_count": len(report.samples), "finished_at": self._clock(),
+                    "sample_count": len(report.samples),
                     "cancel_requested": report.cancel_requested, "errors": report.errors.copy()}
         report.metadata["terminal"] = terminal
         try:
+            terminal["finished_at"] = self._clock()
             if journal and self._close(journal, report, interruptions):
                 journal.commit_end(terminal)
         except BaseException as error:

@@ -529,6 +529,7 @@ class _Operation:
             result["errors"].append("维护必须在取得互斥的线程执行")
             return result
         token, original, luid, adjusted = None, None, None, False
+        interruption = None
         try:
             token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES)
             self.tokens.append(token)
@@ -559,6 +560,8 @@ class _Operation:
                                   call_outcome="success" if status == 0 else "failure")
         except (OSError, AttributeError) as error:
             result["errors"].append(_error_text(error))
+        except BaseException as error:
+            interruption = error
         finally:
             if token is not None:
                 if adjusted:
@@ -567,19 +570,30 @@ class _Operation:
                         _adjust_privilege(self.advapi, token, state)
                         if _privilege_attributes(self.advapi, token, luid) != original:
                             raise OSError("原特权状态未恢复")
-                    except (OSError, AttributeError) as error:
+                    except BaseException as error:
                         self._restore_failed = True
                         result["privilege_restored"] = False
                         result["errors"].append("特权恢复失败: " + _error_text(error))
+                        if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                            interruption = error
                 elif original is not None:
                     try:
                         if _privilege_attributes(self.advapi, token, luid) != original:
                             raise OSError("调用后原有特权状态无法确认")
-                    except (OSError, AttributeError) as error:
+                    except BaseException as error:
                         self._restore_failed = True
                         result["privilege_restored"] = False
                         result["errors"].append("特权状态核对失败: " + _error_text(error))
-                self._close_token(token, result["errors"])
+                        if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                            interruption = error
+                try:
+                    self._close_token(token, result["errors"])
+                except BaseException as error:
+                    result["errors"].append("令牌关闭失败: " + _error_text(error))
+                    if interruption is None:
+                        interruption = error
+        if interruption is not None:
+            raise interruption
         return result
 
     def close(self):

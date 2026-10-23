@@ -207,6 +207,24 @@ class CpuTests(unittest.TestCase):
         samples = [_sample(i, coverage="unknown", processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": i}]) for i in range(2)]
         self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["system_normalized_pct"])
 
+    def test_duplicate_process_identity_has_no_cpu_difference(self):
+        for duplicate_side in ("before", "after"):
+            with self.subTest(duplicate_side=duplicate_side):
+                before = [{"pid": 10, "created_at": "same", "cpu_seconds": 1},
+                          {"pid": 20, "created_at": "other", "cpu_seconds": 0}]
+                after = [{"pid": 10, "created_at": "same", "cpu_seconds": 2},
+                         {"pid": 20, "created_at": "other", "cpu_seconds": 1}]
+                (before if duplicate_side == "before" else after).append(
+                    {"pid": 10, "created_at": "same", "cpu_seconds": 10})
+                interval = rules.cpu_intervals([_sample(0, processes=before), _sample(1, processes=after)])[1]
+                ambiguous = [process for process in interval["processes"] if process["pid"] == 10]
+                self.assertTrue(all(process["single_core_pct"] is None for process in ambiguous))
+                self.assertTrue(all(process["system_normalized_pct"] is None for process in ambiguous))
+                other = next(process for process in interval["processes"] if process["pid"] == 20)
+                self.assertEqual(other["single_core_pct"], 100)
+                self.assertEqual(other["system_normalized_pct"], 25)
+                self.assertEqual(interval["system_busy_pct"], 25)
+
     def test_process_counter_regression_is_unknown(self):
         samples = [_sample(i, processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": 5 - i}]) for i in range(2)]
         self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"])

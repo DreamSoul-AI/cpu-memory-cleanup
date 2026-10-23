@@ -3,6 +3,8 @@ from tests.support import make_app
 
 import unittest
 import tempfile
+import sys
+import types
 from unittest.mock import patch
 
 from cpu_memory_cleanup.interaction import desktop
@@ -451,3 +453,124 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(root.destroyed)
         self.assertFalse(app.busy)
         self.assertEqual(backend.calls, [])
+
+
+class DesktopRunTests(unittest.TestCase):
+    def run_desktop(self, root, app, directory):
+        class JoiningThread(DeferredThread):
+            joined = False
+
+            def join(self):
+                self.joined = True
+                if self.alive:
+                    self.finish()
+
+        tk = types.SimpleNamespace(**{name: getattr(FakeTk, name) for name in
+                                   ("Frame", "LabelFrame", "Label", "Button", "Radiobutton", "StringVar")},
+                                   Tk=lambda: root, TclError=RuntimeError,
+                                   filedialog=types.SimpleNamespace(askdirectory=lambda **kwargs: None))
+        with patch.dict(sys.modules, {"tkinter": tk}), patch.object(desktop.threading, "Thread", JoiningThread):
+            return desktop.run(app, {"output_dir": directory})
+
+    def test_mainloop_interrupt_cancels_and_joins_undispatched_maintenance(self):
+        interruption = KeyboardInterrupt("mainloop interrupted")
+
+        class InterruptedRoot(Root):
+            def mainloop(self):
+                window = self.close_callback.__self__
+                window.maintain()
+                window._worker.finish()
+                window.pump()
+                self.worker = window._worker
+                self.cancel_event = window._cancel_event
+                raise interruption
+
+        backend = FakeBackend()
+        app = make_app(backend, backend, sleep=lambda seconds: None)
+        root = InterruptedRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                self.run_desktop(root, app, directory)
+        self.assertIs(caught.exception, interruption)
+        self.assertTrue(app._closed)
+        self.assertTrue(root.cancel_event.is_set())
+        self.assertTrue(root.worker.joined)
+        self.assertFalse(root.worker.is_alive())
+        self.assertTrue(root.destroyed)
+        self.assertEqual(backend.action_calls, 0)
+        self.assertEqual(backend.read_calls, 1)
+
+    def test_mainloop_unexpected_return_discards_pending_maintenance_and_joins_reader(self):
+        class ReturningRoot(Root):
+            def mainloop(self):
+                window = self.close_callback.__self__
+                window.maintain()
+                self.worker = window._worker
+                self.cancel_event = window._cancel_event
+
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        root = ReturningRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.run_desktop(root, app, directory), 0)
+        self.assertTrue(app._closed)
+        self.assertTrue(root.cancel_event.is_set())
+        self.assertIsNone(root.close_callback.__self__._pending)
+        self.assertTrue(root.worker.joined)
+        self.assertFalse(root.worker.is_alive())
+        self.assertTrue(root.destroyed)
+        self.assertEqual((backend.read_calls, backend.action_calls), (0, 0))
+
+    def test_mainloop_error_after_root_destroy_still_joins_and_preserves_error(self):
+        failure = ValueError("mainloop failed")
+
+        class DestroyedRoot(Root):
+            def mainloop(self):
+                self.worker = self.close_callback.__self__._worker
+                self.destroy()
+                raise failure
+
+            def destroy(self):
+                if self.destroyed:
+                    raise RuntimeError("Tk has already been destroyed")
+                super().destroy()
+
+            def after_cancel(self, key):
+                if self.destroyed:
+                    raise RuntimeError("Tk has already been destroyed")
+                super().after_cancel(key)
+
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        root = DestroyedRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ValueError) as caught:
+                self.run_desktop(root, app, directory)
+        self.assertIs(caught.exception, failure)
+        self.assertTrue(app._closed)
+        self.assertTrue(root.worker.joined)
+        self.assertFalse(root.worker.is_alive())
+        self.assertEqual((backend.read_calls, backend.action_calls), (0, 0))
+
+    def test_normal_close_returns_without_destroying_root_twice(self):
+        class ClosingRoot(Root):
+            def mainloop(self):
+                window = self.close_callback.__self__
+                self.worker = window._worker
+                window.close()
+                self.worker.finish()
+                window.pump()
+
+            def destroy(self):
+                if self.destroyed:
+                    raise AssertionError("不能重复销毁已关闭窗口")
+                super().destroy()
+
+        app = FakeApplication()
+        root = ClosingRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.run_desktop(root, app, directory), 0)
+        self.assertTrue(root.destroyed)
+        self.assertTrue(app.closed)
+        self.assertFalse(root.worker.is_alive())
+        self.assertEqual(app.calls, [])

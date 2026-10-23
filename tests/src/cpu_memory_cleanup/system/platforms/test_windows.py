@@ -2,6 +2,7 @@
 
 import ctypes as c
 import importlib
+import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 from cpu_memory_cleanup.system.platforms import windows as api
 from cpu_memory_cleanup.contracts import ActionRequest
+from tests.support import make_app
 
 
 class Function:
@@ -478,6 +480,101 @@ class WindowsTests(unittest.TestCase):
         self.assertFalse(other.preflight()["lock_acquired"])
         self.assertEqual(other.perform_once()["call_outcome"], "not_started")
         other.close()
+        self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_restore_interrupt_blocks_new_application_and_closes_token(self):
+        interruption = KeyboardInterrupt("fake restore interruption")
+        adjust = self.fake.advapi.AdjustTokenPrivileges.function
+
+        def interrupt_restore(token, all_privileges, state, size, previous, needed):
+            if state._obj.Privileges[0].Attributes == 0:
+                raise interruption
+            return adjust(token, all_privileges, state, size, previous, needed)
+
+        self.fake.advapi.AdjustTokenPrivileges.function = interrupt_restore
+        operation = self.operation()
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertEqual(self.fake.closed.count(500), 2)
+        self.assertEqual(self.fake.attrs, api.SE_PRIVILEGE_ENABLED)
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
+        with tempfile.TemporaryDirectory() as directory:
+            app = make_app(self.backend, self.backend)
+            report = app.maintain(ActionRequest("working-set", confirmed=True,
+                                               confirmation_source="test"), directory)
+        self.assertEqual(report.completion, "failed")
+        self.assertFalse(report.action["attempted"])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+        self.assertTrue(self.lock.locked())
+
+    def test_restore_verification_interrupt_keeps_process_guard(self):
+        interruption = SystemExit("fake restore verification interruption")
+        query = self.fake.advapi.GetTokenInformation.function
+
+        def interrupt_verification(*args):
+            if self.fake.adjustments == [api.SE_PRIVILEGE_ENABLED, 0]:
+                raise interruption
+            return query(*args)
+
+        self.fake.advapi.GetTokenInformation.function = interrupt_verification
+        operation = self.operation()
+        with self.assertRaises(SystemExit) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertEqual(self.fake.attrs, 0)
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
+        other = self.operation()
+        self.assertFalse(other.preflight()["lock_acquired"])
+        self.assertTrue(other.close()["closed"])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_existing_privilege_verification_interrupt_keeps_process_guard(self):
+        interruption = KeyboardInterrupt("fake existing privilege verification interruption")
+        self.fake.attrs = 3
+        query = self.fake.advapi.GetTokenInformation.function
+
+        def interrupt_verification(*args):
+            if self.fake.nt_calls:
+                raise interruption
+            return query(*args)
+
+        self.fake.advapi.GetTokenInformation.function = interrupt_verification
+        operation = self.operation()
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertEqual(self.fake.adjustments, [])
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
+        other = self.operation()
+        self.assertFalse(other.preflight()["lock_acquired"])
+        self.assertTrue(other.close()["closed"])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_call_interrupt_survives_restore_interrupt(self):
+        interruption = KeyboardInterrupt("fake call interruption")
+        self.fake.nt_error = interruption
+        adjust = self.fake.advapi.AdjustTokenPrivileges.function
+
+        def interrupt_restore(token, all_privileges, state, size, previous, needed):
+            if state._obj.Privileges[0].Attributes == 0:
+                raise SystemExit("fake restore interruption")
+            return adjust(token, all_privileges, state, size, previous, needed)
+
+        self.fake.advapi.AdjustTokenPrivileges.function = interrupt_restore
+        operation = self.operation()
+        with self.assertRaises(BaseException) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
         self.assertEqual(len(self.fake.nt_calls), 1)
 
     def test_busy_or_abandoned_mutex_is_zero_calls(self):

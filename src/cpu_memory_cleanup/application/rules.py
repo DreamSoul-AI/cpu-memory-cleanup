@@ -261,8 +261,14 @@ def cpu_intervals(records):
                 duplicate_ids.add(identity)
             if identity is not None:
                 before_processes[identity] = process
-        for process in _processes(current):
-            process = _dict(process)
+        current_processes = [_dict(process) for process in _processes(current)]
+        current_ids = set()
+        for process in current_processes:
+            identity = _process_identity(process)
+            if identity in current_ids:
+                duplicate_ids.add(identity)
+            current_ids.add(identity)
+        for process in current_processes:
             identity = _process_identity(process)
             old_process = before_processes.get(identity, {}) if identity not in duplicate_ids else {}
             now, before = _number(process.get("cpu_seconds")), _number(old_process.get("cpu_seconds"))

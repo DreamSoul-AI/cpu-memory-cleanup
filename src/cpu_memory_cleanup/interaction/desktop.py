@@ -258,6 +258,23 @@ def run(app, options=None):
     root = tk.Tk()
     window = MemoryWindow(root, app, tk, lambda: filedialog.askdirectory(title="选择维护记录的保存目录"),
                           output_dir=(options or {}).get("output_dir"))
-    window.start()
-    root.mainloop()
+    try:
+        window.start()
+        root.mainloop()
+    finally:
+        window._closing = True
+        window._pending = None
+        if window._cancel_event is not None:
+            window._cancel_event.set()
+        app.shutdown()
+        if window._worker is not None:
+            window._worker.join()
+            window._worker = None
+            window._cancel_event = None
+        if not window._closed:
+            window._closed = True
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass  # Tk 已销毁不能覆盖退出原因。
     return 0

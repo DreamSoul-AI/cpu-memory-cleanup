@@ -834,3 +834,131 @@ class CoreTests(unittest.TestCase):
                 self.assertIsNone(report.action["attempted"])
                 self.assertEqual(report.action["call_outcome"], "unknown")
                 self.assertEqual((self.backend.opens, self.backend.calls), (1, 1))
+
+    def test_terminal_clock_failure_closes_records_and_releases_busy(self):
+        for mode in ("inspect", "maintain"):
+            with self.subTest(mode=mode):
+                self.backend = FakeBackend()
+                self.app = make_app(self.backend, self.backend, sleep=lambda seconds: None)
+                journals = []
+                open_write = self.app.records.open_write
+                stamp = self.app._clock()
+                clock_calls = []
+
+                def open_and_track(*args, **kwargs):
+                    journal = open_write(*args, **kwargs)
+                    journals.append(journal)
+                    return journal
+
+                def fail_terminal_clock():
+                    clock_calls.append(True)
+                    if len(clock_calls) == 2:
+                        raise OSError("fake terminal clock failure")
+                    return stamp
+
+                with patch.object(self.app.records, "open_write", open_and_track):
+                    with patch.object(self.app, "_clock", fail_terminal_clock):
+                        report = (self.app.inspect({"output_dir": self.temp.name})
+                                  if mode == "inspect" else self.maintain())
+                self.assertEqual(report.completion, "failed" if mode == "inspect" else "partial")
+                self.assertEqual(len(report.samples), 1 if mode == "inspect" else 2)
+                self.assertEqual(report.errors[-1]["phase"], "terminal_record")
+                self.assertNotIn("finished_at", report.metadata["terminal"])
+                self.assertFalse(self.app.busy)
+                self.assertTrue(journals[0].sealed)
+                self.assertEqual(journals[0].streams, {})
+                self.assertFalse(journals[0].committed)
+                rows = [json.loads(line) for line in journals[0].sample_path.read_text(encoding="utf-8").splitlines()]
+                self.assertFalse(any(row["record_type"] == "end" for row in rows))
+                self.assertEqual(self.app.inspect().completion, "success")
+
+    def test_terminal_clock_failure_preserves_original_interrupt(self):
+        interruption = KeyboardInterrupt("fake read interruption")
+        self.backend.on_read = lambda: (_ for _ in ()).throw(interruption)
+        report = self.app._report("inspect")
+        with patch.object(self.app, "_report", return_value=report):
+            with patch.object(self.app, "_clock", side_effect=[self.app._clock(), OSError("fake clock failure")]):
+                with self.assertRaises(KeyboardInterrupt) as caught:
+                    self.app.inspect({"output_dir": self.temp.name})
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual([error["type"] for error in report.errors], ["KeyboardInterrupt", "OSError"])
+        self.assertFalse(self.app.busy)
+        self.assertEqual(self.backend.closes, 1)
+        self.assertTrue(all(fact["closed"] for fact in report.metadata["resource_closures"]))
+
+    def test_terminal_clock_interrupt_closes_records_before_rethrow(self):
+        interruption = KeyboardInterrupt("fake terminal clock interruption")
+        report = self.app._report("inspect")
+        with patch.object(self.app, "_report", return_value=report):
+            with patch.object(self.app, "_clock", side_effect=[self.app._clock(), interruption]):
+                with self.assertRaises(KeyboardInterrupt) as caught:
+                    self.app.inspect({"output_dir": self.temp.name})
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(self.app.busy)
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.errors[-1]["type"], "KeyboardInterrupt")
+        self.assertEqual(len(report.samples), 1)
+        self.assertTrue(all(fact["closed"] for fact in report.metadata["resource_closures"]))
+        self.assertEqual(self.app.inspect().completion, "success")
+
+    def test_review_rejects_contradictory_action_intent(self):
+        for field, value in (("mechanism", "standby"), ("scope", "process")):
+            with self.subTest(field=field):
+                original = self.maintain()
+                path = Path(original.output_dir) / "operation.jsonl"
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                rows[0][field] = value
+                content = "\n".join(json.dumps(row) for row in rows) + "\n"
+                path.write_text(content, encoding="utf-8")
+                calls_before = (self.backend.opens, self.backend.calls)
+                report = self.app.review(original.output_dir)
+                self.assertEqual(report.completion, "failed")
+                self.assertIsNone(report.action["attempted"])
+                self.assertEqual(report.action["call_outcome"], "unknown")
+                self.assertEqual(report.samples, original.samples)
+                self.assertEqual(report.metadata["header"], original.metadata["header"])
+                self.assertEqual(report.analysis, {})
+                self.assertEqual(report.errors[0]["type"], "ValueError")
+                self.assertEqual(path.read_text(encoding="utf-8"), content)
+                self.assertEqual((self.backend.opens, self.backend.calls), calls_before)
+
+    def test_review_accepts_legacy_undeclared_intent_fields(self):
+        for missing_fields in ("intent", "header_mechanism"):
+            with self.subTest(missing_fields=missing_fields):
+                original = self.maintain()
+                path = Path(original.output_dir) / ("operation.jsonl" if missing_fields == "intent" else "samples.jsonl")
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                rows[0].pop("mechanism")
+                if missing_fields == "intent":
+                    rows[0].pop("scope")
+                path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+                calls_before = (self.backend.opens, self.backend.calls)
+                report = self.app.review(original.output_dir)
+                self.assertEqual(report.completion, "success")
+                self.assertEqual(report.action, original.action)
+                self.assertEqual(report.samples, original.samples)
+                self.assertEqual(report.analysis, original.analysis)
+                self.assertFalse(report.metadata["recomputed"])
+                self.assertEqual((self.backend.opens, self.backend.calls), calls_before)
+
+    def test_review_rejects_success_terminal_with_errors(self):
+        for source_role in ("primary", "comparison"):
+            with self.subTest(source_role=source_role):
+                original = self.maintain()
+                source = original if source_role == "primary" else self.app.inspect({"output_dir": self.temp.name})
+                path = Path(source.output_dir) / "samples.jsonl"
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                rows[-1]["errors"] = [{"phase": "close", "type": "OSError", "message": "fake close failure"}]
+                content = "\n".join(json.dumps(row) for row in rows) + "\n"
+                path.write_text(content, encoding="utf-8")
+                calls_before = (self.backend.opens, self.backend.calls)
+                report = self.app.review(original.output_dir, comparison=source.output_dir if source_role == "comparison" else None)
+                self.assertEqual(report.completion, "failed")
+                self.assertEqual(report.action, original.action)
+                self.assertEqual(report.samples, original.samples)
+                self.assertEqual(report.analysis, {})
+                self.assertEqual(report.errors[0]["type"], "ValueError")
+                if source_role == "primary":
+                    self.assertEqual(report.metadata["terminal"], rows[-1])
+                self.assertEqual(path.read_text(encoding="utf-8"), content)
+                self.assertEqual((self.backend.opens, self.backend.calls), calls_before)
