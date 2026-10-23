@@ -53,8 +53,8 @@ python scripts/run-tests.py --plan quick --file test_core.py
 | c1 单方法 | 1 秒 | 256 MiB | 假接入、合成数据及脚本静态验证 |
 | c2 单方法 | 60 秒 | 2 GiB | 测试入口自检，部分自建嵌套工作进程 |
 | readonly_offline 整批 | 60 秒 | 256 MiB | 58 项只读合同、显示、模块与资源隔离检查，全部为假接入 |
-| 单独运行 quick 整批 | 60 秒 | 256 MiB | 232 个方法，参数展开后 237 项 |
-| regression 整批 | 600 秒 | 2 GiB | 先执行 quick 阶段，其必需项通过后执行 55 个入口自检，合计 292 项，全阶段共用整批预算 |
+| 单独运行 quick 整批 | 60 秒 | 256 MiB | 234 个方法，参数展开后 239 项 |
+| regression 整批 | 600 秒 | 2 GiB | 先执行 quick 阶段，其必需项通过后执行 55 个入口自检，合计 294 项，全阶段共用整批预算 |
 
 内存口径是自身测试工作进程树的提交量；控制器和整机内存不在该硬上限内，也不把它称为 RSS。顺序执行时每个工作 Job 的上限取单项与批次预算的较小值，嵌套测试仍受外层 Job 限制。峰值无法取得时保留未知。该口径依据 [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 和 [扩展限制信息](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information)。
 
@@ -230,3 +230,23 @@ Windows 接入逐拍保留初始化缺口，首次成功 PDH 采集的速率保�
 两份报告已从磁盘重建，均无失败、错误、超时、跳过、缺失、recovered 或预算超限。汇总见 `.test-results/pr4-record-order-20261023/summary.json`，旧回执保留原源码指纹和计数。
 
 另以同一指纹重新隔离构建和安装 wheel，15个产品模块仍与源码逐字节一致。帮助、离线 JSON/文本回看、运行头前的外来分析拒绝、分析后的样本拒绝，共5次独立入口检查全部通过，并阻断真实平台与 Tk 导入。构建及验证共2.728秒，证据位于 `.test-results/package-check-20261023T142921Z_3201a8b4/`，新 wheel 的 SHA-256 为 `a306ff5011a81c4a1c875f2980fc85a7b3e5b29f110cdc9b9abe3dbd7ef8dd04`。产物仅本地验证，真实平台、GUI、维护、兼容性与收益仍未验证。
+
+## 十四、结构化未知结果的阻断补充
+2026年10月23日复现平台返回结构化未知结果时的阻断遗漏。实际 Windows 接入会把原生异常或无效返回状态转换成 `call_outcome="unknown"`，同时可能确认 `privilege_restored=true`。功能层此前只在异常直接抛出或恢复未确认时设置阻断，因而仍读取后置快照并接受下一次系统请求。
+
+修复后，经过通用合同校验的 unknown 结果直接进入现有阻断状态，保存原动作事实和 unknown 终态，完成资源收尾，不进行后置系统读取，也不接受新的系统操作。离线回看仍可使用，返回 partial 并保留未知结果，不重放维护。该阻断独立于错误列表是否为空，不把已确认的特权恢复改成失败。
+
+假接入分别覆盖 `attempted=null` 与 `attempted=true`。修复前两种输入均产生2拍，且新的只读请求成功、第二次维护继续派发。两项新用例修复前均失败，修复后核心模块43/43通过，证据见 `.test-results/unknown-action-20261023/`。它们登记在 quick 中，使用假维护，不进入只读离线准备计划。
+
+最终验证基线为 `dfe26484bcbb1f06f21de0ae3169753fb66257b2` 加本次补充改动，环境为 Windows 11、Python 3.13.9，源码及展开清单指纹为 `c3c44c66186763b7ffcf4dafe8fc2c6db0ca8461eb1f6d54ba30b2789e62734f`。
+
+| **运行 ID 与计划** | **质量通过** | **整批墙钟** | **完成条件** |
+| --- | --- | --- | --- |
+| `20261023T144302Z_3babd902`，regression | 294 / 294 项首次通过 | 44.172 秒 | 289个实际方法与清单一致，必需结果齐全 |
+| `20261023T144419Z_252a8913`，readonly_offline | 58 / 58 项首次通过 | 8.345 秒 | 验证同一源码版本的只读准备路径 |
+
+报告均已从磁盘重建，无失败、错误、超时、跳过、缺失、recovered 或预算超限。汇总见 `.test-results/unknown-action-20261023/summary.json`。
+
+同一源码指纹完成新的隔离构建与安装，15个模块与源码逐字节一致。既有5项安装包入口检查及新增的假维护阻断检查全部通过，后者验证两种 attempted 状态，确认仅1次假派发、1次读取，后续系统请求被拒绝而离线回看可用。真实平台与 Tk 导入被阻断，原生维护调用为0。构建及验证共3.398秒，证据在 `.test-results/package-check-20261023T144505Z_ca27c2ae/`，wheel 的 SHA-256 为 `9f779925e34f22d8be212257f33fabd786ec2b6f39c5021b384ca4bc8ab234e2`。
+
+该结果证明离线故障处理与安装包行为，不证明实际特权恢复、真实维护安全、性能提升或跨版本兼容。没有运行真实采样、GUI 或清理，产物未发布。

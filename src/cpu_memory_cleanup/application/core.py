@@ -394,6 +394,8 @@ class Application:
             try:
                 action = operation.perform_once()
                 report.action = validate_action(action)
+                if report.action["call_outcome"] == "unknown":
+                    self._unsafe = True
                 if action.get("errors"):
                     self._error(report, "calling", ValueError("维护或恢复存在错误，见动作事实"))
                 if action.get("privilege_restored") is not True:

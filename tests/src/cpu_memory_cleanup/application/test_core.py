@@ -192,6 +192,36 @@ class CoreTests(unittest.TestCase):
         self.maintain()
         self.assertEqual(self.backend.calls, 1)
 
+    def test_reported_unknown_action_stops_after_sample_without_error_list(self):
+        action = {"attempted": True, "call_outcome": "unknown", "status": None,
+                  "privilege_restored": True, "errors": []}
+        with patch.object(self.backend, "perform_once", return_value=action) as perform:
+            report = self.maintain()
+        self.assertEqual(perform.call_count, 1)
+        self.assertEqual(report.completion, "unknown")
+        self.assertEqual(report.action, action)
+        self.assertEqual(len(report.samples), 1)
+        self.assertEqual(self.backend.reads, 1)
+        self.assertEqual(self.backend.closes, 2)
+        reader = self.app.records.open_read(report.output_dir)
+        self.addCleanup(reader.close)
+        saved = list(reader.read("operation"))[-1]
+        self.assertEqual(saved["action"], action)
+
+    def test_reported_unknown_action_blocks_new_system_requests_but_allows_review(self):
+        action = {"attempted": None, "call_outcome": "unknown", "status": None,
+                  "privilege_restored": True, "errors": ["native result unavailable"]}
+        with patch.object(self.backend, "perform_once", return_value=action) as perform:
+            report = self.maintain()
+            self.assertEqual(self.app.inspect().completion, "failed")
+            self.assertEqual(self.maintain().completion, "failed")
+            reviewed = self.app.review(report.output_dir)
+        self.assertEqual(perform.call_count, 1)
+        self.assertEqual(reviewed.completion, "partial")
+        self.assertEqual(reviewed.action, action)
+        self.assertEqual(reviewed.metadata["terminal"]["completion"], "unknown")
+        self.assertEqual((self.backend.opens, self.backend.reads, self.backend.calls), (1, 1, 0))
+
     def test_unclosed_resources_block_further_system_reads(self):
         self.backend.closed = False
         self.app.inspect()

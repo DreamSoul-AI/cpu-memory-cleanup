@@ -1614,6 +1614,16 @@
       "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
       "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_sample_after_saved_analysis_is_rejected",
       "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
     }
   ],
   "cost_classes": {
@@ -1860,7 +1870,9 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review"
       ],
       "required": [
         "tests/scripts/test_desktop_memory_button.py::DesktopMemoryButtonTests.test_default_route_is_readonly",
@@ -2094,7 +2106,9 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_sample_after_saved_analysis_is_rejected",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review"
       ],
       "dependencies": [],
       "resources": [],
