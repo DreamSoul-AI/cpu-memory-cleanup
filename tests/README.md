@@ -52,9 +52,9 @@ python scripts/run-tests.py --plan quick --file test_core.py
 | --- | --- | --- | --- |
 | c1 单方法 | 1 秒 | 256 MiB | 假接入、合成数据及脚本静态验证 |
 | c2 单方法 | 60 秒 | 2 GiB | 测试入口自检，部分自建嵌套工作进程 |
-| readonly_offline 整批 | 60 秒 | 256 MiB | 57 项只读合同、显示、模块与资源隔离检查，全部为假接入 |
-| 单独运行 quick 整批 | 60 秒 | 256 MiB | 231 个方法，参数展开后 236 项 |
-| regression 整批 | 600 秒 | 2 GiB | 先执行 quick 阶段，其必需项通过后执行 55 个入口自检，合计 291 项，全阶段共用整批预算 |
+| readonly_offline 整批 | 60 秒 | 256 MiB | 58 项只读合同、显示、模块与资源隔离检查，全部为假接入 |
+| 单独运行 quick 整批 | 60 秒 | 256 MiB | 232 个方法，参数展开后 237 项 |
+| regression 整批 | 600 秒 | 2 GiB | 先执行 quick 阶段，其必需项通过后执行 55 个入口自检，合计 292 项，全阶段共用整批预算 |
 
 内存口径是自身测试工作进程树的提交量；控制器和整机内存不在该硬上限内，也不把它称为 RSS。顺序执行时每个工作 Job 的上限取单项与批次预算的较小值，嵌套测试仍受外层 Job 限制。峰值无法取得时保留未知。该口径依据 [Microsoft Job Objects](https://learn.microsoft.com/en-us/windows/win32/procthread/job-objects) 和 [扩展限制信息](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information)。
 
@@ -216,3 +216,17 @@ Windows 接入逐拍保留初始化缺口，首次成功 PDH 采集的速率保�
 构建、安装、内容检查及四次入口验证共耗时2.934秒。证据位于 `.test-results/package-check-20261023T141426Z_3f5d7908/`，保留验证脚本、实际命令、工具输出、合成输入、逐文件校验值及 `summary.json`。历史 `module-package-check-20261022/` 目录在当前检出中不可访问，没有据其说明复用产物或声称重新验证。
 
 该 wheel 仅用于本地验证，构建时使用未提交源码，产物未分发或发布。后续提交状态以 Git 记录为准。真实 PDH 数值、GUI、维护、跨版本兼容与性能收益的未验证状态保持不变。
+
+## 十三、PR 审查中的记录顺序补充修复
+2026年10月23日审查 PR #4 时复现另一项乱序输入：完整两拍运行中，把仅覆盖首拍的分析移至第二拍之前，原回看仍返回 success 并采用过期分析。解析入口现拒绝分析之后的样本，返回 failed 且不输出该分析。此规则不要求失败或取消运行达到计划拍数，正常分析保存和不完整记录回看行为由既有用例继续核对。
+
+新增 `CoreTests.test_sample_after_saved_analysis_is_rejected`，登记 quick 与 readonly_offline。修复前1项预期失败，修复后核心模块41/41通过，证据位于 `.test-results/pr4-record-order-20261023/`。完整验证基线为 `0f9696c50974dcae374117010105c6edb6edfbd6` 加补充改动，环境仍为 Windows 11、Python 3.13.9。新源码及展开清单指纹为 `5fcdd1c66fdd87cec18abcce3ada85ce6f1087b21543b51170d8f17a62a7e2c1`。
+
+| **运行 ID 与计划** | **质量通过** | **整批墙钟** | **完成条件** |
+| --- | --- | --- | --- |
+| `20261023T142734Z_74d00e5d`，regression | 292 / 292 项首次通过 | 42.466 秒 | 287个方法与清单一致，全部必需结果齐全 |
+| `20261023T142824Z_d76dbf8e`，readonly_offline | 58 / 58 项首次通过 | 7.653 秒 | 包含新增乱序拒绝检查 |
+
+两份报告已从磁盘重建，均无失败、错误、超时、跳过、缺失、recovered 或预算超限。汇总见 `.test-results/pr4-record-order-20261023/summary.json`，旧回执保留原源码指纹和计数。
+
+另以同一指纹重新隔离构建和安装 wheel，15个产品模块仍与源码逐字节一致。帮助、离线 JSON/文本回看、运行头前的外来分析拒绝、分析后的样本拒绝，共5次独立入口检查全部通过，并阻断真实平台与 Tk 导入。构建及验证共2.728秒，证据位于 `.test-results/package-check-20261023T142921Z_3201a8b4/`，新 wheel 的 SHA-256 为 `a306ff5011a81c4a1c875f2980fc85a7b3e5b29f110cdc9b9abe3dbd7ef8dd04`。产物仅本地验证，真实平台、GUI、维护、兼容性与收益仍未验证。

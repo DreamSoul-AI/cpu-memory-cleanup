@@ -475,3 +475,18 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.analysis, {})
         self.assertEqual(report.errors[0]["type"], "ValueError")
         self.assertEqual(self.backend.opens, 1)
+
+    def test_sample_after_saved_analysis_is_rejected(self):
+        original = self.app.inspect({"output_dir": self.temp.name, "count": 2, "interval": 0})
+        path = Path(original.output_dir) / "samples.jsonl"
+        lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        analysis = next(line for line in lines if line["record_type"] == "analysis")
+        analysis["analysis"] = core.rules.analyze(original.samples[:1])
+        lines.remove(analysis)
+        lines.insert(2, analysis)
+        path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.analysis, {})
+        self.assertEqual(report.errors[0]["type"], "ValueError")
+        self.assertEqual((self.backend.opens, self.backend.calls), (1, 0))

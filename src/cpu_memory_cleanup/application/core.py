@@ -90,6 +90,8 @@ def _load_run(reader, check_cancel):
         elif kind == "sample":
             if result["header"] is None:
                 raise ValueError("样本缺少运行头")
+            if result["analysis"] is not None:
+                raise ValueError("分析结果之后存在样本")
             sample = Sample(**record["sample"])
             if sample.timestamp is None:
                 result["gaps"].append("新版样本缺少时刻")
