@@ -8,6 +8,7 @@ from unittest.mock import patch
 from cpu_memory_cleanup.interaction import desktop
 from cpu_memory_cleanup.contracts import Capabilities, RunReport, Sample
 from cpu_memory_cleanup.application.core import Application
+from .test_cli import FakeBackend
 
 
 class DeferredThread:
@@ -90,7 +91,7 @@ class Root:
     def after(self, milliseconds, function):
         if self.destroyed:
             raise AssertionError("不能向销毁后的窗口投递")
-        key = len(self.jobs) + 1
+        key = max(self.jobs, default=0) + 1
         self.jobs[key] = function
         return key
 
@@ -110,13 +111,13 @@ class FakeApplication:
         self.cancelled = 0
         self.closed = False
 
-    def inspect(self, options):
+    def inspect(self, options, *, cancel_event=None):
         if self.closed:
             return RunReport("run", "inspect", completion="cancelled")
         self.calls.append(("inspect", options))
         return RunReport("run", "inspect", completion="success")
 
-    def maintain(self, request, directory):
+    def maintain(self, request, directory, *, cancel_event=None):
         if self.closed:
             return RunReport("run", "maintain", completion="cancelled")
         self.calls.append(("maintain", request, directory))
@@ -292,10 +293,113 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
         self.assertEqual(self.app.cancelled, 1)
 
+    def test_cancel_before_worker_enters_core_prevents_maintenance(self):
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        with tempfile.TemporaryDirectory() as directory:
+            window = desktop.MemoryWindow(Root(), app, FakeTk, lambda: directory)
+            window.maintain()
+            self.assertFalse(app.busy)
+            window.cancel()
+            window._worker.finish()
+            window.pump()
+        self.assertEqual(backend.action_calls, 0)
+        self.assertIn("单项维护：已取消", window.status.cget("text"))
+        self.assertIn("维护：未调用", window.result.cget("text"))
+
+    def test_cancel_after_worker_entry_before_core_begin_prevents_maintenance(self):
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        begin = app._begin
+
+        def cancel_before_begin(*args, **kwargs):
+            self.assertTrue(DeferredThread.in_worker)
+            self.assertFalse(app.busy)
+            with patch.object(DeferredThread, "in_worker", False):
+                window.cancel()
+            return begin(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            window = desktop.MemoryWindow(Root(), app, FakeTk, lambda: directory)
+            window.maintain()
+            with patch.object(app, "_begin", side_effect=cancel_before_begin):
+                window._worker.finish()
+            window.pump()
+        self.assertEqual(backend.action_calls, 0)
+        self.assertIn("单项维护：已取消", window.status.cget("text"))
+
+    def test_initial_thread_start_failure_restores_controls_and_allows_close(self):
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.window.start()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._cancel_event)
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertIn("无法启动工作线程", self.window.status.cget("text"))
+        self.assertIsNotNone(self.window._poll_job)
+        self.window.pump()
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+        self.assertEqual(self.app.calls, [])
+
+    def test_refresh_thread_start_failure_restores_controls_and_allows_close(self):
+        self.window.start()
+        self.finish_worker()
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.window.refresh()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._cancel_event)
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertIsNotNone(self.window._poll_job)
+        self.window.pump()
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
+
+    def test_maintenance_thread_start_failure_discards_pending_action(self):
+        self.window.start()
+        self.finish_worker()
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.window.maintain()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._cancel_event)
+        self.assertIsNone(self.window._pending)
+        self.assertEqual(self.window.button.cget("state"), "normal")
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertIn("无法启动工作线程", self.window.status.cget("text"))
+        self.window.pump()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
+        self.assertIsNotNone(self.window._poll_job)
+        self.assertEqual(list(self.root.jobs.values()).count(self.window.inspect), 1)
+        self.root.jobs.pop(self.window._poll_job)()
+        self.finish_worker()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect", "inspect"])
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+
+    def test_queued_maintenance_start_failure_restores_single_readonly_poll(self):
+        self.window.start()
+        self.window.maintain()
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.finish_worker()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._pending)
+        self.assertIsNotNone(self.window._poll_job)
+        self.assertEqual(list(self.root.jobs.values()).count(self.window.inspect), 1)
+        self.root.jobs.pop(self.window._poll_job)()
+        self.finish_worker()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect", "inspect"])
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+
     def test_close_waits_for_worker_and_never_dispatches_pending_action(self):
         self.window.start()
         self.window.maintain()
+        cancel_event = self.window._cancel_event
         self.window.close()
+        self.assertTrue(cancel_event.is_set())
         self.assertFalse(self.root.destroyed)
         self.assertEqual(self.app.cancelled, 1)
         self.finish_worker()

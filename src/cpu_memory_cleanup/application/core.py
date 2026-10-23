@@ -61,16 +61,50 @@ def _legacy_sample(record, index):
 
 
 def _load_run(reader, check_cancel, result):
+    def load_action(header):
+        expects_action = header.get("mode") == "maintain" or bool(header.get("mechanism"))
+        if expects_action and reader.has_actions:
+            action_phase = None
+            for record in reader.read("operation"):
+                check_cancel()
+                if record.get("run_id") != header["run_id"]:
+                    raise ValueError("动作记录不属于该运行")
+                if record.get("record_type") == "intent":
+                    if action_phase is not None:
+                        raise ValueError("重复或乱序动作意图")
+                    action_phase = "intent"
+                    result["action"] = {"attempted": None, "call_outcome": "unknown"}
+                elif record.get("record_type") == "action_result":
+                    if action_phase != "intent" or not isinstance(record.get("action"), dict):
+                        raise ValueError("动作结果缺少意图或重复")
+                    action_phase = "result"
+                    result["action"] = validate_action(record["action"])
+                    if (result["action"].get("call_outcome") != "success"
+                            or result["action"].get("privilege_restored") is not True
+                            or result["action"].get("errors")):
+                        result["gaps"].append("维护运行未完整成功或恢复未确认")
+                else:
+                    raise ValueError("未知动作记录类型")
+            if result["action"].get("call_outcome") == "unknown":
+                result["gaps"].append("历史动作结果未知，不重放")
+        if expects_action and not result["action"]:
+            result["action"] = {"attempted": None, "call_outcome": "unknown", "privilege_restored": None}
+            result["gaps"].append("维护动作记录缺失，结果未知，不重放")
+
+    action_error = None
     seen_end = False
     for record in reader.read():
         check_cancel()
         kind = record.get("record_type")
         if seen_end:
             raise ValueError("结束记录后存在多余数据")
+        if kind in ("sample", None) and len(result["samples"]) >= MAX_SAMPLES:
+            raise ValueError("样本数量超出上限")
         if kind in ("sample", "analysis", "end") and result["header"] is not None and record.get("run_id") != result["header"].get("run_id"):
             raise ValueError("记录不属于该运行")
         if kind == "header":
             if (result["header"] is not None or result["samples"]
+                    or not isinstance(record.get("run_id"), str) or not record["run_id"]
                     or type(record.get("schema_version")) is not int or record["schema_version"] != SCHEMA_VERSION
                     or type(record.get("expected_count")) is not int or not 1 <= record["expected_count"] <= MAX_SAMPLES
                     or not isinstance(record.get("parameters"), dict)):
@@ -86,6 +120,13 @@ def _load_run(reader, check_cancel, result):
                     raise ValueError("开始时间缺时区")
             except (ValueError, TypeError):
                 result["gaps"].append("运行间隔或开始时间无效")
+            try:
+                load_action(record)
+            except _Cancelled:
+                raise
+            except Exception as error:
+                action_error = error
+                result["gaps"].append("动作记录未完整读取")
         elif kind == "sample":
             if result["header"] is None:
                 raise ValueError("样本缺少运行头")
@@ -109,15 +150,14 @@ def _load_run(reader, check_cancel, result):
         elif kind is None:
             if result["header"] is not None:
                 raise ValueError("不能混合历史与新版记录")
-            result["samples"].append(_legacy_sample(record, len(result["samples"])))
+            sample = _legacy_sample(record, len(result["samples"]))
+            if result["samples"] and sample.run_id != result["samples"][0].run_id:
+                raise ValueError("不能混合运行")
+            result["samples"].append(sample)
         else:
             raise ValueError("未知记录类型")
-        if len(result["samples"]) > MAX_SAMPLES:
-            raise ValueError("样本数量超出上限")
     if not result["samples"]:
         raise ValueError("没有可用样本")
-    if len({s.run_id for s in result["samples"]}) != 1:
-        raise ValueError("不能混合运行")
     if result["header"] is None or result["terminal"] is None:
         result["gaps"].append("运行元数据不完整")
     else:
@@ -127,35 +167,8 @@ def _load_run(reader, check_cancel, result):
             raise ValueError("终态与样本不一致")
         if header.get("expected_count") != len(result["samples"]) or terminal.get("completion") != "success":
             result["gaps"].append("运行未完整成功")
-    header = result["header"] or {}
-    expects_action = header.get("mode") == "maintain" or bool(header.get("mechanism"))
-    if expects_action and reader.has_actions:
-        action_phase = None
-        for record in reader.read("operation"):
-            check_cancel()
-            if record.get("run_id") != result["samples"][0].run_id:
-                raise ValueError("动作记录不属于该运行")
-            if record.get("record_type") == "intent":
-                if action_phase is not None:
-                    raise ValueError("重复或乱序动作意图")
-                action_phase = "intent"
-                result["action"] = {"attempted": None, "call_outcome": "unknown"}
-            elif record.get("record_type") == "action_result":
-                if action_phase != "intent" or not isinstance(record.get("action"), dict):
-                    raise ValueError("动作结果缺少意图或重复")
-                action_phase = "result"
-                result["action"] = validate_action(record["action"])
-                if (result["action"].get("call_outcome") != "success"
-                        or result["action"].get("privilege_restored") is not True
-                        or result["action"].get("errors")):
-                    result["gaps"].append("维护运行未完整成功或恢复未确认")
-            else:
-                raise ValueError("未知动作记录类型")
-        if result["action"].get("call_outcome") == "unknown":
-            result["gaps"].append("历史动作结果未知，不重放")
-    if expects_action and not result["action"]:
-        result["action"] = {"attempted": None, "call_outcome": "unknown", "privilege_restored": None}
-        result["gaps"].append("维护动作记录缺失，结果未知，不重放")
+    if action_error is not None:
+        raise action_error
     return result
 
 
@@ -195,15 +208,18 @@ class Application:
             if not self._finishing:
                 self._cancel.set()
 
-    def _begin(self, report):
+    def _begin(self, report, cancel_event=None):
         with self._lock:
+            if cancel_event is not None and not isinstance(cancel_event, threading.Event):
+                self._error(report, "admission", ValueError("取消信号必须是线程事件"))
+                return False
             if self._closed or self._active or (report.mode != "review" and self._unsafe):
                 self._error(report, "admission", ValueError("当前忙碌或安全上下文未恢复，拒绝新请求"))
                 return False
             self._active = True
             self._finishing = False
             self._dispatched = False
-            self._cancel.clear()
+            self._cancel = cancel_event if cancel_event is not None else threading.Event()
             return True
 
     def _report(self, mode):
@@ -259,7 +275,7 @@ class Application:
             journal.append("samples", {"record_type": "sample", "sample": sample.to_dict()})
         return sample
 
-    def _close(self, resource, report):
+    def _close(self, resource, report, interruptions=None):
         if resource is None:
             return True
         try:
@@ -270,11 +286,15 @@ class Application:
                 {"resource": type(resource).__name__, "closed": facts["closed"], "errors": facts["errors"].copy()})
             if not facts["closed"] or facts["errors"]:
                 raise ValueError("资源关闭未确认，详见关闭事实")
-        except Exception as error:
+        except BaseException as error:
             self._unsafe = True
             if resource not in self._pending_resources:
                 self._pending_resources.append(resource)
             self._error(report, "close", error)
+            if not isinstance(error, Exception):
+                if interruptions is None:
+                    raise
+                interruptions.append(error)
             return False
         return True
 
@@ -286,13 +306,13 @@ class Application:
             return "partial" if report.action.get("attempted") is True else "failed"
         if outcome == "failure":
             return "failed"
-        if self._cancel.is_set() and not self._dispatched:
+        if report.cancel_requested and not self._dispatched:
             return "cancelled"
         if report.mode == "maintain" and outcome == "not_started":
             return "failed"
         return "success"
 
-    def _finish(self, report, journal):
+    def _finish(self, report, journal, interruptions):
         with self._lock:
             self._finishing = True
             report.cancel_requested = self._cancel.is_set()
@@ -303,24 +323,28 @@ class Application:
                     "cancel_requested": report.cancel_requested, "errors": report.errors.copy()}
         report.metadata["terminal"] = terminal
         try:
-            if journal and self._close(journal, report):
+            if journal and self._close(journal, report, interruptions):
                 journal.commit_end(terminal)
-        except Exception as error:
+        except BaseException as error:
             self._error(report, "terminal_record", error)
+            if not isinstance(error, Exception):
+                interruptions.append(error)
         finally:
-            self._close(journal, report)
+            self._close(journal, report, interruptions)
             report.completion = self._completion(report)
             report.metadata["terminal"]["completion"] = report.completion
             report.metadata["terminal"]["errors"] = report.errors.copy()
             with self._lock:
                 self._active = False
 
-    def inspect(self, options=None):
+    def inspect(self, options=None, *, cancel_event=None):
         report = self._report("inspect")
-        if not self._begin(report):
+        if not self._begin(report, cancel_event):
             return report
         journal = session = None
+        interruptions = []
         try:
+            self._check_cancel()
             options = _options(options)
             report.metadata["header"] = self._header(report, options)
             if options.get("output_dir") is not None or options.get("jsonl_path") is not None:
@@ -342,20 +366,28 @@ class Application:
             report.analysis = rules.analyze(report.samples, conditions=options["conditions"])
             if journal:
                 journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
-        except Exception as error:
+        except _Cancelled:
+            pass
+        except BaseException as error:
             self._error(report, report.phase, error)
+            if not isinstance(error, Exception):
+                interruptions.append(error)
         finally:
             report.phase = "closing"
-            self._close(session, report)
-            self._finish(report, journal)
+            self._close(session, report, interruptions)
+            self._finish(report, journal, interruptions)
+            if interruptions:
+                raise interruptions[0]
         return report
 
-    def maintain(self, request, output_dir):
+    def maintain(self, request, output_dir, *, cancel_event=None):
         report = self._report("maintain")
-        if not self._begin(report):
+        if not self._begin(report, cancel_event):
             return report
         journal = session = operation = None
+        interruptions = []
         try:
+            self._check_cancel()
             if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
                 raise ValueError("维护必须有明确确认及来源")
             if request.mechanism not in self.capabilities.mechanisms:
@@ -400,11 +432,13 @@ class Application:
                 if action.get("privilege_restored") is not True:
                     self._unsafe = True
                     self._error(report, "restore", ValueError("安全上下文恢复未确认"))
-            except Exception as error:
+            except BaseException as error:
                 if report.action.get("call_outcome") == "not_started":
                     report.action = {"attempted": None, "call_outcome": "unknown", "privilege_restored": None}
                 self._unsafe = True
                 self._error(report, "calling", error)
+                if not isinstance(error, Exception):
+                    interruptions.append(error)
             report.metadata["action"] = report.action.copy()
             report.phase = "action_record"
             journal.append("operation", {"record_type": "action_result", "action": report.action})
@@ -414,13 +448,19 @@ class Application:
             self._read(session, report, journal)
             report.analysis = rules.analyze(report.samples)
             journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
-        except Exception as error:
+        except _Cancelled:
+            pass
+        except BaseException as error:
             self._error(report, report.phase, error)
+            if not isinstance(error, Exception):
+                interruptions.append(error)
         finally:
             report.phase = "closing"
-            self._close(session, report)
-            self._close(operation, report)
-            self._finish(report, journal)
+            self._close(session, report, interruptions)
+            self._close(operation, report, interruptions)
+            self._finish(report, journal, interruptions)
+            if interruptions:
+                raise interruptions[0]
         return report
 
     def review(self, path, comparison=None, *, conditions=None):
@@ -428,6 +468,7 @@ class Application:
         if not self._begin(report):
             return report
         readers = []
+        interruptions = []
         def load(source, *, primary=False):
             result = {"samples": [], "header": None, "terminal": None, "analysis": None, "action": {}, "gaps": []}
             try:
@@ -437,7 +478,7 @@ class Application:
                 reader = self.records.open_read(source)
                 readers.append(reader)
                 return _load_run(reader, self._check_cancel, result)
-            except Exception:
+            except BaseException:
                 if primary:
                     report.samples = result["samples"]
                     report.action = result["action"].copy() or {
@@ -475,9 +516,11 @@ class Application:
         except _Cancelled:
             report.completion = "cancelled"
             report.phase = "finished"
-        except Exception as error:
+        except BaseException as error:
             self._error(report, "review", error)
             report.completion = "failed"
+            if not isinstance(error, Exception):
+                interruptions.append(error)
         finally:
             with self._lock:
                 self._finishing = True
@@ -485,8 +528,10 @@ class Application:
                 if report.cancel_requested and report.completion in ("success", "partial"):
                     report.completion = "cancelled"
             for reader in readers:
-                if not self._close(reader, report):
+                if not self._close(reader, report, interruptions):
                     report.completion = "partial" if report.samples else "failed"
             with self._lock:
                 self._active = False
+            if interruptions:
+                raise interruptions[0]
         return report

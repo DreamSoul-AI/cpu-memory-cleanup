@@ -50,6 +50,7 @@ class MemoryWindow:
         self._output_dir = output_dir
         self._events = queue.Queue()
         self._worker = None
+        self._cancel_event = None
         self._pending = None
         self._closing = False
         self._closed = False
@@ -112,17 +113,28 @@ class MemoryWindow:
     def _submit(self, function, *args):
         if self._closing or self._worker is not None or self.app.busy:
             return False
+        cancel_event = threading.Event()
+        self._cancel_event = cancel_event
 
         def work():
             try:
-                self._events.put((function(*args), None))
+                self._events.put((function(*args, cancel_event=cancel_event), None))
             except Exception as error:
                 self._events.put((None, error))
 
-        self._worker = threading.Thread(target=work, daemon=False)
         self.refresh_button.configure(state="disabled")
         self.cancel_button.configure(state="normal")
-        self._worker.start()
+        try:
+            self._worker = threading.Thread(target=work, daemon=False)
+            self._worker.start()
+        except Exception as error:
+            self._worker = None
+            self._cancel_event = None
+            self.refresh_button.configure(state="normal")
+            self.cancel_button.configure(state="disabled")
+            self.button.configure(state="normal" if self._mechanisms else "disabled")
+            self.status.configure(text=f"无法启动工作线程：{error}。本次请求未执行。")
+            return False
         return True
 
     def inspect(self):
@@ -162,17 +174,23 @@ class MemoryWindow:
     def _dispatch_pending(self):
         if self._pending is not None and self._worker is None and not self.app.busy and not self._closing:
             request, directory = self._pending
+            self._pending = None
             if self._submit(self.app.maintain, request, directory):
-                self._pending = None
                 self.status.configure(text="单项维护：执行中，请等待收尾…")
+            else:
+                self._poll_job = self.root.after(1000, self.inspect)
 
     def cancel(self):
         cancelled_pending = self._pending is not None
         if self._pending is not None:
             self._pending = None
             self.button.configure(state="normal")
+        if self._cancel_event is not None:
+            self._cancel_event.set()
         accepted = self.app.request_cancel()
         text = "核心已接受派发前取消；等待收尾。" if accepted else "未接受派发前取消；最终状态以本次报告为准。"
+        if not accepted and self._cancel_event is not None:
+            text = "取消请求已登记；最终状态以本次报告为准。"
         self.status.configure(text=("待执行维护已撤销。" if cancelled_pending else "") + text)
 
     def close(self):
@@ -183,6 +201,8 @@ class MemoryWindow:
         if self._poll_job is not None:
             self.root.after_cancel(self._poll_job)
             self._poll_job = None
+        if self._cancel_event is not None:
+            self._cancel_event.set()
         self.app.shutdown()
         self.button.configure(state="disabled")
         self.refresh_button.configure(state="disabled")
@@ -199,6 +219,7 @@ class MemoryWindow:
         if self._worker is not None and not self._worker.is_alive():
             self._worker.join()
             self._worker = None
+            self._cancel_event = None
             try:
                 report, error = self._events.get_nowait()
             except queue.Empty:
@@ -220,7 +241,7 @@ class MemoryWindow:
                 self._dispatch_pending()
                 self.refresh_button.configure(state="normal" if self._worker is None and not self.app.busy else "disabled")
                 self.cancel_button.configure(state="normal" if self._worker is not None or self._pending is not None else "disabled")
-                if self._worker is None and self._pending is None:
+                if self._worker is None and self._pending is None and self._poll_job is None:
                     self._poll_job = self.root.after(1000, self.inspect)
         if self._closing:
             if self._worker is None and not self.app.busy:
