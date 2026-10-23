@@ -2,6 +2,7 @@
 
 import ctypes as c
 import importlib
+import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
@@ -9,6 +10,7 @@ from unittest.mock import patch
 
 from cpu_memory_cleanup.system.platforms import windows as api
 from cpu_memory_cleanup.contracts import ActionRequest
+from tests.support import make_app
 
 
 class Function:
@@ -139,13 +141,15 @@ class FakeSystem:
         return 0
 
     def counter_value(self, handle, flags, kind, value):
-        if flags == api.PDH_FMT_DOUBLE:
+        if flags & api.PDH_FMT_DOUBLE:
             if self.collections == 1:
                 value._obj.CStatus = api.PDH_CSTATUS_INVALID_DATA
                 return api.PDH_INVALID_DATA
             value._obj.value.doubleValue = self.rate
-        else:
+        elif flags & api.PDH_FMT_LARGE:
             value._obj.value.largeValue = 100
+        else:
+            raise AssertionError("必须显式选择计数器数值类型")
         value._obj.CStatus = 0
         return 0
 
@@ -213,6 +217,15 @@ class WindowsTests(unittest.TestCase):
 
     def operation(self, mechanism="working-set"):
         return self.backend.open_operation(ActionRequest(mechanism, confirmed=True, confirmation_source="test"))
+
+    def assert_new_application_maintenance_blocked(self, backend, fake):
+        app = make_app(backend, backend)
+        with tempfile.TemporaryDirectory() as directory:
+            report = app.maintain(ActionRequest("standby", confirmed=True,
+                                                confirmation_source="test"), directory)
+        self.assertEqual(report.completion, "failed")
+        self.assertFalse(report.metadata["preflight"]["lock_acquired"])
+        self.assertEqual(fake.nt_calls, [])
 
     def test_import_and_backend_construction_do_not_load_dlls(self):
         with patch.object(api.c, "WinDLL", side_effect=AssertionError("禁止真实DLL")):
@@ -300,6 +313,72 @@ class WindowsTests(unittest.TestCase):
         self.assertTrue(all(value is None for value in sample.metrics["rates"].values()))
         self.assertTrue(sample.errors)
 
+    def test_pdh_open_failure_remains_visible_in_every_sample(self):
+        self.fake.pdh.PdhOpenQueryW = Function(lambda *args: 5)
+        session = self.backend.open_observation()
+        try:
+            first = session.read("r", 0)
+            first.errors.append("sample-local")
+            later = session.read("r", 1)
+        finally:
+            closed = session.close()
+        self.assertIn("PDH open unavailable: 0x00000005", later.errors)
+        self.assertNotIn("sample-local", later.errors)
+        self.assertTrue(all(value is None for value in later.metrics["rates"].values()))
+        self.assertTrue(closed["closed"])
+
+    def test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup(self):
+        original = self.fake.pdh.PdhGetFormattedCounterValue
+
+        def invalid_rate(handle, flags, kind, value):
+            if flags & api.PDH_FMT_DOUBLE and self.fake.collections < 4:
+                value._obj.CStatus = api.PDH_CSTATUS_INVALID_DATA
+                return c.c_long(api.PDH_INVALID_DATA).value
+            return original(handle, flags, kind, value)
+
+        self.fake.pdh.PdhGetFormattedCounterValue = Function(invalid_rate)
+        session = self.backend.open_observation()
+        try:
+            first = session.read("r", 0)
+            second = session.read("r", 1)
+            third = session.read("r", 2)
+            recovered = session.read("r", 3)
+        finally:
+            closed = session.close()
+        self.assertTrue(any("no previous PDH interval" in error for error in first.errors))
+        self.assertEqual(len(second.errors), len(api.RATE_COUNTERS))
+        self.assertEqual(third.errors, second.errors)
+        self.assertTrue(all("0xc0000bc6" in error and "no previous" not in error for error in second.errors))
+        self.assertTrue(all(value is None for value in third.metrics["rates"].values()))
+        self.assertEqual(recovered.errors, [])
+        self.assertTrue(all(value == self.fake.rate for value in recovered.metrics["rates"].values()))
+        self.assertTrue(closed["closed"])
+
+    def test_pdh_formatting_preserves_capacity_and_rate_units(self):
+        def scaled_counter(handle, flags, kind, value):
+            # 按 PDH 官方 NOSCALE 合同模拟非零默认缩放，不读取真实计数器。
+            reading = 100_000_000 if flags & 0x1000 else 10_000
+            if flags & api.PDH_FMT_DOUBLE:
+                value._obj.value.doubleValue = reading
+            elif flags & api.PDH_FMT_LARGE:
+                value._obj.value.largeValue = reading
+            else:
+                raise AssertionError("必须显式选择计数器数值类型")
+            value._obj.CStatus = 0
+            return 0
+
+        self.fake.pdh.PdhGetFormattedCounterValue = Function(scaled_counter)
+        session = self.backend.open_observation()
+        try:
+            first = session.read("r", 0)
+            later = session.read("r", 1)
+        finally:
+            closed = session.close()
+        self.assertEqual(later.metrics["cache"]["cache_bytes"], 100_000_000)
+        self.assertEqual(later.metrics["rates"]["disk_read_bytes_per_sec"], 100_000_000)
+        self.assertTrue(all(value is None for value in first.metrics["rates"].values()))
+        self.assertTrue(closed["closed"])
+
     def test_required_memory_read_failure_propagates_and_closes(self):
         session = self.backend.open_observation()
         self.fake.fail_memory = True
@@ -310,8 +389,165 @@ class WindowsTests(unittest.TestCase):
 
     def test_query_close_failure_is_not_success(self):
         session = self.backend.open_observation()
+        session.read("r", 0)
         self.fake.fail_close_query = True
         self.assertFalse(session.close()["closed"])
+
+    def test_unread_observation_closes_without_opening_pdh(self):
+        session = self.backend.open_observation()
+        self.assertTrue(session.close()["closed"])
+        self.assertNotIn("pdh.dll", self.fake.loads)
+        self.assertEqual(self.fake.closed, [])
+
+    def test_pdh_open_return_interrupt_closes_written_query(self):
+        interruption = KeyboardInterrupt("fake PDH open return interruption")
+
+        def interrupted_open(source, context, query):
+            self.fake.open_query(source, context, query)
+            raise interruption
+
+        self.fake.pdh.PdhOpenQueryW = Function(interrupted_open)
+        app = make_app(self.backend, self.backend)
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            app.inspect()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(self.fake.closed.count(50), 1)
+        self.assertFalse(app.busy)
+        self.assertFalse(app._unsafe)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_pdh_open_return_interrupt_close_failure_keeps_query_and_blocks_requests(self):
+        interruption = KeyboardInterrupt("fake PDH open return interruption")
+
+        def interrupted_open(source, context, query):
+            self.fake.open_query(source, context, query)
+            raise interruption
+
+        self.fake.pdh.PdhOpenQueryW = Function(interrupted_open)
+        self.fake.fail_close_query = True
+        app = make_app(self.backend, self.backend)
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            app.inspect()
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertTrue(app._unsafe)
+        session = app._pending_resources[0]
+        self.assertEqual(session.counters._query.value, 50)
+        self.assertFalse(session.closed)
+        loads = self.fake.loads.copy()
+        self.assertEqual(app.inspect().completion, "failed")
+        self.assertEqual(self.fake.loads, loads)
+        self.fake.fail_close_query = False
+        self.assertTrue(session.close()["closed"])
+        self.assertIsNone(session.counters._query)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_pdh_open_failure_with_null_query_does_not_close_query(self):
+        self.fake.pdh.PdhOpenQueryW = Function(lambda *args: 5)
+        session = self.backend.open_observation()
+        first = session.read("r", 0)
+        later = session.read("r", 1)
+        self.assertTrue(session.close()["closed"])
+        self.assertIsNone(session.counters._query)
+        self.assertEqual(self.fake.closed, [])
+        self.assertEqual(self.fake.loads.count("pdh.dll"), 1)
+        self.assertTrue(any("PDH open unavailable" in error for error in first.errors))
+        self.assertEqual(later.errors, first.errors)
+        self.assertTrue(all(value is None for value in first.metrics["rates"].values()))
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_inspect_pdh_initialization_interrupt_closes_owned_query(self):
+        interruption = KeyboardInterrupt("fake PDH initialization interruption")
+
+        def interrupt_add(*args):
+            raise interruption
+
+        self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
+        app = make_app(self.backend, self.backend)
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            app.inspect()
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertFalse(app._unsafe)
+        self.assertEqual(self.fake.closed.count(50), 1)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_maintain_pdh_initialization_interrupt_closes_query_and_operation(self):
+        interruption = KeyboardInterrupt("fake PDH initialization interruption")
+
+        def interrupt_add(*args):
+            raise interruption
+
+        self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
+        app = make_app(self.backend, self.backend)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                app.maintain(ActionRequest("working-set", confirmed=True,
+                                           confirmation_source="test"), directory)
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertEqual(self.fake.closed.count(50), 1)
+        self.assertIn(500, self.fake.closed)
+        self.assertIn(700, self.fake.closed)
+        self.assertFalse(self.lock.locked())
+        self.assertEqual(self.fake.adjustments, [])
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_pdh_initialization_interrupt_close_failure_keeps_resource_and_blocks_requests(self):
+        interruption = KeyboardInterrupt("fake PDH initialization interruption")
+
+        def interrupt_add(*args):
+            raise interruption
+
+        self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
+        self.fake.fail_close_query = True
+        app = make_app(self.backend, self.backend)
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            app.inspect()
+        self.assertIs(caught.exception, interruption)
+        self.assertFalse(app.busy)
+        self.assertTrue(app._unsafe)
+        self.assertEqual(len(app._pending_resources), 1)
+        session = app._pending_resources[0]
+        self.assertEqual(session.counters._query.value, 50)
+        self.assertFalse(session.closed)
+        loads = self.fake.loads.copy()
+        self.assertEqual(app.inspect().completion, "failed")
+        with tempfile.TemporaryDirectory() as directory:
+            rejected = app.maintain(ActionRequest("working-set", confirmed=True,
+                                                 confirmation_source="test"), directory)
+        self.assertEqual(rejected.completion, "failed")
+        self.assertEqual(self.fake.loads, loads)
+        self.fake.fail_close_query = False
+        self.assertTrue(session.close()["closed"])
+        self.assertIsNone(session.counters._query)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_pdh_initialization_error_is_not_retried_and_gaps_remain(self):
+        for exception_type in (OSError, AttributeError):
+            with self.subTest(exception_type=exception_type.__name__):
+                fake = FakeSystem()
+                additions = []
+
+                def failed_add(*args):
+                    additions.append(True)
+                    raise exception_type("fake counter initialization failure")
+
+                fake.pdh.PdhAddEnglishCounterW = Function(failed_add)
+                backend = api.WindowsBackend(fake.load, now=lambda: "2026-10-21T00:00:00+00:00")
+                session = backend.open_observation()
+                try:
+                    first = session.read("r", 0)
+                    later = session.read("r", 1)
+                finally:
+                    closed = session.close()
+                self.assertTrue(closed["closed"])
+                self.assertEqual(additions, [True])
+                self.assertEqual(fake.loads.count("pdh.dll"), 1)
+                self.assertTrue(any("fake counter initialization failure" in error for error in first.errors))
+                self.assertEqual(later.errors, first.errors)
+                self.assertTrue(all(value is None for value in later.metrics["rates"].values()))
+                self.assertEqual(fake.nt_calls, [])
 
     def test_pdh_open_and_cleanup_failures_keep_session_for_later_close(self):
         def failed_add(*args):
@@ -338,6 +574,189 @@ class WindowsTests(unittest.TestCase):
         self.assertFalse(session.close()["closed"])
         self.fake.kernel.CloseHandle = original
         self.assertTrue(session.close()["closed"])
+
+    def test_process_handle_close_interrupt_keeps_unknown_and_blocks_replay(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake = FakeSystem()
+                interruption = KeyboardInterrupt("fake process handle close interruption")
+                original = fake.kernel.CloseHandle
+                attempts = []
+
+                def interrupted_close(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if value == 11 and attempts.count(11) == 1:
+                        if interruption_timing == "after":
+                            original(handle)
+                        raise interruption
+                    return original(handle)
+
+                fake.kernel.CloseHandle = Function(interrupted_close)
+                backend = api.WindowsBackend(fake.load)
+                session = backend.open_observation(with_processes=True)
+                app = make_app(backend, backend)
+                with patch.object(backend, "open_observation", return_value=session):
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        app.inspect({"count": 1, "interval": 0, "with_processes": True})
+                self.assertIs(caught.exception, interruption)
+                self.assertTrue(app._unsafe)
+                self.assertFalse(app.busy)
+                self.assertEqual(session.pending_handles, [11])
+                self.assertFalse(session.close()["closed"])
+                self.assertEqual(session.unknown_handles, {11})
+                loads = fake.loads.copy()
+                self.assertEqual(app.inspect().completion, "failed")
+                self.assertEqual(fake.loads, loads)
+                self.assertEqual(attempts, [11])
+                self.assertEqual(fake.closed.count(11), int(interruption_timing == "after"))
+                self.assertEqual(fake.nt_calls, [])
+
+    def test_process_handle_false_close_retries_until_confirmed(self):
+        original = self.fake.kernel.CloseHandle
+        attempts = []
+
+        def failed_close(handle):
+            attempts.append(handle_value(handle))
+            if handle_value(handle) == 11 and attempts.count(11) == 1:
+                c.set_last_error(5)
+                return False
+            return original(handle)
+
+        self.fake.kernel.CloseHandle = Function(failed_close)
+        session = self.backend.open_observation(with_processes=True)
+        app = make_app(self.backend, self.backend)
+        with patch.object(self.backend, "open_observation", return_value=session):
+            report = app.inspect({"count": 1, "interval": 0, "with_processes": True})
+        self.assertEqual(report.completion, "success")
+        self.assertTrue(session.closed)
+        self.assertEqual(session.pending_handles, [])
+        self.assertFalse(app._unsafe)
+        self.assertEqual(attempts.count(11), 2)
+        self.assertEqual(self.fake.closed.count(11), 1)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_process_read_and_close_interrupts_preserve_first_interrupt(self):
+        for close_failure in ("interrupt_before", "interrupt_after", "error"):
+            with self.subTest(close_failure=close_failure):
+                fake = FakeSystem()
+                first = KeyboardInterrupt("fake first process read interruption")
+                second = (OSError("fake process close error") if close_failure == "error"
+                          else SystemExit("fake second process close interruption"))
+                original, attempts = fake.kernel.CloseHandle, []
+
+                def interrupted_read(*args):
+                    raise first
+
+                def failed_close(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if close_failure == "interrupt_after":
+                        original(handle)
+                    raise second
+
+                fake.psapi.GetProcessMemoryInfo = Function(interrupted_read)
+                fake.kernel.CloseHandle = Function(failed_close)
+                backend = api.WindowsBackend(fake.load)
+                session = backend.open_observation(with_processes=True)
+                app = make_app(backend)
+                with patch.object(backend, "open_observation", return_value=session):
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        app.inspect({"count": 1, "interval": 0, "with_processes": True})
+                self.assertIs(caught.exception, first)
+                self.assertFalse(app.busy)
+                self.assertTrue(app._unsafe)
+                self.assertEqual(session.pending_handles, [11])
+                self.assertEqual(session.unknown_handles, {11})
+                self.assertFalse(session.close()["closed"])
+                loads = fake.loads.copy()
+                self.assertEqual(app.inspect().completion, "failed")
+                self.assertEqual(fake.loads, loads)
+                self.assertEqual(attempts, [11])
+                self.assertEqual(fake.closed.count(11), int(close_failure == "interrupt_after"))
+                self.assertEqual(fake.nt_calls, [])
+                self.assertEqual(fake.adjustments, [])
+
+    def test_process_read_error_remains_a_gap_and_closes_handle(self):
+        def failed_read(*args):
+            raise OSError("fake process read error")
+
+        self.fake.psapi.GetProcessMemoryInfo = Function(failed_read)
+        session = self.backend.open_observation(with_processes=True)
+        sample = session.read("r", 0)
+        self.assertEqual(sample.processes, [])
+        self.assertEqual(sample.metrics["process_coverage"]["coverage"], "unknown")
+        self.assertTrue(any("fake process read error" in error for error in sample.errors))
+        self.assertEqual(session.pending_handles, [])
+        self.assertEqual(self.fake.closed.count(11), 1)
+        self.assertTrue(session.close()["closed"])
+        self.assertEqual(self.fake.closed.count(11), 1)
+        self.assertEqual(self.fake.nt_calls, [])
+        self.assertEqual(self.fake.adjustments, [])
+
+    def test_pending_process_close_interrupt_does_not_retry_confirmed_handles(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake = FakeSystem()
+                interruption = KeyboardInterrupt("fake pending process close interruption")
+                original = fake.kernel.CloseHandle
+                attempts = []
+
+                def interrupted_close(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if value == 22 and attempts.count(22) == 1:
+                        if interruption_timing == "after":
+                            original(handle)
+                        raise interruption
+                    return original(handle)
+
+                fake.kernel.CloseHandle = Function(interrupted_close)
+                session = api.WindowsBackend(fake.load).open_observation()
+                session.pending_handles = [11, 22]
+                with self.assertRaises(KeyboardInterrupt) as caught:
+                    session.close()
+                self.assertIs(caught.exception, interruption)
+                self.assertEqual(session.pending_handles, [22])
+                self.assertFalse(session.closed)
+                self.assertFalse(session.close()["closed"])
+                self.assertEqual(session.unknown_handles, {22})
+                self.assertEqual(attempts, [11, 22])
+                self.assertEqual(fake.closed.count(11), 1)
+                self.assertEqual(fake.closed.count(22), int(interruption_timing == "after"))
+                self.assertEqual(fake.nt_calls, [])
+
+    def test_pdh_close_interrupt_keeps_unknown_and_blocks_replay(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake = FakeSystem()
+                interruption = KeyboardInterrupt("fake PDH close interruption")
+                original = fake.pdh.PdhCloseQuery
+                attempts = []
+
+                def interrupted_close(handle):
+                    attempts.append(handle_value(handle))
+                    if len(attempts) == 1:
+                        if interruption_timing == "after":
+                            original(handle)
+                        raise interruption
+                    return original(handle)
+
+                fake.pdh.PdhCloseQuery = Function(interrupted_close)
+                app = make_app(api.WindowsBackend(fake.load))
+                with self.assertRaises(KeyboardInterrupt) as caught:
+                    app.inspect()
+                self.assertIs(caught.exception, interruption)
+                self.assertTrue(app._unsafe)
+                self.assertFalse(app.busy)
+                session = app._pending_resources[0]
+                self.assertFalse(session.close()["closed"])
+                self.assertTrue(session.counters._close_unknown)
+                self.assertEqual(session.counters._query.value, 50)
+                self.assertEqual(app.inspect().completion, "failed")
+                self.assertEqual(attempts, [50])
+                self.assertEqual(fake.closed.count(50), int(interruption_timing == "after"))
+                self.assertEqual(fake.nt_calls, [])
 
     def test_operation_constructor_is_lazy_and_requires_confirmation(self):
         operation = self.operation()
@@ -410,6 +829,101 @@ class WindowsTests(unittest.TestCase):
         self.assertFalse(other.preflight()["lock_acquired"])
         self.assertEqual(other.perform_once()["call_outcome"], "not_started")
         other.close()
+        self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_restore_interrupt_blocks_new_application_and_closes_token(self):
+        interruption = KeyboardInterrupt("fake restore interruption")
+        adjust = self.fake.advapi.AdjustTokenPrivileges.function
+
+        def interrupt_restore(token, all_privileges, state, size, previous, needed):
+            if state._obj.Privileges[0].Attributes == 0:
+                raise interruption
+            return adjust(token, all_privileges, state, size, previous, needed)
+
+        self.fake.advapi.AdjustTokenPrivileges.function = interrupt_restore
+        operation = self.operation()
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertEqual(self.fake.closed.count(500), 2)
+        self.assertEqual(self.fake.attrs, api.SE_PRIVILEGE_ENABLED)
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
+        with tempfile.TemporaryDirectory() as directory:
+            app = make_app(self.backend, self.backend)
+            report = app.maintain(ActionRequest("working-set", confirmed=True,
+                                               confirmation_source="test"), directory)
+        self.assertEqual(report.completion, "failed")
+        self.assertFalse(report.action["attempted"])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+        self.assertTrue(self.lock.locked())
+
+    def test_restore_verification_interrupt_keeps_process_guard(self):
+        interruption = SystemExit("fake restore verification interruption")
+        query = self.fake.advapi.GetTokenInformation.function
+
+        def interrupt_verification(*args):
+            if self.fake.adjustments == [api.SE_PRIVILEGE_ENABLED, 0]:
+                raise interruption
+            return query(*args)
+
+        self.fake.advapi.GetTokenInformation.function = interrupt_verification
+        operation = self.operation()
+        with self.assertRaises(SystemExit) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertEqual(self.fake.attrs, 0)
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
+        other = self.operation()
+        self.assertFalse(other.preflight()["lock_acquired"])
+        self.assertTrue(other.close()["closed"])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_existing_privilege_verification_interrupt_keeps_process_guard(self):
+        interruption = KeyboardInterrupt("fake existing privilege verification interruption")
+        self.fake.attrs = 3
+        query = self.fake.advapi.GetTokenInformation.function
+
+        def interrupt_verification(*args):
+            if self.fake.nt_calls:
+                raise interruption
+            return query(*args)
+
+        self.fake.advapi.GetTokenInformation.function = interrupt_verification
+        operation = self.operation()
+        with self.assertRaises(KeyboardInterrupt) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertEqual(self.fake.adjustments, [])
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
+        other = self.operation()
+        self.assertFalse(other.preflight()["lock_acquired"])
+        self.assertTrue(other.close()["closed"])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_call_interrupt_survives_restore_interrupt(self):
+        interruption = KeyboardInterrupt("fake call interruption")
+        self.fake.nt_error = interruption
+        adjust = self.fake.advapi.AdjustTokenPrivileges.function
+
+        def interrupt_restore(token, all_privileges, state, size, previous, needed):
+            if state._obj.Privileges[0].Attributes == 0:
+                raise SystemExit("fake restore interruption")
+            return adjust(token, all_privileges, state, size, previous, needed)
+
+        self.fake.advapi.AdjustTokenPrivileges.function = interrupt_restore
+        operation = self.operation()
+        with self.assertRaises(BaseException) as caught:
+            operation.perform_once()
+        self.assertIs(caught.exception, interruption)
+        self.assertEqual(operation.tokens, [])
+        self.assertFalse(operation.close()["closed"])
+        self.assertTrue(self.lock.locked())
         self.assertEqual(len(self.fake.nt_calls), 1)
 
     def test_busy_or_abandoned_mutex_is_zero_calls(self):
@@ -506,6 +1020,274 @@ class WindowsTests(unittest.TestCase):
         self.assertTrue(operation.close()["closed"])
         self.assertFalse(self.lock.locked())
         self.assertEqual(len(self.fake.nt_calls), 1)
+
+    def test_operation_token_close_interrupt_keeps_unknown_and_blocks_replay(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake, guard = FakeSystem(), threading.Lock()
+                interruption = KeyboardInterrupt("fake token close interruption")
+                original, attempts = fake.kernel.CloseHandle, []
+
+                def interrupted_close(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if value == 500 and attempts.count(500) == 1:
+                        if interruption_timing == "after":
+                            original(handle)
+                        raise interruption
+                    return original(handle)
+
+                fake.kernel.CloseHandle = Function(interrupted_close)
+                backend = api.WindowsBackend(fake.load)
+                operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                  confirmation_source="test"))
+                with patch.object(api, "_maintenance_lock", guard):
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        operation.preflight()
+                    self.assertIs(caught.exception, interruption)
+                    self.assertFalse(operation.close()["closed"])
+                    self.assertTrue(guard.locked())
+                    self.assertEqual(len(operation.tokens), 1)
+                    self.assertEqual(operation._unknown_handles, operation.tokens)
+                    with self.assertRaises(RuntimeError):
+                        operation.perform_once()
+                    self.assert_new_application_maintenance_blocked(backend, fake)
+                self.assertEqual(attempts.count(500), 1)
+                self.assertEqual(fake.closed.count(500), int(interruption_timing == "after"))
+
+    def test_operation_mutex_close_interrupt_keeps_unknown_and_blocks_replay(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake, guard = FakeSystem(), threading.Lock()
+                interruption = KeyboardInterrupt("fake mutex close interruption")
+                original, attempts = fake.kernel.CloseHandle, []
+
+                def interrupted_close(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if value == 700 and attempts.count(700) == 1:
+                        if interruption_timing == "after":
+                            original(handle)
+                        raise interruption
+                    return original(handle)
+
+                fake.kernel.CloseHandle = Function(interrupted_close)
+                backend = api.WindowsBackend(fake.load)
+                operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                  confirmation_source="test"))
+                with patch.object(api, "_maintenance_lock", guard):
+                    self.assertTrue(operation.preflight()["lock_acquired"])
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        operation.close()
+                    self.assertIs(caught.exception, interruption)
+                    self.assertFalse(operation.close()["closed"])
+                    self.assertTrue(guard.locked())
+                    self.assertEqual(operation.handle, 700)
+                    self.assertEqual(operation._unknown_handles, [700])
+                    with self.assertRaises(RuntimeError):
+                        operation.perform_once()
+                    self.assert_new_application_maintenance_blocked(backend, fake)
+                self.assertEqual(attempts.count(700), 1)
+                self.assertEqual(fake.closed.count(700), int(interruption_timing == "after"))
+
+    def test_operation_mutex_release_interrupt_keeps_unknown_and_blocks_replay(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake, guard = FakeSystem(), threading.Lock()
+                interruption = KeyboardInterrupt("fake mutex release interruption")
+                original, attempts, effects = fake.kernel.ReleaseMutex, [], []
+
+                def interrupted_release(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if len(attempts) == 1:
+                        if interruption_timing == "after":
+                            original(handle)
+                            effects.append(value)
+                        raise interruption
+                    effects.append(value)
+                    return original(handle)
+
+                fake.kernel.ReleaseMutex = Function(interrupted_release)
+                backend = api.WindowsBackend(fake.load)
+                operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                  confirmation_source="test"))
+                with patch.object(api, "_maintenance_lock", guard):
+                    self.assertTrue(operation.preflight()["lock_acquired"])
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        operation.close()
+                    self.assertIs(caught.exception, interruption)
+                    self.assertFalse(operation.close()["closed"])
+                    self.assertTrue(guard.locked())
+                    self.assertTrue(operation.owned)
+                    self.assertTrue(operation._release_unknown)
+                    self.assertEqual(operation.handle, 700)
+                    with self.assertRaises(RuntimeError):
+                        operation.perform_once()
+                    self.assert_new_application_maintenance_blocked(backend, fake)
+                self.assertEqual(attempts, [700])
+                self.assertEqual(effects, [700] if interruption_timing == "after" else [])
+                self.assertNotIn(700, fake.closed)
+
+    def test_operation_known_close_failures_remain_retryable(self):
+        for resource in ("token", "mutex", "release"):
+            with self.subTest(resource=resource):
+                fake, guard = FakeSystem(), threading.Lock()
+                backend = api.WindowsBackend(fake.load)
+                operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                  confirmation_source="test"))
+                original = fake.kernel.CloseHandle
+                if resource == "token":
+                    fake.fail_close_token = True
+                with patch.object(api, "_maintenance_lock", guard):
+                    operation.preflight()
+                    if resource == "mutex":
+                        fake.kernel.CloseHandle = Function(
+                            lambda handle: False if handle_value(handle) == 700 else original(handle))
+                    elif resource == "release":
+                        fake.fail_release = True
+                    self.assertFalse(operation.close()["closed"])
+                    self.assertTrue(guard.locked())
+                    with self.assertRaises(RuntimeError):
+                        operation.perform_once()
+                    self.assertEqual(operation._unknown_handles, [])
+                    self.assertFalse(operation._release_unknown)
+                    fake.fail_close_token = fake.fail_release = False
+                    fake.kernel.CloseHandle = original
+                    self.assertTrue(operation.close()["closed"])
+                    self.assertFalse(guard.locked())
+                    self.assertEqual(fake.nt_calls, [])
+
+    def test_operation_token_open_interrupt_closes_output_without_replaying(self):
+        for phase in ("preflight", "perform"):
+            for interruption_timing in ("before", "after"):
+                with self.subTest(phase=phase, interruption_timing=interruption_timing):
+                    fake, guard = FakeSystem(), threading.Lock()
+                    backend = api.WindowsBackend(fake.load)
+                    operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                      confirmation_source="test"))
+                    interruption = KeyboardInterrupt("fake token open interruption")
+                    original, attempts = fake.advapi.OpenProcessToken, []
+
+                    def interrupted_open(*args):
+                        attempts.append(True)
+                        if interruption_timing == "after":
+                            original(*args)
+                        raise interruption
+
+                    with patch.object(api, "_maintenance_lock", guard):
+                        if phase == "perform":
+                            self.assertTrue(operation.preflight()["privilege_available"])
+                            fake.closed.clear()
+                        fake.advapi.OpenProcessToken = Function(interrupted_open)
+                        with self.assertRaises(KeyboardInterrupt) as caught:
+                            operation.preflight() if phase == "preflight" else operation.perform_once()
+                        self.assertIs(caught.exception, interruption)
+                        fake.advapi.OpenProcessToken = original
+                        self.assertTrue(operation.close()["closed"])
+                        self.assertTrue(operation.close()["closed"])
+                        self.assertEqual(fake.closed.count(500), int(interruption_timing == "after"))
+                        self.assertNotIn(None, fake.closed)
+                        self.assertEqual(operation.tokens, [])
+                        self.assertFalse(guard.locked())
+                        with self.assertRaises(RuntimeError):
+                            operation.perform_once()
+                    self.assertEqual(attempts, [True])
+                    self.assertEqual(fake.adjustments, [])
+                    self.assertEqual(fake.nt_calls, [])
+
+    def test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay(self):
+        for interruption_timing in ("before", "after"):
+            with self.subTest(interruption_timing=interruption_timing):
+                fake, guard = FakeSystem(), threading.Lock()
+                backend = api.WindowsBackend(fake.load)
+                operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                  confirmation_source="test"))
+                interruption = KeyboardInterrupt("fake mutex wait interruption")
+                original, attempts, effects, releases = fake.kernel.WaitForSingleObject, [], [], []
+
+                def interrupted_wait(handle, timeout):
+                    attempts.append(handle_value(handle))
+                    if interruption_timing == "after":
+                        self.assertEqual(original(handle, timeout), 0)
+                        effects.append(handle_value(handle))
+                    raise interruption
+
+                fake.kernel.WaitForSingleObject = Function(interrupted_wait)
+                fake.kernel.ReleaseMutex = Function(lambda handle: releases.append(handle_value(handle)) or True)
+                with patch.object(api, "_maintenance_lock", guard):
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        operation.preflight()
+                    self.assertIs(caught.exception, interruption)
+                    self.assertFalse(operation.preflight()["lock_acquired"])
+                    self.assertFalse(operation.close()["closed"])
+                    self.assertFalse(operation.close()["closed"])
+                    self.assertTrue(guard.locked())
+                    self.assertEqual(operation.handle, 700)
+                    with self.assertRaises(RuntimeError):
+                        operation.perform_once()
+                    self.assert_new_application_maintenance_blocked(backend, fake)
+                self.assertEqual(attempts, [700])
+                self.assertEqual(effects, [700] if interruption_timing == "after" else [])
+                self.assertEqual(releases, [])
+                self.assertNotIn(700, fake.closed)
+                self.assertEqual(fake.nt_calls, [])
+
+    def test_preflight_query_and_close_interrupts_preserve_first_interrupt(self):
+        for query_failure in ("interrupt", "error"):
+            for close_failure in ("interrupt", "error", "none"):
+                with self.subTest(query_failure=query_failure, close_failure=close_failure):
+                    fake, guard = FakeSystem(), threading.Lock()
+                    backend = api.WindowsBackend(fake.load)
+                    operation = backend.open_operation(ActionRequest("working-set", confirmed=True,
+                                                                      confirmation_source="test"))
+                    first = (KeyboardInterrupt("fake first query interruption") if query_failure == "interrupt"
+                             else OSError("fake first query error"))
+                    second = SystemExit("fake second token close interruption")
+                    close_attempts, original = [], fake.kernel.CloseHandle
+
+                    def fail_query(*args):
+                        raise first
+
+                    def close_token(handle):
+                        if handle_value(handle) == 500:
+                            close_attempts.append(500)
+                            if close_failure == "interrupt":
+                                raise second
+                        return original(handle)
+
+                    fake.advapi.GetTokenInformation = Function(fail_query)
+                    fake.kernel.CloseHandle = Function(close_token)
+                    fake.fail_close_token = close_failure == "error"
+                    with patch.object(api, "_maintenance_lock", guard):
+                        expected = first if query_failure == "interrupt" else second if close_failure == "interrupt" else None
+                        if expected is not None:
+                            with self.assertRaises(type(expected)) as caught:
+                                operation.preflight()
+                            self.assertIs(caught.exception, expected)
+                        else:
+                            self.assertFalse(operation.preflight()["privilege_available"])
+                        if query_failure == "error":
+                            self.assertTrue(any("fake first query error" in error for error in operation._preflight["errors"]))
+                        self.assertEqual(close_attempts, [500])
+                        if close_failure == "interrupt":
+                            self.assertFalse(operation.close()["closed"])
+                            self.assertFalse(operation.close()["closed"])
+                            self.assertEqual(close_attempts, [500])
+                            self.assertEqual(len(operation.tokens), 1)
+                            self.assertTrue(guard.locked())
+                            self.assert_new_application_maintenance_blocked(backend, fake)
+                        else:
+                            fake.fail_close_token = False
+                            self.assertTrue(operation.close()["closed"])
+                            self.assertTrue(operation.close()["closed"])
+                            self.assertEqual(operation.tokens, [])
+                            self.assertFalse(guard.locked())
+                            self.assertEqual(close_attempts, [500, 500] if close_failure == "error" else [500])
+                        with self.assertRaises(RuntimeError):
+                            operation.perform_once()
+                    self.assertEqual(fake.adjustments, [])
+                    self.assertEqual(fake.nt_calls, [])
 
 
 if __name__ == "__main__":

@@ -3,11 +3,14 @@ from tests.support import make_app
 
 import unittest
 import tempfile
+import sys
+import types
 from unittest.mock import patch
 
 from cpu_memory_cleanup.interaction import desktop
 from cpu_memory_cleanup.contracts import Capabilities, RunReport, Sample
 from cpu_memory_cleanup.application.core import Application
+from .test_cli import FakeBackend
 
 
 class DeferredThread:
@@ -90,7 +93,7 @@ class Root:
     def after(self, milliseconds, function):
         if self.destroyed:
             raise AssertionError("不能向销毁后的窗口投递")
-        key = len(self.jobs) + 1
+        key = max(self.jobs, default=0) + 1
         self.jobs[key] = function
         return key
 
@@ -110,13 +113,13 @@ class FakeApplication:
         self.cancelled = 0
         self.closed = False
 
-    def inspect(self, options):
+    def inspect(self, options, *, cancel_event=None):
         if self.closed:
             return RunReport("run", "inspect", completion="cancelled")
         self.calls.append(("inspect", options))
         return RunReport("run", "inspect", completion="success")
 
-    def maintain(self, request, directory):
+    def maintain(self, request, directory, *, cancel_event=None):
         if self.closed:
             return RunReport("run", "maintain", completion="cancelled")
         self.calls.append(("maintain", request, directory))
@@ -292,10 +295,113 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
         self.assertEqual(self.app.cancelled, 1)
 
+    def test_cancel_before_worker_enters_core_prevents_maintenance(self):
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        with tempfile.TemporaryDirectory() as directory:
+            window = desktop.MemoryWindow(Root(), app, FakeTk, lambda: directory)
+            window.maintain()
+            self.assertFalse(app.busy)
+            window.cancel()
+            window._worker.finish()
+            window.pump()
+        self.assertEqual(backend.action_calls, 0)
+        self.assertIn("单项维护：已取消", window.status.cget("text"))
+        self.assertIn("维护：未调用", window.result.cget("text"))
+
+    def test_cancel_after_worker_entry_before_core_begin_prevents_maintenance(self):
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        begin = app._begin
+
+        def cancel_before_begin(*args, **kwargs):
+            self.assertTrue(DeferredThread.in_worker)
+            self.assertFalse(app.busy)
+            with patch.object(DeferredThread, "in_worker", False):
+                window.cancel()
+            return begin(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            window = desktop.MemoryWindow(Root(), app, FakeTk, lambda: directory)
+            window.maintain()
+            with patch.object(app, "_begin", side_effect=cancel_before_begin):
+                window._worker.finish()
+            window.pump()
+        self.assertEqual(backend.action_calls, 0)
+        self.assertIn("单项维护：已取消", window.status.cget("text"))
+
+    def test_initial_thread_start_failure_restores_controls_and_allows_close(self):
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.window.start()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._cancel_event)
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertIn("无法启动工作线程", self.window.status.cget("text"))
+        self.assertIsNotNone(self.window._poll_job)
+        self.window.pump()
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+        self.assertEqual(self.app.calls, [])
+
+    def test_refresh_thread_start_failure_restores_controls_and_allows_close(self):
+        self.window.start()
+        self.finish_worker()
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.window.refresh()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._cancel_event)
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertIsNotNone(self.window._poll_job)
+        self.window.pump()
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
+
+    def test_maintenance_thread_start_failure_discards_pending_action(self):
+        self.window.start()
+        self.finish_worker()
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.window.maintain()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._cancel_event)
+        self.assertIsNone(self.window._pending)
+        self.assertEqual(self.window.button.cget("state"), "normal")
+        self.assertEqual(self.window.refresh_button.cget("state"), "normal")
+        self.assertEqual(self.window.cancel_button.cget("state"), "disabled")
+        self.assertIn("无法启动工作线程", self.window.status.cget("text"))
+        self.window.pump()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect"])
+        self.assertIsNotNone(self.window._poll_job)
+        self.assertEqual(list(self.root.jobs.values()).count(self.window.inspect), 1)
+        self.root.jobs.pop(self.window._poll_job)()
+        self.finish_worker()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect", "inspect"])
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+
+    def test_queued_maintenance_start_failure_restores_single_readonly_poll(self):
+        self.window.start()
+        self.window.maintain()
+        with patch.object(DeferredThread, "start", side_effect=RuntimeError("can't start new thread")):
+            self.finish_worker()
+        self.assertIsNone(self.window._worker)
+        self.assertIsNone(self.window._pending)
+        self.assertIsNotNone(self.window._poll_job)
+        self.assertEqual(list(self.root.jobs.values()).count(self.window.inspect), 1)
+        self.root.jobs.pop(self.window._poll_job)()
+        self.finish_worker()
+        self.assertEqual([call[0] for call in self.app.calls], ["inspect", "inspect"])
+        self.window.close()
+        self.assertTrue(self.root.destroyed)
+
     def test_close_waits_for_worker_and_never_dispatches_pending_action(self):
         self.window.start()
         self.window.maintain()
+        cancel_event = self.window._cancel_event
         self.window.close()
+        self.assertTrue(cancel_event.is_set())
         self.assertFalse(self.root.destroyed)
         self.assertEqual(self.app.cancelled, 1)
         self.finish_worker()
@@ -347,3 +453,124 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(root.destroyed)
         self.assertFalse(app.busy)
         self.assertEqual(backend.calls, [])
+
+
+class DesktopRunTests(unittest.TestCase):
+    def run_desktop(self, root, app, directory):
+        class JoiningThread(DeferredThread):
+            joined = False
+
+            def join(self):
+                self.joined = True
+                if self.alive:
+                    self.finish()
+
+        tk = types.SimpleNamespace(**{name: getattr(FakeTk, name) for name in
+                                   ("Frame", "LabelFrame", "Label", "Button", "Radiobutton", "StringVar")},
+                                   Tk=lambda: root, TclError=RuntimeError,
+                                   filedialog=types.SimpleNamespace(askdirectory=lambda **kwargs: None))
+        with patch.dict(sys.modules, {"tkinter": tk}), patch.object(desktop.threading, "Thread", JoiningThread):
+            return desktop.run(app, {"output_dir": directory})
+
+    def test_mainloop_interrupt_cancels_and_joins_undispatched_maintenance(self):
+        interruption = KeyboardInterrupt("mainloop interrupted")
+
+        class InterruptedRoot(Root):
+            def mainloop(self):
+                window = self.close_callback.__self__
+                window.maintain()
+                window._worker.finish()
+                window.pump()
+                self.worker = window._worker
+                self.cancel_event = window._cancel_event
+                raise interruption
+
+        backend = FakeBackend()
+        app = make_app(backend, backend, sleep=lambda seconds: None)
+        root = InterruptedRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                self.run_desktop(root, app, directory)
+        self.assertIs(caught.exception, interruption)
+        self.assertTrue(app._closed)
+        self.assertTrue(root.cancel_event.is_set())
+        self.assertTrue(root.worker.joined)
+        self.assertFalse(root.worker.is_alive())
+        self.assertTrue(root.destroyed)
+        self.assertEqual(backend.action_calls, 0)
+        self.assertEqual(backend.read_calls, 1)
+
+    def test_mainloop_unexpected_return_discards_pending_maintenance_and_joins_reader(self):
+        class ReturningRoot(Root):
+            def mainloop(self):
+                window = self.close_callback.__self__
+                window.maintain()
+                self.worker = window._worker
+                self.cancel_event = window._cancel_event
+
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        root = ReturningRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.run_desktop(root, app, directory), 0)
+        self.assertTrue(app._closed)
+        self.assertTrue(root.cancel_event.is_set())
+        self.assertIsNone(root.close_callback.__self__._pending)
+        self.assertTrue(root.worker.joined)
+        self.assertFalse(root.worker.is_alive())
+        self.assertTrue(root.destroyed)
+        self.assertEqual((backend.read_calls, backend.action_calls), (0, 0))
+
+    def test_mainloop_error_after_root_destroy_still_joins_and_preserves_error(self):
+        failure = ValueError("mainloop failed")
+
+        class DestroyedRoot(Root):
+            def mainloop(self):
+                self.worker = self.close_callback.__self__._worker
+                self.destroy()
+                raise failure
+
+            def destroy(self):
+                if self.destroyed:
+                    raise RuntimeError("Tk has already been destroyed")
+                super().destroy()
+
+            def after_cancel(self, key):
+                if self.destroyed:
+                    raise RuntimeError("Tk has already been destroyed")
+                super().after_cancel(key)
+
+        backend = FakeBackend()
+        app = make_app(backend, backend)
+        root = DestroyedRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ValueError) as caught:
+                self.run_desktop(root, app, directory)
+        self.assertIs(caught.exception, failure)
+        self.assertTrue(app._closed)
+        self.assertTrue(root.worker.joined)
+        self.assertFalse(root.worker.is_alive())
+        self.assertEqual((backend.read_calls, backend.action_calls), (0, 0))
+
+    def test_normal_close_returns_without_destroying_root_twice(self):
+        class ClosingRoot(Root):
+            def mainloop(self):
+                window = self.close_callback.__self__
+                self.worker = window._worker
+                window.close()
+                self.worker.finish()
+                window.pump()
+
+            def destroy(self):
+                if self.destroyed:
+                    raise AssertionError("不能重复销毁已关闭窗口")
+                super().destroy()
+
+        app = FakeApplication()
+        root = ClosingRoot()
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.run_desktop(root, app, directory), 0)
+        self.assertTrue(root.destroyed)
+        self.assertTrue(app.closed)
+        self.assertFalse(root.worker.is_alive())
+        self.assertEqual(app.calls, [])

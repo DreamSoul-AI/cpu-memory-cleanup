@@ -490,9 +490,9 @@ class _WindowsJob:
 
     def close(self):
         if self.handle:
-            handle, self.handle = self.handle, None
-            if not self.kernel.CloseHandle(handle):
+            if not self.kernel.CloseHandle(self.handle):
                 raise ctypes.WinError(ctypes.get_last_error())
+            self.handle = None
 
 
 def _execute(entry, root, timeout_s, memory_bytes, progress_path=None):
@@ -500,6 +500,7 @@ def _execute(entry, root, timeout_s, memory_bytes, progress_path=None):
     job = _WindowsJob(memory_bytes) if os.name == "nt" else None
     process = None
     result, output, stderr, peak = None, "", "", None
+    cleanup_errors = []
     try:
         process = subprocess.Popen([sys.executable, "-X", "utf8", "-B", str(Path(__file__).resolve()), "--_worker"],
                                    cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -520,24 +521,55 @@ def _execute(entry, root, timeout_s, memory_bytes, progress_path=None):
         if result.get("status") not in FINAL_STATUSES:
             raise ValueError("工作进程结果状态无效")
     except subprocess.TimeoutExpired:
-        if job:
-            job.terminate()
-        elif process:
-            os.killpg(process.pid, signal.SIGKILL)
-        if process:
-            output, stderr = process.communicate(timeout=5)
         result = {"status": "timeout", "verdict": None, "category": None, "metrics": [],
                   "failure": [{"phase": "budget", "type": "Timeout", "message": "自建测试工作单元超出墙钟预算"}], "subtests": []}
+        try:
+            if job:
+                job.terminate()
+            elif process:
+                os.killpg(process.pid, signal.SIGKILL)
+            if process:
+                output, stderr = process.communicate(timeout=5)
+        except Exception as error:
+            cleanup_errors.append(("timeout_stop", error))
     except Exception as error:
         result = {"status": "error", "verdict": None, "category": None, "metrics": [],
                   "failure": [{"phase": "worker", "type": type(error).__name__, "traceback": _safe_error(error, root)}], "subtests": []}
     finally:
         if job:
-            peak = job.peak()
-            job.close()  # 只收回本 Job 中仍存在的测试子孙，不查找或接管其它 PID。
+            try:
+                peak = job.peak()
+            except Exception as error:
+                cleanup_errors.append(("job_peak", error))
+            try:
+                job.close()  # 只收回本 Job 中仍存在的测试子孙，不查找或接管其它 PID。
+            except Exception as error:
+                cleanup_errors.append(("job_close", error))
+                try:
+                    job.terminate()
+                except Exception as error:
+                    cleanup_errors.append(("job_terminate", error))
+                try:
+                    job.close()
+                except Exception as error:
+                    cleanup_errors.append(("job_close_retry", error))
         if process and process.poll() is None:
-            process.kill()
-            process.wait(timeout=5)
+            try:
+                process.kill()
+            except Exception as error:
+                cleanup_errors.append(("worker_kill", error))
+            try:
+                process.wait(timeout=5)
+            except Exception as error:
+                cleanup_errors.append(("worker_wait", error))
+        if cleanup_errors and result is None:
+            for operation, error in cleanup_errors:
+                print(f"测试收尾失败 ({operation}): {type(error).__name__}", file=sys.stderr)
+    if cleanup_errors:
+        result.update(status="timeout" if result["status"] == "timeout" else "error", verdict=None, category=None)
+        result["failure"] = [*(result.get("failure") or []),
+                             *({"phase": "cleanup", "operation": operation, "type": type(error).__name__,
+                                "traceback": _safe_error(error, root)} for operation, error in cleanup_errors)]
     elapsed = time.monotonic() - start
     result.update(duration_ms=elapsed * 1000, started_at=started_at,
                   peak_memory_bytes=peak, worker_stderr=stderr[-16000:])
@@ -651,6 +683,8 @@ def rebuild_report(directory):
     entries = {entry["test_id"]: entry for entry in _expanded(manifest["selected"])}
     plan = manifest["plan"]
     required = manifest["required"]
+    required_groups = {entry["test_id"] for entry in manifest["selected"] if entry.get("subtests")
+                       and any(child["test_id"] in required for child in _expanded([entry]))}
     blockers = []
     for identity in required:
         if identity not in entries or not _acceptable(latest.get(identity), entries.get(identity, {}), plan):
@@ -663,7 +697,7 @@ def rebuild_report(directory):
                  if len(records) > 1 and latest[identity]["status"] == "passed"
                  and any(record["status"] in ("failed", "error", "timeout") for record in records[:-1])]
     if not plan.get("allow_recovered", False):
-        blockers.extend(identity for identity in recovered if identity in required)
+        blockers.extend(identity for identity in recovered if identity in required or identity in required_groups)
     counts = {status: sum(event["status"] == status for identity, event in latest.items() if identity in entries) for status in FINAL_STATUSES}
     missing = [identity for identity in entries if identity not in latest]
     unfinished = [item for item in manifest.get("attempts_started", []) if not item.get("finished")]
@@ -870,9 +904,14 @@ def run(args, *, root=ROOT):
             manifest["elapsed_wall_seconds"] = previous_wall + time.monotonic() - started
             _save_json(directory / "manifest.json", manifest)
             rebuild_report(directory)
-            if plan.get("stop_on_failure") and not _acceptable(event, entry, plan):
+            stop_reason = None
+            if any(failure.get("phase") == "cleanup" for failure in result.get("failure") or []):
+                stop_reason = "测试工作单元收尾失败，停止后续调度"
+            elif plan.get("stop_on_failure") and not _acceptable(event, entry, plan):
+                stop_reason = "计划在前一失败后停止"
+            if stop_reason:
                 for pending in selected[selected.index(entry) + 1:]:
-                    manifest["unexecuted"][pending["test_id"]] = "计划在前一失败后停止"
+                    manifest["unexecuted"][pending["test_id"]] = stop_reason
                 break
     except BaseException as error:
         manifest["run_error"] = _safe_error(error, root)

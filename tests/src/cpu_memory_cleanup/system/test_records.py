@@ -47,6 +47,21 @@ class RecordTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             list(reader.read())
 
+    def test_invalid_utf8_tail_preserves_prefix_line_number_and_close(self):
+        for label, newline in (("LF", b"\n"), ("CRLF", b"\r\n"), ("CR", b"\r")):
+            with self.subTest(newline=label):
+                path = Path(self.temp.name) / "bad-utf8.jsonl"
+                path.write_bytes(b'\xef\xbb\xbf{"value":"ok"}' + newline + b"\xff" + newline)
+                reader = self.store.open_read(path)
+                try:
+                    entries = iter(reader.read())
+                    self.assertEqual(next(entries), {"value": "ok"})
+                    with self.assertRaisesRegex(ValueError, "第 2 行"):
+                        next(entries)
+                finally:
+                    facts = reader.close()
+                self.assertEqual(facts, {"closed": True, "errors": []})
+
     def test_closed_writer_cannot_append_or_commit_twice(self):
         writer = self.store.open_write("run", {"output_dir": self.temp.name})
         writer.append("samples", {"record_type": "header"})

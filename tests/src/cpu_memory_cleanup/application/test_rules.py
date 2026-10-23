@@ -1,11 +1,19 @@
 """只使用合成样本验证规则，不采样、不创建界面、不执行维护。"""
 
 from copy import deepcopy
+import contextlib
+import io
+import json
 import math
+from pathlib import Path
+import sys
+import tempfile
 import unittest
 
 from cpu_memory_cleanup.contracts import Sample
 from cpu_memory_cleanup.application import rules
+from cpu_memory_cleanup.interaction import cli
+from tests.support import make_app
 
 GIB = 1024 ** 3
 
@@ -88,6 +96,19 @@ def _tree(index, *, run="tree", free=10, used=50, limit=100, processes=600,
 
 
 class StatisticsTests(unittest.TestCase):
+    def test_extreme_finite_mean_survives_offline_cli_json(self):
+        records = [_tree(index, free=sys.float_info.max) for index in range(3)]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "finite.jsonl"
+            source.write_text("\n".join(json.dumps(record, allow_nan=False) for record in records) + "\n", encoding="utf-8")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = cli.run(make_app(), cli.parse_args(["--review", str(source), "--json"]))
+        report = json.loads(output.getvalue())
+        self.assertEqual((code, report["completion"], len(report["samples"])), (1, "partial", 3))
+        stats = report["analysis"]["tree_summary"]["runs"][0]["host_free_gib"]
+        self.assertEqual((stats["samples"], stats["mean"]), (3, sys.float_info.max))
+
     def test_interpolated_percentile(self):
         self.assertAlmostEqual(rules.describe([None, 1, 2, 3, 4])["p90"], 3.7)
 
@@ -207,12 +228,54 @@ class CpuTests(unittest.TestCase):
         samples = [_sample(i, coverage="unknown", processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": i}]) for i in range(2)]
         self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["system_normalized_pct"])
 
+    def test_duplicate_process_identity_has_no_cpu_difference(self):
+        for duplicate_side in ("before", "after"):
+            with self.subTest(duplicate_side=duplicate_side):
+                before = [{"pid": 10, "created_at": "same", "cpu_seconds": 1},
+                          {"pid": 20, "created_at": "other", "cpu_seconds": 0}]
+                after = [{"pid": 10, "created_at": "same", "cpu_seconds": 2},
+                         {"pid": 20, "created_at": "other", "cpu_seconds": 1}]
+                (before if duplicate_side == "before" else after).append(
+                    {"pid": 10, "created_at": "same", "cpu_seconds": 10})
+                interval = rules.cpu_intervals([_sample(0, processes=before), _sample(1, processes=after)])[1]
+                ambiguous = [process for process in interval["processes"] if process["pid"] == 10]
+                self.assertTrue(all(process["single_core_pct"] is None for process in ambiguous))
+                self.assertTrue(all(process["system_normalized_pct"] is None for process in ambiguous))
+                other = next(process for process in interval["processes"] if process["pid"] == 20)
+                self.assertEqual(other["single_core_pct"], 100)
+                self.assertEqual(other["system_normalized_pct"], 25)
+                self.assertEqual(interval["system_busy_pct"], 25)
+
     def test_process_counter_regression_is_unknown(self):
         samples = [_sample(i, processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": 5 - i}]) for i in range(2)]
         self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"])
 
 
 class PressureAndTreeTests(unittest.TestCase):
+    def test_finite_summary_mean_preserves_extremes_and_missing_values(self):
+        maximum, tiny = sys.float_info.max, math.ulp(0.0)
+        for case, values, expected in (
+                ("maximum", [maximum] * 3, maximum),
+                ("negative", [-maximum] * 3, -maximum),
+                ("cancellation", [maximum, 1, -maximum], 1 / 3),
+                ("integers", [1, 2, 3], 2),
+                ("subnormal", [tiny] * 3, tiny),
+                ("missing", [None, 1, None, 3], 2),
+                ("all_missing", [None] * 3, None)):
+            with self.subTest(case=case):
+                records = [{"run_id": "mean", "index": index,
+                            "commit_residual": {"residual_gib": value}}
+                           for index, value in enumerate(values)]
+                stats = rules.summarize(records)["runs"][0]["commit_residual"]["residual_gib"]
+                present = [value for value in values if value is not None]
+                self.assertEqual(stats["samples"], len(present))
+                self.assertEqual(stats["first"], present[0] if present else None)
+                self.assertEqual(stats["last"], present[-1] if present else None)
+                self.assertEqual(stats["min"], min(present) if present else None)
+                self.assertEqual(stats["max"], max(present) if present else None)
+                self.assertEqual(stats["mean"], expected)
+                json.dumps(stats, allow_nan=False)
+
     def test_pressure_streak_requires_sustain(self):
         self.assertEqual(rules.evaluate([_tree(0, free=2), _tree(1, free=2)], sustain=3)["runs"][0]["episodes"], [])
 
@@ -226,6 +289,38 @@ class PressureAndTreeTests(unittest.TestCase):
         record = _tree(0)
         record["host"] = {}
         self.assertIsNone(rules.evaluate([record], sustain=1)["runs"][0]["min_free_gib"])
+
+    def test_pressure_prefers_current_commit_fields_over_legacy_values(self):
+        for limit_source in ("current", "legacy"):
+            with self.subTest(limit_source=limit_source):
+                record = _tree(0, used=99, limit=100)
+                record["commit"] = {"used_bytes": 50 * GIB}
+                expected = 50
+                if limit_source == "current":
+                    record["commit"]["limit_bytes"] = 200 * GIB
+                    expected = 25
+                self.assertEqual(rules.sample_view(record)["commit_pct"], expected)
+                pressure = rules.evaluate([record], sustain=1)["runs"][0]
+                self.assertEqual(pressure["max_commit_pct"], expected)
+                self.assertEqual(pressure["episodes"], [])
+
+    def test_pressure_explicit_unknown_commit_fields_do_not_fall_back(self):
+        for field in ("used_bytes", "limit_bytes"):
+            with self.subTest(field=field):
+                record = _tree(0, used=99, limit=100)
+                record["commit"] = {"used_bytes": 50 * GIB, "limit_bytes": 100 * GIB}
+                record["commit"][field] = None
+                self.assertIsNone(rules.sample_view(record)["commit_pct"])
+                pressure = rules.evaluate([record], sustain=1)["runs"][0]
+                self.assertIsNone(pressure["max_commit_pct"])
+                self.assertEqual(pressure["episodes"], [])
+
+    def test_pressure_legacy_commit_fields_remain_usable(self):
+        record = _tree(0, used=90, limit=100)
+        self.assertEqual(rules.sample_view(record)["commit_pct"], 90)
+        pressure = rules.evaluate([record], sustain=1)["runs"][0]
+        self.assertEqual(pressure["max_commit_pct"], 90)
+        self.assertEqual(pressure["episodes"][0]["reasons"], ["commit_above"])
 
     def test_boolean_sustain_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -276,6 +371,93 @@ class PressureAndTreeTests(unittest.TestCase):
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_finite_window_mean_preserves_extremes_and_missing_values(self):
+        maximum, tiny = sys.float_info.max, math.ulp(0.0)
+        for case, values, expected in (
+                ("maximum", [maximum] * 3, maximum),
+                ("integers", [1, 2, 3], 2),
+                ("subnormal", [tiny] * 3, tiny),
+                ("missing", [None, 1, 3], 2),
+                ("all_missing", [None] * 3, None)):
+            with self.subTest(case=case):
+                metadata_a, metadata_b, pair = _metadata(), _metadata(action=True), _null_pair()
+                for metadata in (metadata_a, metadata_b, pair["metadata_a"], pair["metadata_b"]):
+                    metadata["header"]["warmup_samples"] = 0
+                result = _compare(a=[_sample(index, run="a", reads=value) for index, value in enumerate(values)],
+                                  b=[_sample(index, run="b", reads=value) for index, value in enumerate(values)],
+                                  metadata_a=metadata_a, metadata_b=metadata_b, null_pairs=[pair])
+                for window in ("A", "B"):
+                    stats = result[window]["metrics"]["page_reads_per_sec"]
+                    self.assertEqual(stats["count"], sum(value is not None for value in values))
+                    self.assertEqual(stats["missing"], sum(value is None for value in values))
+                    self.assertEqual(stats["mean"], expected)
+                json.dumps(result, allow_nan=False)
+
+    def test_declared_warmup_is_excluded_from_ab_rate_statistics(self):
+        samples = _window("a")
+        samples[0].metrics["rates"]["page_reads_per_sec"] = 100
+        result = _compare(a=samples, b=_window("b", available=10, reads=10))
+        self.assertEqual(result["verdict"], "cosmetic-or-harmful")
+        self.assertEqual(result["A"]["metrics"]["page_reads_per_sec"]["mean"], 1)
+        self.assertEqual(result["A"]["metrics"]["available_bytes"]["count"], 3)
+
+    def test_declared_warmup_is_excluded_from_null_calibration(self):
+        pair = _null_pair()
+        pair["b"][0].metrics["rates"]["page_reads_per_sec"] = 100
+        result = _compare(b=_window("b", available=10, reads=10), null_pairs=[pair])
+        self.assertEqual(result["verdict"], "cosmetic-or-harmful")
+
+    def test_zero_warmup_keeps_first_rate_sample(self):
+        samples = _window("a")
+        samples[0].metrics["rates"]["page_reads_per_sec"] = 100
+        metadata_a, metadata_b, pair = _metadata(), _metadata(action=True), _null_pair()
+        for metadata in (metadata_a, metadata_b, pair["metadata_a"], pair["metadata_b"]):
+            metadata["header"]["warmup_samples"] = 0
+        result = _compare(a=samples, b=_window("b", available=10, reads=10),
+                          metadata_a=metadata_a, metadata_b=metadata_b, null_pairs=[pair])
+        self.assertEqual(result["verdict"], "benefit-for-this-workload")
+        self.assertEqual(result["A"]["metrics"]["page_reads_per_sec"]["mean"], 34)
+
+    def test_ab_warmup_mismatch_is_insufficient(self):
+        metadata = _metadata(action=True)
+        metadata["header"]["warmup_samples"] = 0
+        result = _compare(metadata_b=metadata)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("A/B: 速率预热条件不一致", result["evidence_issues"])
+
+    def test_null_warmup_mismatch_is_insufficient(self):
+        pair = _null_pair()
+        pair["metadata_a"]["header"]["warmup_samples"] = 0
+        result = _compare(null_pairs=[pair])
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("A/A: 校准条件与实验不一致", result["evidence_issues"])
+
+    def test_boolean_warmup_has_no_valid_rate_window(self):
+        metadata = _metadata(action=True)
+        metadata["header"]["warmup_samples"] = True
+        result = _compare(metadata_b=metadata)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("B: 速率预热条件无效", result["evidence_issues"])
+        self.assertIsNone(result["B"]["metrics"]["page_reads_per_sec"]["mean"])
+
+    def test_warmup_cannot_exhaust_the_observation_window(self):
+        metadata = _metadata(action=True)
+        metadata["header"]["warmup_samples"] = 3
+        result = _compare(metadata_b=metadata)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("B: 速率预热条件无效", result["evidence_issues"])
+        self.assertIsNone(result["B"]["metrics"]["page_reads_per_sec"]["mean"])
+        self.assertEqual(result["B"]["metrics"]["available_bytes"]["count"], 3)
+
+    def test_disk_write_increase_without_cost_threshold_blocks_benefit(self):
+        samples = _window("b", available=10)
+        for sample in samples:
+            sample.metrics["rates"]["disk_write_bytes_per_sec"] = 100 * 1024 ** 2
+        result = _compare(b=samples)
+        self.assertEqual(result["verdict"], "insufficient_evidence")
+        self.assertIn("磁盘写入增加，缺少写入代价判定阈值", result["evidence_issues"])
+        self.assertEqual(result["B"]["metrics"]["disk_write_bytes_per_sec"]["mean"], 100 * 1024 ** 2)
+
     def test_uncalibrated_gain_is_insufficient(self):
         self.assertEqual(_compare(null_pairs=[])["verdict"], "insufficient_evidence")
 
@@ -367,6 +549,19 @@ class ComparisonTests(unittest.TestCase):
             pair["metadata_a"]["header"][key] = value
             pair["metadata_b"]["header"][key] = value
             self.assertEqual(_compare(null_pairs=[pair])["verdict"], "insufficient_evidence")
+
+    def test_calibration_experiment_mismatch_is_insufficient(self):
+        for mismatch_side in ("metadata_a", "metadata_b", "both"):
+            with self.subTest(mismatch_side=mismatch_side):
+                pair = _null_pair()
+                for side in ("metadata_a", "metadata_b"):
+                    if mismatch_side in (side, "both"):
+                        pair[side]["header"]["experiment_id"] = "other-experiment"
+                result = _compare(null_pairs=[pair])
+                self.assertEqual(result["verdict"], "insufficient_evidence")
+                self.assertEqual(result["null_calibration"]["pairs"], 0)
+                self.assertIn("A/A: 校准条件与实验不一致", result["evidence_issues"])
+                self.assertEqual(result["deltas"]["available_tail_median_bytes"], 2 * GIB)
 
     def test_environment_mismatch_is_insufficient(self):
         metadata = _metadata(action=True)

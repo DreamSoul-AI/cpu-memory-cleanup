@@ -51,6 +51,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual(app.calls, [("inspect", {"count": 1, "interval": 1, "with_processes": False, "top": 10})])
         self.assertIn("原生维护调用：False", text)
 
+    def test_text_report_preserves_sample_gap_reasons(self):
+        report = RunReport("fake-run", "inspect", completion="success", samples=[
+            Sample("fake-run", 0, None, {}, errors=["PDH warmup"]),
+            Sample("fake-run", 1, None, {}, errors=["counter unavailable"]),
+        ])
+        app = FakeApplication()
+        app.inspect = lambda _: report
+        _, code, text = self.execute([], app)
+        self.assertEqual(code, 0)
+        self.assertIn("PDH warmup", text)
+        self.assertIn("counter unavailable", text)
+        self.assertIn('"sequence": 1', text)
+
     def test_explicit_release_passes_confirmation_and_directory(self):
         app, code, _ = self.execute(["--release", "--release-what", "standby", "--output-dir", "中文运行"])
         _, request, directory = app.calls[0]

@@ -116,10 +116,14 @@ class RunReader:
         path = self.sample_path if kind == "samples" else self.sample_path.parent / "operation.jsonl"
         if path.stat().st_size > MAX_FILE_BYTES:
             raise ValueError("文件超出大小上限")
-        stream = path.open(encoding="utf-8-sig")
+        stream = path.open(encoding="utf-8-sig", errors="surrogateescape")
         self.streams.append(stream)
         for number, line in enumerate(stream, 1):
-            if len(line.encode("utf-8")) > MAX_LINE_BYTES:
+            try:
+                line_size = len(line.encode("utf-8"))
+            except UnicodeEncodeError as error:
+                raise ValueError(f"第 {number} 行：记录编码无效") from error
+            if line_size > MAX_LINE_BYTES:
                 raise ValueError(f"第 {number} 行超出大小上限")
             if not line.strip():
                 continue

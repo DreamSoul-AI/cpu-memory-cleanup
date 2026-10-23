@@ -70,6 +70,7 @@ RATE_COUNTERS = {
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 PDH_FMT_DOUBLE = 0x200
 PDH_FMT_LARGE = 0x400
+PDH_FMT_NOSCALE = 0x1000
 PDH_CSTATUS_INVALID_DATA = 0xC0000BBA
 PDH_INVALID_DATA = 0xC0000BC6
 
@@ -99,7 +100,8 @@ class CounterSession:
         self._collect = None
         self._get = None
         self._close = None
-        self._warmup_noted = set()
+        self._close_unknown = False
+        self._first_collection = True
 
     def open(self, warnings):
         specs = dict(COUNTERS)
@@ -112,12 +114,11 @@ class CounterSession:
         self._get = bind(pdh, "PdhGetFormattedCounterValue",
                          [w.HANDLE, w.DWORD, c.POINTER(w.DWORD), c.POINTER(CounterValue)], w.LONG)
         self._close = bind(pdh, "PdhCloseQuery", [w.HANDLE], w.LONG)
-        query = w.HANDLE()
+        query = self._query = w.HANDLE()
         status = open_query(None, 0, c.byref(query))
         if status:
             warnings.append(f"PDH open unavailable: 0x{status & 0xffffffff:08x}")
             return False
-        self._query = query
         self.ready = True
         for key, path in specs.items():
             handle = w.HANDLE()
@@ -126,7 +127,7 @@ class CounterSession:
                 warnings.append(f"{key} unavailable: PDH 0x{status & 0xffffffff:08x}")
             else:
                 self._handles[key] = handle
-                self._formats[key] = PDH_FMT_DOUBLE if key in RATE_COUNTERS else PDH_FMT_LARGE
+                self._formats[key] = (PDH_FMT_DOUBLE if key in RATE_COUNTERS else PDH_FMT_LARGE) | PDH_FMT_NOSCALE
         return True
 
     def collect(self, warnings):
@@ -138,15 +139,13 @@ class CounterSession:
         if status:
             warnings.append(f"PDH collection unavailable: 0x{status & 0xffffffff:08x}")
             return capacity, rates
+        first_collection, self._first_collection = self._first_collection, False
         for key, handle in self._handles.items():
+            if key in RATE_COUNTERS and first_collection:
+                warnings.append(f"{key} unavailable until the next sample: no previous PDH interval")
+                continue
             value = CounterValue()
             status = self._get(handle, self._formats[key], None, c.byref(value))
-            if key in RATE_COUNTERS and (
-                    status == PDH_INVALID_DATA or value.CStatus == PDH_CSTATUS_INVALID_DATA):
-                if key not in self._warmup_noted:
-                    self._warmup_noted.add(key)
-                    warnings.append(f"{key} unavailable until the next sample: no previous PDH interval")
-                continue
             if key in RATE_COUNTERS:
                 reading = value.value.doubleValue
             else:
@@ -162,8 +161,14 @@ class CounterSession:
         return capacity, rates
 
     def close(self):
-        if self._query is not None and self._close is not None:
+        if self._query and self._close is not None:
+            if self._close_unknown:
+                raise OSError("PDH关闭结果未知，不能重试关闭")
+            self._close_unknown = True
             status = self._close(self._query)
+            if not status:
+                self._query = None
+            self._close_unknown = False
             if status:
                 raise OSError(f"PdhCloseQuery failed: 0x{status & 0xffffffff:08x}")
         self._query = None
@@ -271,7 +276,7 @@ def _read_cpu(kernel, errors):
     return result
 
 
-def _read_processes(kernel, psapi, errors, pending_handles):
+def _read_processes(kernel, psapi, errors, pending_handles, unknown_handles):
     enum = bind(psapi, "EnumProcesses", [c.POINTER(w.DWORD), w.DWORD, c.POINTER(w.DWORD)], w.BOOL)
     open_process = bind(kernel, "OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE)
     close = bind(kernel, "CloseHandle", [w.HANDLE], w.BOOL)
@@ -295,6 +300,8 @@ def _read_processes(kernel, psapi, errors, pending_handles):
         if not handle:
             skipped += 1
             continue
+        pending_handles.append(handle)
+        interruption = None
         try:
             stats = ProcessMemoryEx(cb=c.sizeof(ProcessMemoryEx))
             name, length = c.create_unicode_buffer(32768), w.DWORD(32768)
@@ -308,10 +315,23 @@ def _read_processes(kernel, psapi, errors, pending_handles):
                               "cpu_seconds": (_filetime(kern) + _filetime(user)) / 10_000_000,
                               "name": ntpath.basename(name.value), "working_set_bytes": stats.WorkingSetSize,
                               "private_bytes": stats.PrivateUsage, "parent_pid": None})
+        except BaseException as error:
+            if not isinstance(error, Exception):
+                interruption = error
+            raise
         finally:
-            if not close(handle):
-                errors.append("进程读取句柄关闭失败")
-                pending_handles.append(handle)
+            try:
+                unknown_handles.add(handle)
+                closed = close(handle)
+                if closed:
+                    pending_handles.remove(handle)
+                unknown_handles.remove(handle)
+                if not closed:
+                    errors.append("进程读取句柄关闭失败")
+            except BaseException:
+                if interruption is not None:
+                    raise interruption
+                raise
     if skipped:
         errors.append(f"进程读取不完整，{skipped}项不可读或已退出")
     return processes, {"enumerated": needed.value // c.sizeof(w.DWORD), "readable": len(processes),
@@ -342,23 +362,27 @@ class _Observation:
         self.backend, self.with_processes = backend, with_processes
         self.kernel, self.psapi = backend._dll("kernel32.dll"), backend._dll("psapi.dll")
         self.counters = CounterSession(include_rates=True, dll_loader=backend._dll)
+        self._counters_initialized = False
         self.open_errors = []
         self.pending_handles = []
+        self.unknown_handles = set()
         self.closed = False
-        try:
-            self.counters.open(self.open_errors)
-        except (OSError, AttributeError) as error:
-            self.open_errors.append("PDH不可用: " + _error_text(error))
-            self.counters.ready = False
-            try:
-                self.counters.close()
-            except OSError as close_error:
-                self.open_errors.append("PDH初始化收尾失败: " + _error_text(close_error))
 
     def read(self, run_id, sequence):
         if self.closed:
             raise RuntimeError("读取会话已关闭")
-        errors, self.open_errors = self.open_errors, []
+        if not self._counters_initialized:
+            self._counters_initialized = True
+            try:
+                self.counters.open(self.open_errors)
+            except (OSError, AttributeError) as error:
+                self.open_errors.append("PDH不可用: " + _error_text(error))
+                self.counters.ready = False
+                try:
+                    self.counters.close()
+                except OSError as close_error:
+                    self.open_errors.append("PDH初始化收尾失败: " + _error_text(close_error))
+        errors = self.open_errors.copy()
         info = PerformanceInfo(cb=c.sizeof(PerformanceInfo))
         get_info = bind(self.psapi, "GetPerformanceInfo", [c.POINTER(PerformanceInfo), w.DWORD], w.BOOL)
         check(get_info(c.byref(info), c.sizeof(info)))
@@ -386,7 +410,7 @@ class _Observation:
         if self.with_processes:
             try:
                 processes, metrics["process_coverage"] = _read_processes(
-                    self.kernel, self.psapi, errors, self.pending_handles)
+                    self.kernel, self.psapi, errors, self.pending_handles, self.unknown_handles)
             except (OSError, AttributeError) as error:
                 metrics["process_coverage"] = {"enumerated": None, "readable": None,
                                                "scope": "enumerated_processes", "coverage": "unknown"}
@@ -401,14 +425,19 @@ class _Observation:
             self.counters.close()
         except OSError as error:
             errors.append(_error_text(error))
-        remaining = []
-        for handle in self.pending_handles:
+        for handle in list(self.pending_handles):
+            if handle in self.unknown_handles:
+                errors.append("进程句柄关闭结果未知，不能重试关闭")
+                continue
+            self.unknown_handles.add(handle)
+            closed = bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle)
+            if closed:
+                self.pending_handles.remove(handle)
+            self.unknown_handles.remove(handle)
             try:
-                check(bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle))
+                check(closed)
             except OSError as error:
-                remaining.append(handle)
                 errors.append("进程句柄关闭失败: " + _error_text(error))
-        self.pending_handles = remaining
         self.closed = not errors
         return {"closed": self.closed, "errors": errors}
 
@@ -420,10 +449,11 @@ def _privilege_luid(advapi):
     return luid
 
 
-def _open_token(kernel, advapi, access):
+def _open_token(kernel, advapi, access, tokens):
     current = bind(kernel, "GetCurrentProcess", [], w.HANDLE)()
     token = w.HANDLE()
     opener = bind(advapi, "OpenProcessToken", [w.HANDLE, w.DWORD, c.POINTER(w.HANDLE)], w.BOOL)
+    tokens.append(token)
     check(opener(current, access, c.byref(token)))
     return token
 
@@ -465,6 +495,9 @@ class _Operation:
         self.kernel = self.advapi = self.nt_call = None
         self.handle = None
         self.tokens = []
+        self._unknown_handles = []
+        self._wait_unknown = False
+        self._release_unknown = False
         self.owned = self.local_owned = self.consumed = self.closed = False
         self.owner_thread = None
         self._preflight = None
@@ -491,17 +524,31 @@ class _Operation:
             create = bind(self.kernel, "CreateMutexW", [c.c_void_p, w.BOOL, w.LPCWSTR], w.HANDLE)
             self.handle = create(None, False, MUTEX_NAME)
             check(self.handle)
-            status = bind(self.kernel, "WaitForSingleObject", [w.HANDLE, w.DWORD], w.DWORD)(self.handle, 0)
+            wait = bind(self.kernel, "WaitForSingleObject", [w.HANDLE, w.DWORD], w.DWORD)
+            self._wait_unknown = True
+            status = wait(self.handle, 0)
             self.owned = status in (0, 0x80)
+            self._wait_unknown = False
             if status != 0:
                 raise OSError("维护互斥被遗弃，需要核对" if status == 0x80 else "维护互斥忙或不可用")
             result["lock_acquired"] = True
-            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY)
-            self.tokens.append(token)
+            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY, self.tokens)
+            interruption = None
             try:
                 attrs = _privilege_attributes(self.advapi, token, _privilege_luid(self.advapi))
+            except (OSError, AttributeError) as error:
+                result["errors"].append(_error_text(error))
+            except BaseException as error:
+                interruption = error
             finally:
-                self._close_token(token, result["errors"])
+                try:
+                    self._close_token(token, result["errors"])
+                except BaseException as error:
+                    result["errors"].append("令牌关闭失败: " + _error_text(error))
+                    if interruption is None:
+                        interruption = error
+            if interruption is not None:
+                raise interruption
             if not result["errors"]:
                 result["privilege_available"] = attrs is not None and not bool(attrs & SE_PRIVILEGE_REMOVED)
         except (OSError, AttributeError) as error:
@@ -509,12 +556,21 @@ class _Operation:
         return dict(result)
 
     def _close_token(self, token, errors):
+        if not token.value:
+            self.tokens.remove(token)
+            return
+        if token in self._unknown_handles:
+            errors.append("令牌关闭结果未知，不能重试关闭")
+            return
         try:
-            check(bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(token))
+            self._unknown_handles.append(token)
+            closed = bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(token)
+            if closed:
+                self.tokens.remove(token)
+            self._unknown_handles.remove(token)
+            check(closed)
         except (OSError, AttributeError) as error:
             errors.append("令牌关闭失败: " + _error_text(error))
-        else:
-            self.tokens.remove(token)
 
     def perform_once(self):
         if self.consumed or self.closed:
@@ -530,9 +586,9 @@ class _Operation:
             result["errors"].append("维护必须在取得互斥的线程执行")
             return result
         token, original, luid, adjusted = None, None, None, False
+        interruption = None
         try:
-            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES)
-            self.tokens.append(token)
+            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, self.tokens)
             luid = _privilege_luid(self.advapi)
             original = _privilege_attributes(self.advapi, token, luid)
             if original is None or original & SE_PRIVILEGE_REMOVED:
@@ -560,6 +616,8 @@ class _Operation:
                                   call_outcome="success" if status == 0 else "failure")
         except (OSError, AttributeError) as error:
             result["errors"].append(_error_text(error))
+        except BaseException as error:
+            interruption = error
         finally:
             if token is not None:
                 if adjusted:
@@ -568,41 +626,70 @@ class _Operation:
                         _adjust_privilege(self.advapi, token, state)
                         if _privilege_attributes(self.advapi, token, luid) != original:
                             raise OSError("原特权状态未恢复")
-                    except (OSError, AttributeError) as error:
+                    except BaseException as error:
                         self._restore_failed = True
                         result["privilege_restored"] = False
                         result["errors"].append("特权恢复失败: " + _error_text(error))
+                        if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                            interruption = error
                 elif original is not None:
                     try:
                         if _privilege_attributes(self.advapi, token, luid) != original:
                             raise OSError("调用后原有特权状态无法确认")
-                    except (OSError, AttributeError) as error:
+                    except BaseException as error:
                         self._restore_failed = True
                         result["privilege_restored"] = False
                         result["errors"].append("特权状态核对失败: " + _error_text(error))
-                self._close_token(token, result["errors"])
+                        if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                            interruption = error
+                try:
+                    self._close_token(token, result["errors"])
+                except BaseException as error:
+                    result["errors"].append("令牌关闭失败: " + _error_text(error))
+                    if interruption is None:
+                        interruption = error
+        if interruption is not None:
+            raise interruption
         return result
 
     def close(self):
+        self.consumed = True
         if self.closed:
             return {"closed": not self._restore_failed, "errors": []}
+        if self._wait_unknown:
+            return {"closed": False, "errors": ["互斥取得结果未知，保留句柄和进程维护阻断"]}
         errors = []
         if self.owned and threading.get_ident() != self.owner_thread:
             return {"closed": False, "errors": ["必须由取得互斥的线程关闭维护会话"]}
         for token in list(self.tokens):
             self._close_token(token, errors)
         if self.owned:
-            try:
-                check(bind(self.kernel, "ReleaseMutex", [w.HANDLE], w.BOOL)(self.handle))
-                self.owned = False
-            except OSError as error:
-                errors.append("互斥释放失败: " + _error_text(error))
+            if self._release_unknown:
+                errors.append("互斥释放结果未知，不能重试释放")
+            else:
+                try:
+                    self._release_unknown = True
+                    released = bind(self.kernel, "ReleaseMutex", [w.HANDLE], w.BOOL)(self.handle)
+                    if released:
+                        self.owned = False
+                    self._release_unknown = False
+                    check(released)
+                except OSError as error:
+                    errors.append("互斥释放失败: " + _error_text(error))
         if self.handle is not None and not self.owned:
-            try:
-                check(bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(self.handle))
-                self.handle = None
-            except OSError as error:
-                errors.append("互斥句柄关闭失败: " + _error_text(error))
+            if self.handle in self._unknown_handles:
+                errors.append("互斥句柄关闭结果未知，不能重试关闭")
+            else:
+                try:
+                    handle = self.handle
+                    self._unknown_handles.append(handle)
+                    closed = bind(self.kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle)
+                    if closed:
+                        self.handle = None
+                    self._unknown_handles.remove(handle)
+                    check(closed)
+                except OSError as error:
+                    errors.append("互斥句柄关闭失败: " + _error_text(error))
         if self._restore_failed:
             errors.append("维护后的资源或安全上下文未确认，阻止后续维护")
         if not errors and self.local_owned:
