@@ -2174,6 +2174,94 @@
           "resource": "release"
         }
       ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py",
+      "subtests": [
+        {
+          "source_case": "complete"
+        },
+        {
+          "source_case": "corrupt_tail"
+        },
+        {
+          "source_case": "foreign_run"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py",
+      "subtests": [
+        {
+          "phase": "preflight",
+          "interruption_timing": "before"
+        },
+        {
+          "phase": "preflight",
+          "interruption_timing": "after"
+        },
+        {
+          "phase": "perform",
+          "interruption_timing": "before"
+        },
+        {
+          "phase": "perform",
+          "interruption_timing": "after"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py",
+      "subtests": [
+        {
+          "interruption_timing": "before"
+        },
+        {
+          "interruption_timing": "after"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py",
+      "subtests": [
+        {
+          "query_failure": "interrupt",
+          "close_failure": "interrupt"
+        },
+        {
+          "query_failure": "interrupt",
+          "close_failure": "error"
+        },
+        {
+          "query_failure": "interrupt",
+          "close_failure": "none"
+        },
+        {
+          "query_failure": "error",
+          "close_failure": "interrupt"
+        },
+        {
+          "query_failure": "error",
+          "close_failure": "error"
+        },
+        {
+          "query_failure": "error",
+          "close_failure": "none"
+        }
+      ]
     }
   ],
   "cost_classes": {
@@ -2487,7 +2575,12 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_close_interrupt_keeps_unknown_and_blocks_replay",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_close_interrupt_keeps_unknown_and_blocks_replay",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_release_interrupt_keeps_unknown_and_blocks_replay",
-        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_known_close_failures_remain_retryable"
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_known_close_failures_remain_retryable",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt"
       ],
       "required": [
         "tests/scripts/test_desktop_memory_button.py::DesktopMemoryButtonTests.test_default_route_is_readonly",
@@ -2788,7 +2881,12 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_close_interrupt_keeps_unknown_and_blocks_replay",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_close_interrupt_keeps_unknown_and_blocks_replay",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_release_interrupt_keeps_unknown_and_blocks_replay",
-        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_known_close_failures_remain_retryable"
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_known_close_failures_remain_retryable",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt"
       ],
       "dependencies": [],
       "resources": [],
@@ -3032,7 +3130,9 @@
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
-        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_calibration_experiment_mismatch_is_insufficient"
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_calibration_experiment_mismatch_is_insufficient",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps"
       ],
       "required": [
         "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_default_only_requests_one_readonly_sample",
@@ -3133,7 +3233,9 @@
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values",
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back",
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
-        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_calibration_experiment_mismatch_is_insufficient"
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_calibration_experiment_mismatch_is_insufficient",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps"
       ],
       "dependencies": [],
       "resources": [],

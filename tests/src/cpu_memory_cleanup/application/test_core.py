@@ -91,6 +91,60 @@ class CoreTests(unittest.TestCase):
         self.assertFalse(reviewed.action["attempted"])
         self.assertEqual(self.backend.calls, 0)
 
+    def test_review_directory_action_cannot_be_hidden_by_inspect_header(self):
+        for source_case in ("complete", "corrupt_tail", "foreign_run"):
+            with self.subTest(source_case=source_case):
+                original = self.maintain()
+                path = Path(original.output_dir) / "samples.jsonl"
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                rows[0]["mode"] = "inspect"
+                del rows[0]["mechanism"]
+                path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+                action_path = path.parent / "operation.jsonl"
+                if source_case == "corrupt_tail":
+                    with action_path.open("a", encoding="utf-8") as stream:
+                        stream.write("{invalid\n")
+                elif source_case == "foreign_run":
+                    actions = [json.loads(line) for line in action_path.read_text(encoding="utf-8").splitlines()]
+                    for row in actions:
+                        row["run_id"] = "other-run"
+                    action_path.write_text("\n".join(json.dumps(row) for row in actions) + "\n", encoding="utf-8")
+                calls, opens = self.backend.calls, self.backend.opens
+                report = self.app.review(original.output_dir)
+                self.assertEqual(report.completion, "failed")
+                self.assertEqual(report.samples, original.samples)
+                self.assertEqual(report.metadata["header"], rows[0])
+                self.assertEqual(report.analysis, {})
+                if source_case == "foreign_run":
+                    self.assertEqual(report.action["call_outcome"], "unknown")
+                    self.assertIsNone(report.action["attempted"])
+                else:
+                    self.assertEqual(report.action, original.action)
+                self.assertEqual(report.errors[0]["type"], "ValueError")
+                self.assertEqual((self.backend.calls, self.backend.opens), (calls, opens))
+                self.assertFalse(self.app.busy)
+
+    def test_review_directory_action_without_declared_mode_retains_legacy_gaps(self):
+        original = self.maintain()
+        path = Path(original.output_dir) / "samples.jsonl"
+        rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        del rows[0]["mode"]
+        del rows[0]["mechanism"]
+        path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
+        calls, opens = self.backend.calls, self.backend.opens
+        report = self.app.review(original.output_dir)
+        self.assertEqual(report.completion, "partial")
+        self.assertEqual(report.action, original.action)
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.analysis, original.analysis)
+        self.assertFalse(report.metadata["recomputed"])
+        self.assertEqual(report.metadata["header"], rows[0])
+        self.assertIn("缺少运行元数据 mode", report.metadata["source_gaps"])
+        self.assertNotIn("动作记录未完整读取", report.metadata["source_gaps"])
+        self.assertEqual(report.errors[0]["phase"], "source")
+        self.assertEqual((self.backend.calls, self.backend.opens), (calls, opens))
+        self.assertFalse(self.app.busy)
+
     def test_top_is_forwarded_to_analysis_and_saved_conditions(self):
         report = self.app.inspect({"with_processes": True, "top": 2})
         self.assertEqual(report.analysis["process_ranking"]["limit"], 2)

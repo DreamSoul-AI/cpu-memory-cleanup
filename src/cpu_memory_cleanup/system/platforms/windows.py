@@ -439,10 +439,11 @@ def _privilege_luid(advapi):
     return luid
 
 
-def _open_token(kernel, advapi, access):
+def _open_token(kernel, advapi, access, tokens):
     current = bind(kernel, "GetCurrentProcess", [], w.HANDLE)()
     token = w.HANDLE()
     opener = bind(advapi, "OpenProcessToken", [w.HANDLE, w.DWORD, c.POINTER(w.HANDLE)], w.BOOL)
+    tokens.append(token)
     check(opener(current, access, c.byref(token)))
     return token
 
@@ -485,6 +486,7 @@ class _Operation:
         self.handle = None
         self.tokens = []
         self._unknown_handles = []
+        self._wait_unknown = False
         self._release_unknown = False
         self.owned = self.local_owned = self.consumed = self.closed = False
         self.owner_thread = None
@@ -512,17 +514,31 @@ class _Operation:
             create = bind(self.kernel, "CreateMutexW", [c.c_void_p, w.BOOL, w.LPCWSTR], w.HANDLE)
             self.handle = create(None, False, MUTEX_NAME)
             check(self.handle)
-            status = bind(self.kernel, "WaitForSingleObject", [w.HANDLE, w.DWORD], w.DWORD)(self.handle, 0)
+            wait = bind(self.kernel, "WaitForSingleObject", [w.HANDLE, w.DWORD], w.DWORD)
+            self._wait_unknown = True
+            status = wait(self.handle, 0)
             self.owned = status in (0, 0x80)
+            self._wait_unknown = False
             if status != 0:
                 raise OSError("维护互斥被遗弃，需要核对" if status == 0x80 else "维护互斥忙或不可用")
             result["lock_acquired"] = True
-            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY)
-            self.tokens.append(token)
+            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY, self.tokens)
+            interruption = None
             try:
                 attrs = _privilege_attributes(self.advapi, token, _privilege_luid(self.advapi))
+            except (OSError, AttributeError) as error:
+                result["errors"].append(_error_text(error))
+            except BaseException as error:
+                interruption = error
             finally:
-                self._close_token(token, result["errors"])
+                try:
+                    self._close_token(token, result["errors"])
+                except BaseException as error:
+                    result["errors"].append("令牌关闭失败: " + _error_text(error))
+                    if interruption is None:
+                        interruption = error
+            if interruption is not None:
+                raise interruption
             if not result["errors"]:
                 result["privilege_available"] = attrs is not None and not bool(attrs & SE_PRIVILEGE_REMOVED)
         except (OSError, AttributeError) as error:
@@ -530,6 +546,9 @@ class _Operation:
         return dict(result)
 
     def _close_token(self, token, errors):
+        if not token.value:
+            self.tokens.remove(token)
+            return
         if token in self._unknown_handles:
             errors.append("令牌关闭结果未知，不能重试关闭")
             return
@@ -559,8 +578,7 @@ class _Operation:
         token, original, luid, adjusted = None, None, None, False
         interruption = None
         try:
-            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES)
-            self.tokens.append(token)
+            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, self.tokens)
             luid = _privilege_luid(self.advapi)
             original = _privilege_attributes(self.advapi, token, luid)
             if original is None or original & SE_PRIVILEGE_REMOVED:
@@ -628,6 +646,8 @@ class _Operation:
         self.consumed = True
         if self.closed:
             return {"closed": not self._restore_failed, "errors": []}
+        if self._wait_unknown:
+            return {"closed": False, "errors": ["互斥取得结果未知，保留句柄和进程维护阻断"]}
         errors = []
         if self.owned and threading.get_ident() != self.owner_thread:
             return {"closed": False, "errors": ["必须由取得互斥的线程关闭维护会话"]}

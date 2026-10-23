@@ -63,7 +63,7 @@ def _legacy_sample(record, index):
 def _load_run(reader, check_cancel, result):
     def load_action(header):
         expects_action = header.get("mode") == "maintain" or bool(header.get("mechanism"))
-        if expects_action and reader.has_actions:
+        if (expects_action or reader.is_directory) and reader.has_actions:
             action_phase = None
             for record in reader.read("operation"):
                 check_cancel()
@@ -90,6 +90,8 @@ def _load_run(reader, check_cancel, result):
                         result["gaps"].append("维护运行未完整成功或恢复未确认")
                 else:
                     raise ValueError("未知动作记录类型")
+            if header.get("mode") == "inspect":
+                raise ValueError("动作记录与运行头声明不一致")
             if result["action"].get("call_outcome") == "unknown":
                 result["gaps"].append("历史动作结果未知，不重放")
         if expects_action and not result["action"]:
