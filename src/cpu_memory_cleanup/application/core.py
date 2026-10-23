@@ -510,6 +510,7 @@ class Application:
             self._check_cancel()
             if comparison is not None:
                 other = load(comparison)
+                report.metadata["comparison_source_gaps"] = other["gaps"]
                 report.analysis = rules.compare(original["samples"], other["samples"], conditions=effective,
                                                 metadata_a=original, metadata_b=other)
             elif conditions is None and original["analysis"] is not None:
@@ -522,6 +523,9 @@ class Application:
             self._check_cancel()
             if original["gaps"]:
                 self._error(report, "source", ValueError("原运行条件或结果不完整，不能支持收益"), interruptions)
+            if report.metadata.get("comparison_source_gaps"):
+                self._error(report, "comparison_source", ValueError("比较运行条件或结果不完整，不能支持收益："
+                            + "；".join(report.metadata["comparison_source_gaps"])), interruptions)
             report.completion = "partial" if report.errors else "success"
             report.phase = "finished"
         except _Cancelled:

@@ -1,11 +1,19 @@
 """只使用合成样本验证规则，不采样、不创建界面、不执行维护。"""
 
 from copy import deepcopy
+import contextlib
+import io
+import json
 import math
+from pathlib import Path
+import sys
+import tempfile
 import unittest
 
 from cpu_memory_cleanup.contracts import Sample
 from cpu_memory_cleanup.application import rules
+from cpu_memory_cleanup.interaction import cli
+from tests.support import make_app
 
 GIB = 1024 ** 3
 
@@ -88,6 +96,19 @@ def _tree(index, *, run="tree", free=10, used=50, limit=100, processes=600,
 
 
 class StatisticsTests(unittest.TestCase):
+    def test_extreme_finite_mean_survives_offline_cli_json(self):
+        records = [_tree(index, free=sys.float_info.max) for index in range(3)]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "finite.jsonl"
+            source.write_text("\n".join(json.dumps(record, allow_nan=False) for record in records) + "\n", encoding="utf-8")
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = cli.run(make_app(), cli.parse_args(["--review", str(source), "--json"]))
+        report = json.loads(output.getvalue())
+        self.assertEqual((code, report["completion"], len(report["samples"])), (1, "partial", 3))
+        stats = report["analysis"]["tree_summary"]["runs"][0]["host_free_gib"]
+        self.assertEqual((stats["samples"], stats["mean"]), (3, sys.float_info.max))
+
     def test_interpolated_percentile(self):
         self.assertAlmostEqual(rules.describe([None, 1, 2, 3, 4])["p90"], 3.7)
 
@@ -231,6 +252,30 @@ class CpuTests(unittest.TestCase):
 
 
 class PressureAndTreeTests(unittest.TestCase):
+    def test_finite_summary_mean_preserves_extremes_and_missing_values(self):
+        maximum, tiny = sys.float_info.max, math.ulp(0.0)
+        for case, values, expected in (
+                ("maximum", [maximum] * 3, maximum),
+                ("negative", [-maximum] * 3, -maximum),
+                ("cancellation", [maximum, 1, -maximum], 1 / 3),
+                ("integers", [1, 2, 3], 2),
+                ("subnormal", [tiny] * 3, tiny),
+                ("missing", [None, 1, None, 3], 2),
+                ("all_missing", [None] * 3, None)):
+            with self.subTest(case=case):
+                records = [{"run_id": "mean", "index": index,
+                            "commit_residual": {"residual_gib": value}}
+                           for index, value in enumerate(values)]
+                stats = rules.summarize(records)["runs"][0]["commit_residual"]["residual_gib"]
+                present = [value for value in values if value is not None]
+                self.assertEqual(stats["samples"], len(present))
+                self.assertEqual(stats["first"], present[0] if present else None)
+                self.assertEqual(stats["last"], present[-1] if present else None)
+                self.assertEqual(stats["min"], min(present) if present else None)
+                self.assertEqual(stats["max"], max(present) if present else None)
+                self.assertEqual(stats["mean"], expected)
+                json.dumps(stats, allow_nan=False)
+
     def test_pressure_streak_requires_sustain(self):
         self.assertEqual(rules.evaluate([_tree(0, free=2), _tree(1, free=2)], sustain=3)["runs"][0]["episodes"], [])
 
@@ -326,6 +371,28 @@ class PressureAndTreeTests(unittest.TestCase):
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_finite_window_mean_preserves_extremes_and_missing_values(self):
+        maximum, tiny = sys.float_info.max, math.ulp(0.0)
+        for case, values, expected in (
+                ("maximum", [maximum] * 3, maximum),
+                ("integers", [1, 2, 3], 2),
+                ("subnormal", [tiny] * 3, tiny),
+                ("missing", [None, 1, 3], 2),
+                ("all_missing", [None] * 3, None)):
+            with self.subTest(case=case):
+                metadata_a, metadata_b, pair = _metadata(), _metadata(action=True), _null_pair()
+                for metadata in (metadata_a, metadata_b, pair["metadata_a"], pair["metadata_b"]):
+                    metadata["header"]["warmup_samples"] = 0
+                result = _compare(a=[_sample(index, run="a", reads=value) for index, value in enumerate(values)],
+                                  b=[_sample(index, run="b", reads=value) for index, value in enumerate(values)],
+                                  metadata_a=metadata_a, metadata_b=metadata_b, null_pairs=[pair])
+                for window in ("A", "B"):
+                    stats = result[window]["metrics"]["page_reads_per_sec"]
+                    self.assertEqual(stats["count"], sum(value is not None for value in values))
+                    self.assertEqual(stats["missing"], sum(value is None for value in values))
+                    self.assertEqual(stats["mean"], expected)
+                json.dumps(result, allow_nan=False)
+
     def test_declared_warmup_is_excluded_from_ab_rate_statistics(self):
         samples = _window("a")
         samples[0].metrics["rates"]["page_reads_per_sec"] = 100

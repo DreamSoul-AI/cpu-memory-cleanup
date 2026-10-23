@@ -683,6 +683,8 @@ def rebuild_report(directory):
     entries = {entry["test_id"]: entry for entry in _expanded(manifest["selected"])}
     plan = manifest["plan"]
     required = manifest["required"]
+    required_groups = {entry["test_id"] for entry in manifest["selected"] if entry.get("subtests")
+                       and any(child["test_id"] in required for child in _expanded([entry]))}
     blockers = []
     for identity in required:
         if identity not in entries or not _acceptable(latest.get(identity), entries.get(identity, {}), plan):
@@ -695,7 +697,7 @@ def rebuild_report(directory):
                  if len(records) > 1 and latest[identity]["status"] == "passed"
                  and any(record["status"] in ("failed", "error", "timeout") for record in records[:-1])]
     if not plan.get("allow_recovered", False):
-        blockers.extend(identity for identity in recovered if identity in required)
+        blockers.extend(identity for identity in recovered if identity in required or identity in required_groups)
     counts = {status: sum(event["status"] == status for identity, event in latest.items() if identity in entries) for status in FINAL_STATUSES}
     missing = [identity for identity in entries if identity not in latest]
     unfinished = [item for item in manifest.get("attempts_started", []) if not item.get("finished")]

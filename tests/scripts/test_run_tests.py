@@ -485,6 +485,41 @@ class PersistenceTests(_Project):
         self.invoke(catalog, ["--resume", str(directory)])
         self.assertEqual(runner.rebuild_report(directory)["recovered"], ["test_flaky"])
 
+    def test_recovered_parameter_group_respects_required_policy(self):
+        for policy in ("required_blocked", "allowed", "optional"):
+            with self.subTest(policy=policy):
+                directory = self.root / policy
+                catalog = _catalog([_entry("test_subtests", subtests=[{"value": 1}, {"value": 2}])])
+                catalog["plans"]["quick"]["allow_recovered"] = policy == "allowed"
+                if policy == "optional":
+                    catalog["plans"]["quick"]["required"] = []
+                children = [{"parameters": {"value": value}, "status": "passed", "verdict": "pass",
+                             "category": "pass", "failure": None, "duration_ms": 0,
+                             "started_at": "synthetic", "metrics": []} for value in (1, 2)]
+                failed = {"status": "error", "verdict": None, "category": None, "metrics": [],
+                          "duration_ms": 1, "started_at": "synthetic", "subtests": children,
+                          "failure": [{"phase": "teardown", "type": "RuntimeError",
+                                       "message": "synthetic teardown failure"}]}
+                passed = {**failed, "status": "passed", "verdict": "pass", "category": "pass", "failure": None}
+                with patch.object(runner, "_check_caps"), \
+                     patch.object(runner, "_source_info", return_value={"fingerprint": "synthetic"}), \
+                     patch.object(runner, "_execute", side_effect=[failed, passed]) as execute:
+                    first_code, _ = self.invoke(catalog, ["--output", str(directory)])
+                    code, output = self.invoke(catalog, ["--resume", str(directory)])
+                summary = json.loads(output)
+                self.assertEqual(first_code, 1)
+                self.assertEqual(execute.call_count, 2)
+                self.assertEqual(code, 1 if policy == "required_blocked" else 0)
+                self.assertEqual(summary["release_allowed"], policy != "required_blocked")
+                self.assertEqual(summary["recovered"], ["test_subtests"])
+                self.assertEqual(summary["blockers"], ["test_subtests"] if policy == "required_blocked" else [])
+                self.assertEqual(summary["cases"], 2)
+                self.assertEqual(summary["quality_passes"], 2)
+                events = runner._events(directory)
+                groups = [event for event in events if event.get("record_type") == "group_result"]
+                self.assertEqual([event["status"] for event in groups], ["error", "passed"])
+                self.assertEqual(groups[0]["failure"], failed["failure"])
+
     def test_result_write_failure_cannot_pass(self):
         directory = self.root / "result"
         with patch.object(runner, "_append_event", side_effect=OSError("synthetic full disk")):

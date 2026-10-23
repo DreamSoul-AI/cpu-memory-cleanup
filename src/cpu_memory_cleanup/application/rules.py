@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import math
+from statistics import mean
 
 from ..contracts import Sample
 
@@ -394,7 +395,7 @@ def _stats(values, *, signed=False):
     return {"samples": len(values), "first": values[0] if values else None,
             "last": values[-1] if values else None, "min": min(values) if values else None,
             "max": max(values) if values else None,
-            "mean": sum(value / len(values) for value in values) if values else None}
+            "mean": mean(values) if values else None}
 
 
 def _pearson(pairs):
@@ -493,7 +494,7 @@ def _window(records, metadata):
         values = [row[key] for row in (rate_rows if key in RATE_METRICS else rows)]
         stats = describe(values)
         present = [value for value in values if value is not None]
-        stats.update(mean=sum(value / len(present) for value in present) if present else None,
+        stats.update(mean=mean(present) if present else None,
                      first=values[0] if values else None,
                      tail_median=describe(values[len(values) * 2 // 3:])["median"])
         metrics[key] = stats

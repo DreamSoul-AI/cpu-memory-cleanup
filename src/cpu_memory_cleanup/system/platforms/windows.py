@@ -301,6 +301,7 @@ def _read_processes(kernel, psapi, errors, pending_handles, unknown_handles):
             skipped += 1
             continue
         pending_handles.append(handle)
+        interruption = None
         try:
             stats = ProcessMemoryEx(cb=c.sizeof(ProcessMemoryEx))
             name, length = c.create_unicode_buffer(32768), w.DWORD(32768)
@@ -314,14 +315,23 @@ def _read_processes(kernel, psapi, errors, pending_handles, unknown_handles):
                               "cpu_seconds": (_filetime(kern) + _filetime(user)) / 10_000_000,
                               "name": ntpath.basename(name.value), "working_set_bytes": stats.WorkingSetSize,
                               "private_bytes": stats.PrivateUsage, "parent_pid": None})
+        except BaseException as error:
+            if not isinstance(error, Exception):
+                interruption = error
+            raise
         finally:
-            unknown_handles.add(handle)
-            closed = close(handle)
-            if closed:
-                pending_handles.remove(handle)
-            unknown_handles.remove(handle)
-            if not closed:
-                errors.append("进程读取句柄关闭失败")
+            try:
+                unknown_handles.add(handle)
+                closed = close(handle)
+                if closed:
+                    pending_handles.remove(handle)
+                unknown_handles.remove(handle)
+                if not closed:
+                    errors.append("进程读取句柄关闭失败")
+            except BaseException:
+                if interruption is not None:
+                    raise interruption
+                raise
     if skipped:
         errors.append(f"进程读取不完整，{skipped}项不可读或已退出")
     return processes, {"enumerated": needed.value // c.sizeof(w.DWORD), "readable": len(processes),

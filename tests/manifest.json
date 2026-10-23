@@ -2262,6 +2262,118 @@
           "close_failure": "none"
         }
       ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_source_gaps_preserve_primary_facts",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_comparison_source_gaps_preserve_primary_facts",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py",
+      "subtests": [
+        {
+          "source_gap": "missing_mode"
+        },
+        {
+          "source_gap": "incomplete_terminal"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_complete_comparison_has_no_source_gap_errors",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_core.CoreTests.test_complete_comparison_has_no_source_gap_errors",
+      "file": "tests/src/cpu_memory_cleanup/application/test_core.py"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py",
+      "level": "e2e"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py",
+      "subtests": [
+        {
+          "case": "maximum"
+        },
+        {
+          "case": "negative"
+        },
+        {
+          "case": "cancellation"
+        },
+        {
+          "case": "integers"
+        },
+        {
+          "case": "subnormal"
+        },
+        {
+          "case": "missing"
+        },
+        {
+          "case": "all_missing"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values",
+      "unittest_id": "tests.src.cpu_memory_cleanup.application.test_rules.ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values",
+      "file": "tests/src/cpu_memory_cleanup/application/test_rules.py",
+      "subtests": [
+        {
+          "case": "maximum"
+        },
+        {
+          "case": "integers"
+        },
+        {
+          "case": "subnormal"
+        },
+        {
+          "case": "missing"
+        },
+        {
+          "case": "all_missing"
+        }
+      ]
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_process_read_and_close_interrupts_preserve_first_interrupt",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_process_read_and_close_interrupts_preserve_first_interrupt",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py",
+      "subtests": [
+        {
+          "close_failure": "interrupt_before"
+        },
+        {
+          "close_failure": "interrupt_after"
+        },
+        {
+          "close_failure": "error"
+        }
+      ],
+      "level": "integration"
+    },
+    {
+      "test_id": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_process_read_error_remains_a_gap_and_closes_handle",
+      "unittest_id": "tests.src.cpu_memory_cleanup.system.platforms.test_windows.WindowsTests.test_process_read_error_remains_a_gap_and_closes_handle",
+      "file": "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py"
+    },
+    {
+      "test_id": "tests/scripts/test_run_tests.py::PersistenceTests.test_recovered_parameter_group_respects_required_policy",
+      "unittest_id": "tests.scripts.test_run_tests.PersistenceTests.test_recovered_parameter_group_respects_required_policy",
+      "file": "tests/scripts/test_run_tests.py",
+      "subtests": [
+        {
+          "policy": "required_blocked"
+        },
+        {
+          "policy": "allowed"
+        },
+        {
+          "policy": "optional"
+        }
+      ]
     }
   ],
   "cost_classes": {
@@ -2580,7 +2692,14 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
-        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt"
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_source_gaps_preserve_primary_facts",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_complete_comparison_has_no_source_gap_errors",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_process_read_and_close_interrupts_preserve_first_interrupt",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_process_read_error_remains_a_gap_and_closes_handle"
       ],
       "required": [
         "tests/scripts/test_desktop_memory_button.py::DesktopMemoryButtonTests.test_default_route_is_readonly",
@@ -2886,7 +3005,14 @@
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying",
         "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
-        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt"
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_source_gaps_preserve_primary_facts",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_complete_comparison_has_no_source_gap_errors",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_process_read_and_close_interrupts_preserve_first_interrupt",
+        "tests/src/cpu_memory_cleanup/system/platforms/test_windows.py::WindowsTests.test_process_read_error_remains_a_gap_and_closes_handle"
       ],
       "dependencies": [],
       "resources": [],
@@ -2956,7 +3082,8 @@
         "tests/scripts/test_run_tests.py::WorkerTests.test_job_peak_failure_does_not_skip_close_or_worker_reaping",
         "tests/scripts/test_run_tests.py::WorkerTests.test_interrupt_survives_job_close_failure_and_reaps_worker",
         "tests/scripts/test_run_tests.py::WorkerTests.test_timeout_survives_termination_failure_and_reaps_worker",
-        "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result"
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result",
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_recovered_parameter_group_respects_required_policy"
       ],
       "required": [
         "tests/scripts/test_run_tests.py::CatalogTests.test_defaults_are_resolved_before_selection",
@@ -3013,7 +3140,8 @@
         "tests/scripts/test_run_tests.py::WorkerTests.test_job_peak_failure_does_not_skip_close_or_worker_reaping",
         "tests/scripts/test_run_tests.py::WorkerTests.test_interrupt_survives_job_close_failure_and_reaps_worker",
         "tests/scripts/test_run_tests.py::WorkerTests.test_timeout_survives_termination_failure_and_reaps_worker",
-        "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result"
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_cleanup_failure_stops_scheduling_after_saving_result",
+        "tests/scripts/test_run_tests.py::PersistenceTests.test_recovered_parameter_group_respects_required_policy"
       ],
       "dependencies": [
         "quick"
@@ -3132,7 +3260,12 @@
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
         "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_calibration_experiment_mismatch_is_insufficient",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_source_gaps_preserve_primary_facts",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_complete_comparison_has_no_source_gap_errors",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values"
       ],
       "required": [
         "tests/src/cpu_memory_cleanup/interaction/test_cli.py::CliTests.test_default_only_requests_one_readonly_sample",
@@ -3235,7 +3368,12 @@
         "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable",
         "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_calibration_experiment_mismatch_is_insufficient",
         "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header",
-        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps"
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_review_directory_action_without_declared_mode_retains_legacy_gaps",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_comparison_source_gaps_preserve_primary_facts",
+        "tests/src/cpu_memory_cleanup/application/test_core.py::CoreTests.test_complete_comparison_has_no_source_gap_errors",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values",
+        "tests/src/cpu_memory_cleanup/application/test_rules.py::ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values"
       ],
       "dependencies": [],
       "resources": [],

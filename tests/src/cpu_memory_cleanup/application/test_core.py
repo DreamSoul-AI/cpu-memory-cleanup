@@ -430,6 +430,7 @@ class CoreTests(unittest.TestCase):
         report = self.app.review(original.output_dir)
         self.assertEqual(report.analysis, original.analysis)
         self.assertFalse(report.metadata["recomputed"])
+        self.assertNotIn("comparison_source_gaps", report.metadata)
         self.assertEqual(self.backend.opens, opens)
 
     def test_explicit_recompute_keeps_original_conditions(self):
@@ -1186,3 +1187,48 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.action, original.action)
         self.assertFalse(report.metadata["recomputed"])
         self.assertEqual((self.backend.opens, self.backend.calls), before)
+
+    def test_comparison_source_gaps_preserve_primary_facts(self):
+        for source_gap in ("missing_mode", "incomplete_terminal"):
+            with self.subTest(source_gap=source_gap):
+                original = self.maintain()
+                comparison = self.app.inspect({"count": 2, "interval": 0, "output_dir": self.temp.name})
+                path = Path(comparison.output_dir) / "samples.jsonl"
+                rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+                if source_gap == "missing_mode":
+                    del rows[0]["mode"]
+                    expected_gap = "缺少运行元数据 mode"
+                else:
+                    rows[-1]["completion"] = "partial"
+                    expected_gap = "运行未完整成功"
+                content = "\n".join(json.dumps(row) for row in rows) + "\n"
+                path.write_text(content, encoding="utf-8")
+                before = (self.backend.opens, self.backend.reads, self.backend.calls)
+                report = self.app.review(original.output_dir, comparison=comparison.output_dir)
+                self.assertEqual(report.completion, "partial")
+                self.assertEqual(report.metadata["comparison_source_gaps"], [expected_gap])
+                self.assertEqual(report.metadata["source_gaps"], [])
+                self.assertEqual(report.metadata["header"], original.metadata["header"])
+                self.assertEqual(report.metadata["terminal"], {"run_id": original.run_id, **original.metadata["terminal"]})
+                self.assertEqual(report.samples, original.samples)
+                self.assertEqual(report.action, original.action)
+                self.assertEqual(report.errors[0]["phase"], "comparison_source")
+                self.assertIn(expected_gap, report.errors[0]["message"])
+                self.assertEqual(report.analysis["mode"], "offline-ab-compare")
+                self.assertEqual(path.read_text(encoding="utf-8"), content)
+                self.assertFalse(self.app.busy)
+                self.assertEqual((self.backend.opens, self.backend.reads, self.backend.calls), before)
+
+    def test_complete_comparison_has_no_source_gap_errors(self):
+        original = self.maintain()
+        comparison = self.app.inspect({"count": 2, "interval": 0, "output_dir": self.temp.name})
+        before = (self.backend.opens, self.backend.reads, self.backend.calls)
+        report = self.app.review(original.output_dir, comparison=comparison.output_dir)
+        self.assertEqual(report.completion, "success")
+        self.assertEqual(report.errors, [])
+        self.assertEqual(report.metadata["comparison_source_gaps"], [])
+        self.assertEqual(report.metadata["source_gaps"], [])
+        self.assertEqual(report.samples, original.samples)
+        self.assertEqual(report.action, original.action)
+        self.assertFalse(self.app.busy)
+        self.assertEqual((self.backend.opens, self.backend.reads, self.backend.calls), before)

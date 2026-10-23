@@ -636,6 +636,64 @@ class WindowsTests(unittest.TestCase):
         self.assertEqual(self.fake.closed.count(11), 1)
         self.assertEqual(self.fake.nt_calls, [])
 
+    def test_process_read_and_close_interrupts_preserve_first_interrupt(self):
+        for close_failure in ("interrupt_before", "interrupt_after", "error"):
+            with self.subTest(close_failure=close_failure):
+                fake = FakeSystem()
+                first = KeyboardInterrupt("fake first process read interruption")
+                second = (OSError("fake process close error") if close_failure == "error"
+                          else SystemExit("fake second process close interruption"))
+                original, attempts = fake.kernel.CloseHandle, []
+
+                def interrupted_read(*args):
+                    raise first
+
+                def failed_close(handle):
+                    value = handle_value(handle)
+                    attempts.append(value)
+                    if close_failure == "interrupt_after":
+                        original(handle)
+                    raise second
+
+                fake.psapi.GetProcessMemoryInfo = Function(interrupted_read)
+                fake.kernel.CloseHandle = Function(failed_close)
+                backend = api.WindowsBackend(fake.load)
+                session = backend.open_observation(with_processes=True)
+                app = make_app(backend)
+                with patch.object(backend, "open_observation", return_value=session):
+                    with self.assertRaises(KeyboardInterrupt) as caught:
+                        app.inspect({"count": 1, "interval": 0, "with_processes": True})
+                self.assertIs(caught.exception, first)
+                self.assertFalse(app.busy)
+                self.assertTrue(app._unsafe)
+                self.assertEqual(session.pending_handles, [11])
+                self.assertEqual(session.unknown_handles, {11})
+                self.assertFalse(session.close()["closed"])
+                loads = fake.loads.copy()
+                self.assertEqual(app.inspect().completion, "failed")
+                self.assertEqual(fake.loads, loads)
+                self.assertEqual(attempts, [11])
+                self.assertEqual(fake.closed.count(11), int(close_failure == "interrupt_after"))
+                self.assertEqual(fake.nt_calls, [])
+                self.assertEqual(fake.adjustments, [])
+
+    def test_process_read_error_remains_a_gap_and_closes_handle(self):
+        def failed_read(*args):
+            raise OSError("fake process read error")
+
+        self.fake.psapi.GetProcessMemoryInfo = Function(failed_read)
+        session = self.backend.open_observation(with_processes=True)
+        sample = session.read("r", 0)
+        self.assertEqual(sample.processes, [])
+        self.assertEqual(sample.metrics["process_coverage"]["coverage"], "unknown")
+        self.assertTrue(any("fake process read error" in error for error in sample.errors))
+        self.assertEqual(session.pending_handles, [])
+        self.assertEqual(self.fake.closed.count(11), 1)
+        self.assertTrue(session.close()["closed"])
+        self.assertEqual(self.fake.closed.count(11), 1)
+        self.assertEqual(self.fake.nt_calls, [])
+        self.assertEqual(self.fake.adjustments, [])
+
     def test_pending_process_close_interrupt_does_not_retry_confirmed_handles(self):
         for interruption_timing in ("before", "after"):
             with self.subTest(interruption_timing=interruption_timing):
