@@ -10,10 +10,11 @@ import sys
 import tempfile
 import unittest
 
+from tests.fixtures import create_application
+
 from cpu_memory_cleanup.contracts import Sample
-from cpu_memory_cleanup.application import rules
+from cpu_memory_cleanup.application import analysis
 from cpu_memory_cleanup.interaction import cli
-from tests.support import make_app
 
 GIB = 1024 ** 3
 
@@ -23,14 +24,14 @@ class RankingTests(unittest.TestCase):
         processes = [{"pid": i, "created_at": str(i), "working_set_bytes": i * 100,
                       "name": str(i), "cpu_seconds": i} for i in range(5)]
         sample = _sample(0, processes=processes)
-        ranking = rules.analyze([sample], conditions={"top": 2})["process_ranking"]
+        ranking = analysis.analyze([sample], conditions={"top": 2})["process_ranking"]
         self.assertEqual([p["pid"] for p in ranking["ranked"]], [4, 3])
         self.assertEqual(len(sample.processes), 5)
         self.assertEqual(ranking["total_readable"], 5)
 
     def test_boolean_top_is_rejected(self):
         with self.assertRaises(ValueError):
-            rules.analyze([_sample(0)], conditions={"top": True})
+            analysis.analyze([_sample(0)], conditions={"top": True})
 
 
 def _sample(index, *, run="r", available=8, commit=60, standby=5, reads=1,
@@ -69,7 +70,7 @@ def _null_pair(**kwargs):
 
 
 def _compare(a=None, b=None, *, metadata_a=None, metadata_b=None, null_pairs=None, conditions=None):
-    return rules.compare(_window("a") if a is None else a,
+    return analysis.compare(_window("a") if a is None else a,
                          _window("b", available=10) if b is None else b,
                          conditions=conditions,
                          metadata_a=_metadata() if metadata_a is None else metadata_a,
@@ -103,130 +104,130 @@ class StatisticsTests(unittest.TestCase):
             source.write_text("\n".join(json.dumps(record, allow_nan=False) for record in records) + "\n", encoding="utf-8")
             output = io.StringIO()
             with contextlib.redirect_stdout(output):
-                code = cli.run(make_app(), cli.parse_args(["--review", str(source), "--json"]))
+                code = cli.run(create_application(), cli.parse_args(["--review", str(source), "--json"]))
         report = json.loads(output.getvalue())
         self.assertEqual((code, report["completion"], len(report["samples"])), (1, "partial", 3))
         stats = report["analysis"]["tree_summary"]["runs"][0]["host_free_gib"]
         self.assertEqual((stats["samples"], stats["mean"]), (3, sys.float_info.max))
 
     def test_interpolated_percentile(self):
-        self.assertAlmostEqual(rules.describe([None, 1, 2, 3, 4])["p90"], 3.7)
+        self.assertAlmostEqual(analysis.describe([None, 1, 2, 3, 4])["p90"], 3.7)
 
     def test_missing_is_counted(self):
-        self.assertEqual(rules.describe([None, 1])["missing"], 1)
+        self.assertEqual(analysis.describe([None, 1])["missing"], 1)
 
     def test_all_missing_median_stays_unknown(self):
-        self.assertIsNone(rules.describe([None])["median"])
+        self.assertIsNone(analysis.describe([None])["median"])
 
     def test_boolean_is_not_a_number(self):
-        self.assertEqual(rules.describe([True, False])["count"], 0)
+        self.assertEqual(analysis.describe([True, False])["count"], 0)
 
     def test_nan_is_not_a_measurement(self):
-        self.assertEqual(rules.describe([math.nan])["count"], 0)
+        self.assertEqual(analysis.describe([math.nan])["count"], 0)
 
     def test_infinity_is_not_a_measurement(self):
-        self.assertEqual(rules.describe([math.inf])["count"], 0)
+        self.assertEqual(analysis.describe([math.inf])["count"], 0)
 
     def test_negative_capacity_is_unknown(self):
-        self.assertIsNone(rules.metric_values({"physical": {"available_bytes": -1}})["available_bytes"])
+        self.assertIsNone(analysis.metric_values({"physical": {"available_bytes": -1}})["available_bytes"])
 
     def test_partial_standby_is_not_zero(self):
-        self.assertIsNone(rules.metric_values({"cache": {"standby_core_bytes": 1}})["standby_total_bytes"])
+        self.assertIsNone(analysis.metric_values({"cache": {"standby_core_bytes": 1}})["standby_total_bytes"])
 
     def test_boolean_standby_is_unknown(self):
-        self.assertIsNone(rules.metric_values({"cache": {"standby_core_bytes": True,
+        self.assertIsNone(analysis.metric_values({"cache": {"standby_core_bytes": True,
                                                        "standby_normal_bytes": 2,
                                                        "standby_reserve_bytes": 3}})["standby_total_bytes"])
 
     def test_bad_nested_shape_does_not_crash(self):
-        self.assertIsNone(rules.metric_values({"rates": [1]})["page_reads_per_sec"])
+        self.assertIsNone(analysis.metric_values({"rates": [1]})["page_reads_per_sec"])
 
     def test_gib_conversion_overflow_stays_unknown(self):
-        self.assertIsNone(rules.metric_values({"host": {"free_gib": 1e308}})["available_bytes"])
+        self.assertIsNone(analysis.metric_values({"host": {"free_gib": 1e308}})["available_bytes"])
 
     def test_transition_keeps_threshold_equality(self):
-        self.assertEqual(len(rules.detect_transitions([_sample(0), _sample(1, available=9)])), 1)
+        self.assertEqual(len(analysis.detect_transitions([_sample(0), _sample(1, available=9)])), 1)
 
     def test_transition_does_not_bridge_missing_sequence(self):
-        self.assertEqual(rules.detect_transitions([_sample(0), _sample(2, available=20)]), [])
+        self.assertEqual(analysis.detect_transitions([_sample(0), _sample(2, available=20)]), [])
 
     def test_transition_does_not_bridge_runs(self):
-        self.assertEqual(rules.detect_transitions([_sample(0, run="a"), _sample(1, run="b", available=20)]), [])
+        self.assertEqual(analysis.detect_transitions([_sample(0, run="a"), _sample(1, run="b", available=20)]), [])
 
     def test_largest_same_name_instance_is_not_summed(self):
         sample = _sample(0, processes=[{"name": "app", "working_set_bytes": 3 * GIB},
                                        {"name": "app", "working_set_bytes": 2 * GIB}])
-        self.assertEqual(rules.summarize_process_owners([sample])["owners"][0]["largest_instance_max_bytes"], 3 * GIB)
+        self.assertEqual(analysis.summarize_process_owners([sample])["owners"][0]["largest_instance_max_bytes"], 3 * GIB)
 
     def test_warnings_remain_countable(self):
         sample = _sample(0)
         sample.errors = ["Previous interval overrun"]
-        self.assertEqual(rules.summarize_records([sample])["overrun_count"], 1)
+        self.assertEqual(analysis.summarize_records([sample])["overrun_count"], 1)
 
     def test_analysis_is_read_only(self):
-        self.assertFalse(rules.analyze(_window())["cleanup_performed"])
+        self.assertFalse(analysis.analyze(_window())["cleanup_performed"])
 
     def test_analysis_does_not_mutate_inputs(self):
         samples = _window()
         before = deepcopy(samples)
-        rules.analyze(samples)
+        analysis.analyze(samples)
         self.assertEqual(samples, before)
 
     def test_boolean_conditions_are_rejected(self):
         with self.assertRaises(ValueError):
-            rules.analyze([], conditions=False)
+            analysis.analyze([], conditions=False)
 
 
 class CpuTests(unittest.TestCase):
     def test_first_sample_has_no_rate(self):
-        self.assertIsNone(rules.cpu_intervals(_window())[0]["busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(_window())[0]["busy_pct"])
 
     def test_total_includes_idle(self):
-        self.assertEqual(rules.cpu_intervals(_window())[1]["system_busy_pct"], 25)
+        self.assertEqual(analysis.cpu_intervals(_window())[1]["system_busy_pct"], 25)
 
     def test_partial_coverage_is_not_global_cpu(self):
-        self.assertIsNone(rules.cpu_intervals(_window(coverage="partial"))[1]["busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(_window(coverage="partial"))[1]["busy_pct"])
 
     def test_group_percentage_is_not_global(self):
-        self.assertIsNone(rules.cpu_intervals(_window(scope="group"))[1]["system_busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(_window(scope="group"))[1]["system_busy_pct"])
 
     def test_group_percentage_is_labeled(self):
-        self.assertEqual(rules.cpu_intervals(_window(scope="group"))[1]["group_busy_pct"], 25)
+        self.assertEqual(analysis.cpu_intervals(_window(scope="group"))[1]["group_busy_pct"], 25)
 
     def test_equal_timestamps_are_not_an_interval(self):
         samples = _window()
         samples[1].timestamp = samples[0].timestamp
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["busy_pct"])
 
     def test_counter_regression_is_unknown(self):
         samples = _window()
         samples[1].metrics["cpu"]["total_seconds"] = 90
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["busy_pct"])
 
     def test_idle_delta_cannot_exceed_total(self):
         samples = _window(idle_step=6)
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["busy_pct"])
 
     def test_processor_group_change_invalidates_interval(self):
         samples = _window()
         samples[1].metrics["cpu"]["processor_group"] = 1
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["busy_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["busy_pct"])
 
     def test_process_can_consume_more_than_one_core(self):
         samples = [_sample(i, processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": i * 2}]) for i in range(2)]
-        self.assertEqual(rules.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"], 200)
+        self.assertEqual(analysis.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"], 200)
 
     def test_process_normalization_uses_logical_processor_count(self):
         samples = [_sample(i, processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": i * 2}]) for i in range(2)]
-        self.assertEqual(rules.cpu_intervals(samples)[1]["processes"][0]["system_normalized_pct"], 50)
+        self.assertEqual(analysis.cpu_intervals(samples)[1]["processes"][0]["system_normalized_pct"], 50)
 
     def test_pid_reuse_is_not_same_process(self):
         samples = [_sample(i, processes=[{"pid": 10, "created_at": str(i), "cpu_seconds": i * 2}]) for i in range(2)]
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"])
 
     def test_unknown_coverage_disables_process_normalization(self):
         samples = [_sample(i, coverage="unknown", processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": i}]) for i in range(2)]
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["system_normalized_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["processes"][0]["system_normalized_pct"])
 
     def test_duplicate_process_identity_has_no_cpu_difference(self):
         for duplicate_side in ("before", "after"):
@@ -237,7 +238,7 @@ class CpuTests(unittest.TestCase):
                          {"pid": 20, "created_at": "other", "cpu_seconds": 1}]
                 (before if duplicate_side == "before" else after).append(
                     {"pid": 10, "created_at": "same", "cpu_seconds": 10})
-                interval = rules.cpu_intervals([_sample(0, processes=before), _sample(1, processes=after)])[1]
+                interval = analysis.cpu_intervals([_sample(0, processes=before), _sample(1, processes=after)])[1]
                 ambiguous = [process for process in interval["processes"] if process["pid"] == 10]
                 self.assertTrue(all(process["single_core_pct"] is None for process in ambiguous))
                 self.assertTrue(all(process["system_normalized_pct"] is None for process in ambiguous))
@@ -248,7 +249,7 @@ class CpuTests(unittest.TestCase):
 
     def test_process_counter_regression_is_unknown(self):
         samples = [_sample(i, processes=[{"pid": 10, "created_at": "instance", "cpu_seconds": 5 - i}]) for i in range(2)]
-        self.assertIsNone(rules.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"])
+        self.assertIsNone(analysis.cpu_intervals(samples)[1]["processes"][0]["single_core_pct"])
 
 
 class PressureAndTreeTests(unittest.TestCase):
@@ -266,7 +267,7 @@ class PressureAndTreeTests(unittest.TestCase):
                 records = [{"run_id": "mean", "index": index,
                             "commit_residual": {"residual_gib": value}}
                            for index, value in enumerate(values)]
-                stats = rules.summarize(records)["runs"][0]["commit_residual"]["residual_gib"]
+                stats = analysis.summarize(records)["runs"][0]["commit_residual"]["residual_gib"]
                 present = [value for value in values if value is not None]
                 self.assertEqual(stats["samples"], len(present))
                 self.assertEqual(stats["first"], present[0] if present else None)
@@ -277,18 +278,18 @@ class PressureAndTreeTests(unittest.TestCase):
                 json.dumps(stats, allow_nan=False)
 
     def test_pressure_streak_requires_sustain(self):
-        self.assertEqual(rules.evaluate([_tree(0, free=2), _tree(1, free=2)], sustain=3)["runs"][0]["episodes"], [])
+        self.assertEqual(analysis.evaluate([_tree(0, free=2), _tree(1, free=2)], sustain=3)["runs"][0]["episodes"], [])
 
     def test_pressure_episode_closes_at_end(self):
-        self.assertEqual(rules.evaluate([_tree(0), _tree(1, used=90), _tree(2, used=95)], sustain=2)["runs"][0]["episodes"][0]["max_commit_pct"], 95)
+        self.assertEqual(analysis.evaluate([_tree(0), _tree(1, used=90), _tree(2, used=95)], sustain=2)["runs"][0]["episodes"][0]["max_commit_pct"], 95)
 
     def test_pressure_does_not_bridge_missing_sample(self):
-        self.assertEqual(rules.evaluate([_tree(0, free=2), _tree(2, free=2)], sustain=2)["runs"][0]["episodes"], [])
+        self.assertEqual(analysis.evaluate([_tree(0, free=2), _tree(2, free=2)], sustain=2)["runs"][0]["episodes"], [])
 
     def test_missing_host_is_not_zero(self):
         record = _tree(0)
         record["host"] = {}
-        self.assertIsNone(rules.evaluate([record], sustain=1)["runs"][0]["min_free_gib"])
+        self.assertIsNone(analysis.evaluate([record], sustain=1)["runs"][0]["min_free_gib"])
 
     def test_pressure_prefers_current_commit_fields_over_legacy_values(self):
         for limit_source in ("current", "legacy"):
@@ -299,8 +300,8 @@ class PressureAndTreeTests(unittest.TestCase):
                 if limit_source == "current":
                     record["commit"]["limit_bytes"] = 200 * GIB
                     expected = 25
-                self.assertEqual(rules.sample_view(record)["commit_pct"], expected)
-                pressure = rules.evaluate([record], sustain=1)["runs"][0]
+                self.assertEqual(analysis.sample_view(record)["commit_pct"], expected)
+                pressure = analysis.evaluate([record], sustain=1)["runs"][0]
                 self.assertEqual(pressure["max_commit_pct"], expected)
                 self.assertEqual(pressure["episodes"], [])
 
@@ -310,64 +311,64 @@ class PressureAndTreeTests(unittest.TestCase):
                 record = _tree(0, used=99, limit=100)
                 record["commit"] = {"used_bytes": 50 * GIB, "limit_bytes": 100 * GIB}
                 record["commit"][field] = None
-                self.assertIsNone(rules.sample_view(record)["commit_pct"])
-                pressure = rules.evaluate([record], sustain=1)["runs"][0]
+                self.assertIsNone(analysis.sample_view(record)["commit_pct"])
+                pressure = analysis.evaluate([record], sustain=1)["runs"][0]
                 self.assertIsNone(pressure["max_commit_pct"])
                 self.assertEqual(pressure["episodes"], [])
 
     def test_pressure_legacy_commit_fields_remain_usable(self):
         record = _tree(0, used=90, limit=100)
-        self.assertEqual(rules.sample_view(record)["commit_pct"], 90)
-        pressure = rules.evaluate([record], sustain=1)["runs"][0]
+        self.assertEqual(analysis.sample_view(record)["commit_pct"], 90)
+        pressure = analysis.evaluate([record], sustain=1)["runs"][0]
         self.assertEqual(pressure["max_commit_pct"], 90)
         self.assertEqual(pressure["episodes"][0]["reasons"], ["commit_above"])
 
     def test_boolean_sustain_is_rejected(self):
         with self.assertRaises(ValueError):
-            rules.evaluate([], sustain=True)
+            analysis.evaluate([], sustain=True)
 
     def test_nonfinite_threshold_is_rejected(self):
         with self.assertRaises(ValueError):
-            rules.evaluate([], free_below_gib=math.nan)
+            analysis.evaluate([], free_below_gib=math.nan)
 
     def test_owner_growth_uses_overlap_only(self):
-        before = rules.sample_view(_tree(0, owners={"A": 1}))
-        after = rules.sample_view(_tree(1, owners={"A": 3, "B": 5}))
-        self.assertEqual(rules.owner_growth(before, after)["grown"], [{"owner": "A", "private_gib": 3, "delta_gib": 2}])
+        before = analysis.sample_view(_tree(0, owners={"A": 1}))
+        after = analysis.sample_view(_tree(1, owners={"A": 3, "B": 5}))
+        self.assertEqual(analysis.owner_growth(before, after)["grown"], [{"owner": "A", "private_gib": 3, "delta_gib": 2}])
 
     def test_entering_owner_is_not_growth_from_zero(self):
-        before = rules.sample_view(_tree(0, owners={"A": 1}))
-        after = rules.sample_view(_tree(1, owners={"B": 5}))
-        self.assertEqual(rules.owner_growth(before, after)["entered_top_list"], ["B"])
+        before = analysis.sample_view(_tree(0, owners={"A": 1}))
+        after = analysis.sample_view(_tree(1, owners={"B": 5}))
+        self.assertEqual(analysis.owner_growth(before, after)["entered_top_list"], ["B"])
 
     def test_age_bucket_retains_maximum(self):
-        result = rules.summarize([_tree(0, gt3=0), _tree(1, gt3=4), _tree(2, gt3=8)])
+        result = analysis.summarize([_tree(0, gt3=0), _tree(1, gt3=4), _tree(2, gt3=8)])
         self.assertEqual(result["runs"][0]["age"]["server_mjs"]["buckets"]["gt3h"]["processes"]["max"], 8)
 
     def test_missing_age_is_unknown(self):
-        self.assertIsNone(rules.summarize([_tree(0)])["runs"][0]["age"]["server_mjs"]["oldest_minutes"]["max"])
+        self.assertIsNone(analysis.summarize([_tree(0)])["runs"][0]["age"]["server_mjs"]["oldest_minutes"]["max"])
 
     def test_birth_totals_exclude_first_sample(self):
-        self.assertEqual(rules.summarize([_tree(0), _tree(1), _tree(2)])["runs"][0]["born_total"], 4)
+        self.assertEqual(analysis.summarize([_tree(0), _tree(1), _tree(2)])["runs"][0]["born_total"], 4)
 
     def test_missing_birth_is_not_zero(self):
         records = [_tree(0), _tree(1)]
         records[1].pop("born_since_prev")
-        self.assertIsNone(rules.summarize(records)["runs"][0]["born_total"])
+        self.assertIsNone(analysis.summarize(records)["runs"][0]["born_total"])
 
     def test_residual_correlation_retains_signal(self):
         records = [_tree(i, processes=600 + i * 100, residual=9 + i / 2) for i in range(3)]
-        self.assertEqual(rules.summarize(records)["runs"][0]["commit_residual"]["pearson_residual_vs_processes"], 1)
+        self.assertEqual(analysis.summarize(records)["runs"][0]["commit_residual"]["pearson_residual_vs_processes"], 1)
 
     def test_signed_residual_is_not_reclaimable_capacity(self):
-        self.assertEqual(rules.summarize([_tree(0, residual=-1)])["runs"][0]["commit_residual"]["residual_gib"]["first"], -1)
+        self.assertEqual(analysis.summarize([_tree(0, residual=-1)])["runs"][0]["commit_residual"]["residual_gib"]["first"], -1)
 
     def test_extreme_signed_residual_correlation_stays_finite(self):
         records = [_tree(i, processes=i + 1, residual=value) for i, value in enumerate([-1e308, 0, 1e308])]
-        self.assertEqual(rules.summarize(records)["runs"][0]["commit_residual"]["pearson_residual_vs_processes"], 1)
+        self.assertEqual(analysis.summarize(records)["runs"][0]["commit_residual"]["pearson_residual_vs_processes"], 1)
 
     def test_interleaved_runs_are_not_spliced(self):
-        self.assertEqual(len(rules.summarize([_tree(0, run="a"), _tree(0, run="b"), _tree(1, run="a")])["runs"]), 3)
+        self.assertEqual(len(analysis.summarize([_tree(0, run="a"), _tree(0, run="b"), _tree(1, run="a")])["runs"]), 3)
 
 
 class ComparisonTests(unittest.TestCase):
@@ -579,11 +580,11 @@ class ComparisonTests(unittest.TestCase):
 
     def test_boolean_comparison_threshold_is_rejected(self):
         with self.assertRaises(ValueError):
-            rules.compare([], [], conditions={"gain_gib": True})
+            analysis.compare([], [], conditions={"gain_gib": True})
 
     def test_capacity_threshold_overflow_is_rejected(self):
         with self.assertRaises(ValueError):
-            rules.compare([], [], conditions={"gain_gib": 1e308})
+            analysis.compare([], [], conditions={"gain_gib": 1e308})
 
     def test_rate_threshold_overflow_is_evidence_gap(self):
         samples = _window("b", reads=1e308)

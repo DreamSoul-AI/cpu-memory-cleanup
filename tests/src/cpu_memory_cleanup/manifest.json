@@ -1,0 +1,71 @@
+{
+  "files": {
+    "test_contracts.py": {
+      "target": "src/cpu_memory_cleanup/contracts.py",
+      "tags": [
+        "offline",
+        "module_contracts"
+      ],
+      "cases": {
+        "ContractTests.test_single_mechanism_is_not_bound_to_one_operating_system": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "ContractTests.test_capability_metadata_rejects_invalid_mechanism_items": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "ContractTests.test_generic_call_fact_preserves_opaque_platform_status": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        }
+      }
+    },
+    "test_main.py": {
+      "target": "src/cpu_memory_cleanup/__main__.py",
+      "tags": [
+        "offline",
+        "module_main"
+      ],
+      "cases": {
+        "MainTests.test_offline_default_assembly_never_selects_a_platform_backend": {
+          "level": "e2e",
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "MainTests.test_unsupported_system_default_has_no_native_read_or_maintenance": {
+          "level": "integration",
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        }
+      }
+    },
+    "test_package.py": {
+      "target": "src/cpu_memory_cleanup/__init__.py",
+      "tags": [
+        "offline",
+        "module_init"
+      ],
+      "type": "location",
+      "cases": {
+        "ImportTests.test_layer_packages_keep_dependency_direction": {
+          "type": "location",
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        }
+      }
+    }
+  }
+}

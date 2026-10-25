@@ -1,0 +1,52 @@
+{
+  "files": {
+    "test_records.py": {
+      "target": "src/cpu_memory_cleanup/system/records.py",
+      "tags": [
+        "offline",
+        "module_records"
+      ],
+      "cases": {
+        "RecordTests.test_invalid_utf8_tail_preserves_prefix_line_number_and_close": {
+          "subtests": [
+            {
+              "newline": "LF"
+            },
+            {
+              "newline": "CRLF"
+            },
+            {
+              "newline": "CR"
+            }
+          ]
+        }
+      },
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_runtime.py": {
+      "target": "src/cpu_memory_cleanup/system/runtime.py",
+      "tags": [
+        "offline",
+        "module_runtime"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_operating_system.py": {
+      "target": "src/cpu_memory_cleanup/system/operating_system.py",
+      "tags": [
+        "offline",
+        "module_operating_system"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    }
+  }
+}

@@ -138,9 +138,106 @@ class _Project(unittest.TestCase):
         return code, output.getvalue()
 
 
+class TreeCatalogTests(_Project):
+    def tree(self):
+        catalog = _catalog()
+        catalog.update(schema_version=2, defaults={k: v for k, v in _entry().items()
+                       if k not in {"test_id", "unittest_id", "file", "target"}})
+        catalog.pop("tests")
+        catalog["defaults"]["plans"] = ["quick"]
+        catalog["plans"]["quick"].pop("test_ids")
+        catalog["plans"]["quick"]["required"] = "all"
+        self.manifest = self.root / "tests/manifest.json"
+        self.manifest.write_text(json.dumps(catalog), encoding="utf-8")
+        self.folder = self.root / "tests/module/alpha"
+        self.folder.mkdir(parents=True)
+        (self.folder / "test_example.py").write_text(
+            'raise RuntimeError("discovery must not import")\n'
+            'class Cases:\n    def test_one(self): pass\n    def test_two(self): pass\n', encoding="utf-8")
+        self.local = self.folder / "manifest.json"
+        self.settings = {"files": {"test_example.py": {"target": "product.py:function",
+                         "cases": {"Cases.test_two": {"priority": "p2"}}}}}
+        (self.folder.parent / "manifest.json").write_text(
+            json.dumps({"defaults": {"level": "integration"}}), encoding="utf-8")
+
+    def load(self):
+        self.local.write_text(json.dumps(self.settings), encoding="utf-8")
+        return runner.load_catalog(self.manifest, self.root)
+
+    def test_discovers_methods_inherits_defaults_and_exposes_sources(self):
+        self.tree()
+        catalog = self.load()
+        entries = catalog["tests"]
+        self.assertEqual(len(entries), 2)
+        self.assertEqual([e["priority"] for e in entries], ["p1", "p2"])
+        self.assertTrue(all(e["level"] == "integration" for e in entries))
+        self.assertEqual(catalog["plans"]["quick"]["required"], [e["test_id"] for e in entries])
+        self.assertEqual(catalog["config_sources"][entries[0]["test_id"]],
+                         ["tests/manifest.json", "tests/module/manifest.json", "tests/module/alpha/manifest.json"])
+        self.assertEqual(entries[0]["unittest_id"], "tests.module.alpha.test_example.Cases.test_one")
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self.assertEqual(runner.main(["--list"], root=self.root), 0)
+        self.assertEqual(json.loads(output.getvalue())["config_sources"], catalog["config_sources"])
+
+    def test_unknown_case_is_rejected_instead_of_ignored(self):
+        self.tree()
+        self.settings["files"]["test_example.py"]["cases"]["Cases.test_typo"] = {}
+        with self.assertRaisesRegex(ValueError, "cases"):
+            self.load()
+
+    def test_legacy_root_cannot_silently_ignore_local_manifests(self):
+        self.tree()
+        self.manifest.write_text(json.dumps(_catalog()), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "旧格式"):
+            self.load()
+
+    def test_child_cannot_change_global_policy_or_resource_authorization(self):
+        self.tree()
+        self.settings["plans"] = {}
+        with self.assertRaises(ValueError):
+            self.load()
+        self.settings.pop("plans")
+        self.settings["defaults"] = {"resources": ["native_cleanup"]}
+        with self.assertRaises(ValueError):
+            self.load()
+
+    def test_unknown_plan_and_over_budget_override_are_rejected(self):
+        self.tree()
+        settings = self.settings["files"]["test_example.py"]
+        settings["plans"] = ["real_sampling"]
+        with self.assertRaises(ValueError):
+            self.load()
+        settings.pop("plans")
+        settings["timeout_s"] = 2
+        with self.assertRaises(ValueError):
+            self.load()
+
+    def test_file_configuration_cannot_escape_its_directory(self):
+        self.tree()
+        self.settings["files"]["../test_other.py"] = {"target": "other.py"}
+        with self.assertRaises(ValueError):
+            self.load()
+
+    def test_new_method_is_discovered_without_a_catalog_entry(self):
+        self.tree()
+        before = self.load()
+        with (self.folder / "test_example.py").open("a", encoding="utf-8") as stream:
+            stream.write("    def test_three(self): pass\n")
+        after = self.load()
+        self.assertEqual(len(after["tests"]), len(before["tests"]) + 1)
+        self.assertIn(after["tests"][-1]["test_id"], after["plans"]["quick"]["required"])
+
+    def test_local_configuration_change_invalidates_source_fingerprint(self):
+        self.tree()
+        before = runner._source_info(self.root, self.load())["fingerprint"]
+        self.settings["files"]["test_example.py"]["cases"]["Cases.test_two"]["priority"] = "p3"
+        self.assertNotEqual(before, runner._source_info(self.root, self.load())["fingerprint"])
+
+
 class CatalogTests(unittest.TestCase):
     def test_readonly_acceptance_remains_planned_outside_executable_plans(self):
-        catalog = runner.validate_catalog(runner._read_json(runner.ROOT / "tests" / "manifest.json"))
+        catalog = runner.load_catalog(runner.ROOT / "tests" / "manifest.json", runner.ROOT)
         acceptance = catalog["acceptance_plans"]["readonly_diagnostics"]
         self.assertFalse(acceptance["enabled"])
         self.assertEqual(acceptance["status"], "planned_not_executed")

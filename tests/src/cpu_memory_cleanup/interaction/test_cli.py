@@ -1,4 +1,3 @@
-from tests.support import make_app
 """CLI 参数与旅程验证；所有业务接口为假实现。"""
 
 import contextlib
@@ -8,9 +7,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
+from tests.fixtures import create_application
+
 from cpu_memory_cleanup.interaction import cli
 from cpu_memory_cleanup.contracts import RunReport, Sample
-from cpu_memory_cleanup.application.core import Application
 
 
 class FakeApplication:
@@ -179,7 +179,7 @@ class FakeBackend:
 class CliJourneyTests(unittest.TestCase):
     def test_offline_review_uses_saved_run_with_zero_backend_calls(self):
         backend = FakeBackend()
-        app = make_app(backend, backend)
+        app = create_application(backend, backend)
         with tempfile.TemporaryDirectory() as directory:
             recorded = app.inspect({"output_dir": directory})
             backend.read_calls = 0
@@ -192,7 +192,7 @@ class CliJourneyTests(unittest.TestCase):
 
     def test_post_read_failure_preserves_successful_action_in_cli_result(self):
         backend = FakeBackend(fail_after=True)
-        app = make_app(backend, backend)
+        app = create_application(backend, backend)
         output = io.StringIO()
         with tempfile.TemporaryDirectory() as directory, contextlib.redirect_stdout(output):
             code = cli.run(app, cli.parse_args(["--release", "--release-what", "working-set", "--output-dir", directory, "--json"]))

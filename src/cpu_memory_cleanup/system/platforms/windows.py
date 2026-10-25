@@ -344,17 +344,52 @@ class WindowsBackend:
     def __init__(self, dll_loader=None, now=None):
         self._dll = _load_dll if dll_loader is None else dll_loader
         self._now = now or (lambda: datetime.now(timezone.utc).isoformat())
+        self._memory_info = None
+        self._memory_info_lock = threading.Lock()
 
     def open_observation(self, *, with_processes=False, top=10):
         if type(with_processes) is not bool or type(top) is not int or not 1 <= top <= 100:
             raise ValueError("读取范围或top无效")
         return _Observation(self, with_processes)
 
+    def read_memory(self):
+        """显示专用的轻量只读查询，不创建 PDH、进程或维护会话。"""
+        info = PerformanceInfo(cb=c.sizeof(PerformanceInfo))
+        with self._memory_info_lock:
+            if self._memory_info is None:
+                self._memory_info = bind(self._dll("psapi.dll"), "GetPerformanceInfo", [c.POINTER(PerformanceInfo), w.DWORD], w.BOOL)
+            get_info = self._memory_info
+        check(get_info(c.byref(info), c.sizeof(info)))
+        if not info.PageSize or info.PhysicalAvailable > info.PhysicalTotal or info.CommitTotal > info.CommitLimit:
+            raise OSError("主机内存返回值无效")
+        page = info.PageSize
+        return Sample("memory-display", 0, self._now(), {
+            "physical": {"total_bytes": info.PhysicalTotal * page, "available_bytes": info.PhysicalAvailable * page},
+            "commit": {"used_bytes": info.CommitTotal * page, "limit_bytes": info.CommitLimit * page}})
+
+    def open_memory_observation(self):
+        return _MemoryObservation(self)
+
     def open_operation(self, request):
         if (not isinstance(request, ActionRequest) or request.mechanism not in COMMANDS
                 or not request.confirmed or not request.confirmation_source.strip()):
             raise ValueError("维护需要本次明确确认")
         return _Operation(self, request)
+
+
+class _MemoryObservation:
+    def __init__(self, backend):
+        self.backend, self.closed = backend, False
+
+    def read(self, run_id, sequence):
+        if self.closed:
+            raise RuntimeError("读取会话已关闭")
+        sample = self.backend.read_memory()
+        return Sample(run_id, sequence, sample.timestamp, sample.metrics, errors=sample.errors)
+
+    def close(self):
+        self.closed = True
+        return {"closed": True, "errors": []}
 
 
 class _Observation:

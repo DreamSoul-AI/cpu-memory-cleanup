@@ -1,10 +1,11 @@
-from tests.support import make_app
 import json
 from pathlib import Path
 import tempfile
 import threading
 import unittest
 from unittest.mock import patch
+
+from tests.fixtures import create_application
 
 from cpu_memory_cleanup.application import core
 from cpu_memory_cleanup.system import records
@@ -58,7 +59,7 @@ class CoreTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.backend = FakeBackend()
-        self.app = make_app(self.backend, self.backend, sleep=lambda seconds: None)
+        self.app = create_application(self.backend, self.backend, sleep=lambda seconds: None)
         self.request = ActionRequest("working-set", confirmed=True, confirmation_source="test")
 
     def maintain(self):
@@ -67,6 +68,54 @@ class CoreTests(unittest.TestCase):
     def test_inspection_is_read_only(self):
         report = self.app.inspect()
         self.assertEqual(report.completion, "success")
+        self.assertEqual(self.backend.calls, 0)
+
+    def test_memory_display_reads_while_cleanup_busy_without_new_business_flow(self):
+        sample = Sample("display", 0, None, {"physical": {"available_bytes": 40, "total_bytes": 100}})
+        with patch.object(self.backend, "read_memory", return_value=sample, create=True) as read:
+            self.app._active = True
+            self.assertTrue(self.app.memory_display_available)
+            self.assertIs(self.app.memory_snapshot(), sample)
+            read.assert_called_once_with()
+        self.assertTrue(self.app.busy)
+        self.assertEqual((self.backend.opens, self.backend.calls, self.backend.reads), (0, 0, 0))
+
+    def test_unsafe_memory_display_is_blocked_before_native_read(self):
+        with patch.object(self.backend, "read_memory", create=True) as read:
+            self.app._unsafe = True
+            with self.assertRaises(RuntimeError):
+                self.app.memory_snapshot()
+            read.assert_not_called()
+
+    def test_shutdown_invalidates_an_inflight_display_result(self):
+        sample = Sample("display", 0, None, {})
+        def read_and_close():
+            self.app.shutdown()
+            return sample
+        with patch.object(self.backend, "read_memory", side_effect=read_and_close, create=True):
+            with self.assertRaises(RuntimeError):
+                self.app.memory_snapshot()
+
+    def test_display_reader_missing_or_invalid_is_not_zero(self):
+        self.assertFalse(self.app.memory_display_available)
+        with self.assertRaises(ValueError):
+            self.app.memory_snapshot()
+        with patch.object(self.backend, "read_memory", return_value=None, create=True):
+            with self.assertRaises(ValueError):
+                self.app.memory_snapshot()
+
+    def test_lightweight_cleanup_keeps_admission_and_action_record_without_full_observation(self):
+        with patch.object(self.backend, "open_memory_observation", return_value=self.backend, create=True) as open_memory:
+            report = self.app.maintain(self.request, self.temp.name, lightweight=True)
+        self.assertEqual(report.completion, "success")
+        self.assertEqual(report.metadata["header"]["observation_scope"], "memory-only")
+        self.assertEqual(self.backend.opens, 0)
+        self.assertEqual((self.backend.reads, self.backend.calls), (2, 1))
+        open_memory.assert_called_once_with()
+
+    def test_missing_lightweight_observation_blocks_cleanup_before_action(self):
+        report = self.app.maintain(self.request, self.temp.name, lightweight=True)
+        self.assertEqual(report.completion, "failed")
         self.assertEqual(self.backend.calls, 0)
 
     def test_named_sample_file_does_not_parse_itself_as_actions(self):
@@ -579,14 +628,14 @@ class CoreTests(unittest.TestCase):
 
     def test_review_cancel_after_analysis_keeps_result_and_closes_resources(self):
         original = self.app.inspect({"output_dir": self.temp.name})
-        analyze = core.rules.analyze
+        analyze = core.analysis.analyze
 
         def cancel(*args, **kwargs):
             result = analyze(*args, **kwargs)
             self.app.request_cancel()
             return result
 
-        with patch.object(core.rules, "analyze", cancel):
+        with patch.object(core.analysis, "analyze", cancel):
             report = self.app.review(original.output_dir, conditions={})
         self.assertEqual(report.completion, "cancelled")
         self.assertTrue(report.cancel_requested)
@@ -639,7 +688,7 @@ class CoreTests(unittest.TestCase):
             report = self.app.inspect({"output_dir": self.temp.name})
         self.assertEqual(report.completion, "success")
         self.assertFalse(report.cancel_requested)
-        reviewed = make_app().review(report.output_dir)
+        reviewed = create_application().review(report.output_dir)
         self.assertEqual(reviewed.metadata["terminal"]["completion"], report.completion)
         self.assertEqual(reviewed.metadata["terminal"]["cancel_requested"], report.cancel_requested)
         self.assertEqual(self.app.inspect().completion, "failed")
@@ -682,7 +731,7 @@ class CoreTests(unittest.TestCase):
         path = Path(original.output_dir) / "samples.jsonl"
         lines = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
         analysis = next(line for line in lines if line["record_type"] == "analysis")
-        analysis["analysis"] = core.rules.analyze(original.samples[:1])
+        analysis["analysis"] = core.analysis.analyze(original.samples[:1])
         lines.remove(analysis)
         lines.insert(2, analysis)
         path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
@@ -894,7 +943,7 @@ class CoreTests(unittest.TestCase):
         for mode in ("inspect", "maintain"):
             with self.subTest(mode=mode):
                 self.backend = FakeBackend()
-                self.app = make_app(self.backend, self.backend, sleep=lambda seconds: None)
+                self.app = create_application(self.backend, self.backend, sleep=lambda seconds: None)
                 journals = []
                 open_write = self.app.records.open_write
                 stamp = self.app._clock()
@@ -1023,7 +1072,7 @@ class CoreTests(unittest.TestCase):
             for close_failure in ("error", "interrupt"):
                 with self.subTest(mode=mode, close_failure=close_failure):
                     backend = FakeBackend()
-                    app = make_app(backend, backend, sleep=lambda seconds: None)
+                    app = create_application(backend, backend, sleep=lambda seconds: None)
                     report = app._report(mode)
                     first = KeyboardInterrupt("fake close interruption")
                     diagnostic = SystemExit("fake diagnostic interruption")
@@ -1065,7 +1114,7 @@ class CoreTests(unittest.TestCase):
         for clock_failure in ("error", "interrupt"):
             with self.subTest(clock_failure=clock_failure):
                 backend = FakeBackend()
-                app = make_app(backend, backend)
+                app = create_application(backend, backend)
                 report = app._report("inspect")
                 first = KeyboardInterrupt("fake clock interruption")
                 diagnostic = SystemExit("fake diagnostic interruption")
@@ -1098,7 +1147,7 @@ class CoreTests(unittest.TestCase):
         comparison = self.app.inspect({"output_dir": self.temp.name})
         for close_failure in ("error", "interrupt"):
             with self.subTest(close_failure=close_failure):
-                app = make_app()
+                app = create_application()
                 first = KeyboardInterrupt("fake first reader close interruption")
                 diagnostic = SystemExit("fake diagnostic interruption")
                 close = records.RunReader.close

@@ -18,7 +18,7 @@ class FakeRuntime:
         logging.getLogger("cpu_memory_cleanup").warning(event["event"])
 
 
-def make_app(*args, **kwargs):
+def create_application(*args, **kwargs):
     kwargs.setdefault("records", RecordStore())
     kwargs.setdefault("runtime", FakeRuntime())
     kwargs.setdefault("capabilities", Capabilities("fake", "available", ("working-set", "standby")))

@@ -8,7 +8,7 @@ import uuid
 from ..contracts import (ActionRequest, Capabilities, RULE_VERSION, SCHEMA_VERSION, PROGRAM_VERSION,
                          MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_SAMPLES, RunReport, Sample,
                          finite_number, validate_action)
-from . import rules
+from . import analysis
 
 
 class _Cancelled(Exception):
@@ -210,6 +210,25 @@ class Application:
         with self._lock:
             return self._active
 
+    @property
+    def memory_display_available(self):
+        return callable(getattr(self.reader, "read_memory", None))
+
+    def memory_snapshot(self):
+        """显示读数不占用清理流程，但安全上下文未知或关闭后不再读取。"""
+        with self._lock:
+            if self._closed or self._unsafe:
+                raise RuntimeError("内存显示已停止，安全上下文未就绪")
+        if not self.memory_display_available:
+            raise ValueError("当前接入没有轻量内存读取能力")
+        sample = self.reader.read_memory()
+        if not isinstance(sample, Sample):
+            raise ValueError("内存显示返回值不是样本")
+        with self._lock:
+            if self._closed or self._unsafe:
+                raise RuntimeError("内存显示结果已失效")
+        return sample
+
     def request_cancel(self):
         with self._lock:
             if not self._active or self._finishing:
@@ -380,7 +399,7 @@ class Application:
                         self._cancel.wait(options["interval"])
                     else:
                         self._sleep(options["interval"])
-            report.analysis = rules.analyze(report.samples, conditions=options["conditions"])
+            report.analysis = analysis.analyze(report.samples, conditions=options["conditions"])
             if journal:
                 journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
         except _Cancelled:
@@ -395,7 +414,7 @@ class Application:
                 raise interruptions[0]
         return report
 
-    def maintain(self, request, output_dir, *, cancel_event=None):
+    def maintain(self, request, output_dir, *, cancel_event=None, lightweight=False):
         report = self._report("maintain")
         if not self._begin(report, cancel_event):
             return report
@@ -403,6 +422,8 @@ class Application:
         interruptions = []
         try:
             self._check_cancel()
+            if type(lightweight) is not bool or (lightweight and not callable(getattr(self.reader, "open_memory_observation", None))):
+                raise ValueError("当前接入不支持所需的轻量内存快照")
             if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
                 raise ValueError("维护必须有明确确认及来源")
             if request.mechanism not in self.capabilities.mechanisms:
@@ -412,6 +433,7 @@ class Application:
             options = _options({"count": 2, "interval": 0, "output_dir": output_dir})
             report.metadata["header"] = self._header(report, options)
             report.metadata["header"]["mechanism"] = request.mechanism
+            report.metadata["header"]["observation_scope"] = "memory-only" if lightweight else "full"
             journal = self._journal(report, options)
             journal.append("samples", report.metadata["header"])
             operation = self.maintainer.open_operation(request)
@@ -421,7 +443,7 @@ class Application:
             if not isinstance(preflight, dict) or any(preflight.get(k) is not True for k in
                                                      ("supported", "privilege_available", "lock_acquired")) or preflight.get("scope") != request.scope:
                 raise ValueError("维护准入能力缺失或未知")
-            session = self.reader.open_observation(with_processes=False, top=10)
+            session = self.reader.open_memory_observation() if lightweight else self.reader.open_observation(with_processes=False, top=10)
             report.phase = "before"
             before = self._read(session, report, journal)
             for block, key in (("physical", "available_bytes"), ("commit", "used_bytes"), ("commit", "limit_bytes")):
@@ -459,7 +481,7 @@ class Application:
                 return report
             report.phase = "after"
             self._read(session, report, journal)
-            report.analysis = rules.analyze(report.samples)
+            report.analysis = analysis.analyze(report.samples)
             journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
         except _Cancelled:
             pass
@@ -511,13 +533,13 @@ class Application:
             if comparison is not None:
                 other = load(comparison)
                 report.metadata["comparison_source_gaps"] = other["gaps"]
-                report.analysis = rules.compare(original["samples"], other["samples"], conditions=effective,
+                report.analysis = analysis.compare(original["samples"], other["samples"], conditions=effective,
                                                 metadata_a=original, metadata_b=other)
             elif conditions is None and original["analysis"] is not None:
                 report.analysis = original["analysis"]
                 report.metadata["recomputed"] = False
             else:
-                report.analysis = rules.analyze(report.samples, conditions=effective)
+                report.analysis = analysis.analyze(report.samples, conditions=effective)
                 report.metadata["recomputed"] = True
                 report.metadata["recomputed_rule_version"] = RULE_VERSION
             self._check_cancel()
