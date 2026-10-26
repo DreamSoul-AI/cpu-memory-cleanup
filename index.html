@@ -37,9 +37,15 @@
       </div>
     </section>
     <section class="context" aria-labelledby="context-title">
-      <div><p class="eyebrow">从一键清理，到资源协调</p><h2 id="context-title">Agent 可以提前做什么？</h2></div>
-      <p>候选方向是周期观察系统压力与应用增长趋势，结合用户优先级给出建议，再对明确授权的受管任务执行预算或协作式干预。它尚未实现，也无法保证阻止所有卡顿。</p>
+      <div><p class="eyebrow">FUTURE WORK · 后续方向</p><h2 id="context-title">从整理内存，<br>到提前协调资源。</h2></div>
+      <p>我们想探索的是：在资源压力持续升高时，根据用户正在做什么，提前协调应用和后台任务。目标是保护任务响应，不是持续压低内存数字。以下均为候选研究，尚未实现自动监测、Linux 接入或 Agent 干预。</p>
+      <div class="future-grid">
+        <article class="future-card"><span class="platform">WINDOWS</span><h3>能管理，难在理解业务</h3><p>Windows 已有内存管理、低内存通知，以及 Job Object 的任务组限额。可以结合应用增长趋势与用户优先级，研究提前预警和受管任务预算。</p><p>难点是普通外部工具不知道哪些对象可以删除，也不能通用地拦截所有应用的每次申请。超出硬限额可能导致申请失败，必须核验应用能否处理。</p><a href="https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information" target="_blank" rel="noopener noreferrer">Windows 限额机制 ↗</a></article>
+        <article class="future-card"><span class="platform">LINUX</span><h3>把压力检测与任务组控制连接起来</h3><p>Linux 的 cgroup v2 可以管理任务组资源，memory.high 用于压力下的节流与回收，memory.max 提供硬限制。PSI 衡量任务因资源不足而停顿的时间，比只看占用百分比更接近受影响程度。</p><p>配置适当时，systemd-oomd 可依据压力提前选择任务组终止。但 Linux 也可能换页卡顿，终止可能损失状态，效果仍依赖内核、配置、权限与应用归组。</p><div class="source-links"><a href="https://docs.kernel.org/admin-guide/cgroup-v2.html" target="_blank" rel="noopener noreferrer">cgroup v2 ↗</a><a href="https://docs.kernel.org/accounting/psi.html" target="_blank" rel="noopener noreferrer">PSI ↗</a><a href="https://www.freedesktop.org/software/systemd/man/latest/systemd-oomd.service.html" target="_blank" rel="noopener noreferrer">systemd-oomd ↗</a></div></article>
+        <article class="future-card"><span class="platform">AGENT</span><h3>理解优先级，按能力干预</h3><p>识别持续增长、区分前台任务与重要后台工作，结合用户保护名单解释风险。对有协作接口的应用请求减并发或释放缓存，对自己启动的任务研究预算与延后执行。</p><p>AI 用于提出策略，轻量规则执行器负责及时判断、权限、记录和冷却。紧急路径不等待大模型回复，不按内存排名自动杀进程，不承诺防止所有死机。</p></article>
+      </div>
       <div class="agent-flow"><span>观察趋势</span><span aria-hidden="true">→</span><span>判断优先级</span><span aria-hidden="true">→</span><span>按授权干预</span><span aria-hidden="true">→</span><span>核对效果</span></div>
+      <div class="roadmap"><h3>我们准备怎样验证？</h3><ol><li><strong>先模拟</strong>：用合成轨迹验证持续增长、短时峰值、数据缺失与误判，只输出建议。</li><li><strong>再只读</strong>：分别核对 Windows 与 Linux 的数据口径、监测开销和权限，不把当前 Windows 实现当成跨平台支持。</li><li><strong>最后控制</strong>：先在可重跑的受管任务上验证预算和应用协作，再评估是否扩大自动动作范围。</li></ol><p>比较同样任务在无干预与干预后的响应时间、吞吐、误干预和恢复成本。占用下降或结束一个任务，都不能单独证明方案更好。</p></div>
     </section>
   </main>
   <footer><span>参考 360 式快捷交互，自行实现的演示。与 360 无关联。</span><nav class="page-links" aria-label="项目与参考资料"><a href="https://github.com/DreamSoul-AI/cpu-memory-cleanup" target="_blank" rel="noopener noreferrer">GitHub 源码 ↗</a><a href="https://learn.microsoft.com/en-us/windows/win32/memory/working-set" target="_blank" rel="noopener noreferrer">了解工作集机制 ↗</a></nav></footer>
