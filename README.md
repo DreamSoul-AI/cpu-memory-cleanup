@@ -3,6 +3,28 @@
 
 打开只读，点击才清理。桌面固定工作集方式，CPU 与历史分析命令属于辅助工具。可用内存上升不等于加速收益。
 
+## 项目约定与执行边界
+
+开始研发或执行命令前，结合 AGENTS.md 读取本节。AGENTS.md 维护通用协作、资料定位和迭代流程，本节与专项文档维护 CPU 内存清理的具体约定。入口通用化不放宽以下限制。
+
+### 实现与设计约定
+
+- 当前交付形态为独立内存小窗口，以 360 加速球式快捷操作为参考。CPU 看板、排名和诊断前置不是主功能，未约定宿主协议前不声称已有浏览器或编辑器插件集成
+- 源码位于 `src/cpu_memory_cleanup/`，产品运行依赖保持 Python 标准库。`interaction/`、`application/`、`system/` 对应用户交互、功能和系统，具体平台接入位于 `system/platforms/`
+- 架构使用用户交互、功能、系统三层的结构与流程视图，统一表述操作系统能力。平台名称用于实现与验证现状，不能推定已具备多平台支持。AR-01 至 AR-07 在架构和代码结构设计中关联职责、实现与验证
+- 代码结构设计的硬约束集中于 `src/cpu_memory_cleanup/` 的模块职责、文件、入口、状态和依赖。外围目录由本文导航，属于可调整的软约定，变化时同步相关装配、脚本、配置、测试与文档
+- 测试镜像位于 `tests/src/cpu_memory_cleanup/`，脚本及其测试位于 `scripts/` 和 `tests/scripts/`，共享装配在 `tests/fixtures.py`，包发现由 `pyproject.toml` 配置。`tests/` 不设 README，镜像例外登记在代码结构设计中
+- 测试规则直接采用关联 DreamSoul 资料库中的飞书共用测试规范，不另建副本。根 `tests/manifest.json` 维护全局计划与预算，局部清单提供当前目录及子树元数据，执行器静态发现并展开 Python 方法。独立网页演示测试另行登记，不冒充 Python 计划覆盖
+- 架构任务先复用资料库中 `研发/研究/软件开发 Software Engineering/软件架构设计 Software Architecture Design/` 的通用调研、相关案例和来源范围。涉及 Codex 工具生命周期时，先读同一软件开发课题下《Codex 闲置工具进程安全回收调研》，保留其版本与阅读范围
+
+### 运行与验证限制
+
+- 不结束进程、不停服务、不修改系统设置、页面文件或注册表，不自动提权。Windows 内存维护与工具生命周期回收分别分析，聊天闲置、低 CPU、Node 名称和进程年龄不能证明可以关闭
+- 真实释放、GUI、实时巡检、持续采样和后台任务必须有本次明确执行指令。当前先不运行真实采样和清理的要求继续有效，文档命令、历史实验和未来计划不构成执行授权
+- 释放与权限调整测试注入假调用，禁止测试触发真实释放。当前 quick、regression 和 readonly_offline 只执行离线与假接入验证，不代表真实平台或清理效果验收
+- 读取失败保留未知和错误，不补零。调用结果未知不自动重试，后置失败保留已发生事实。目录存在、离线通过和源码分析均不能代替行为验证
+- 已删除的历史 `logs/` 不自动重建。新验证使用当前计划的独立输出，旧回执保留原路径、版本和标识，不改写成新布局通过
+
 ## 网页演示
 打开 [在线交互演示](https://dreamsoul-ai.github.io/cpu-memory-cleanup/)。源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。它不读取访客设备，也不执行真实清理。Agent 的周期监测与分级干预仍是候选计划，见开发计划第九章。
 
@@ -10,15 +32,19 @@
 
 ## 文档入口
 
-- [项目协作约定](<AGENTS.md>)：关联资料、规范和操作边界
-- [通用调研](<docs/CPU 内存清理 通用调研.md>)：360 产品对照、技术机制、历史证据及限制
-- [架构设计 Architecture Design](<docs/CPU 内存清理 架构设计 Architecture Design.md>)：用户交互、功能、系统三层的结构视图与流程视图，以及部署和质量目标
-- [代码结构设计 Code Structure Design](<docs/CPU 内存清理 代码结构设计 Code Structure Design.md>)：`src/cpu_memory_cleanup/` 内部的模块目录、文件职责、依赖与实现边界
-- [开发计划 Development Plan](<docs/CPU 内存清理 开发计划 Development Plan.md>)：开发目标、任务、依赖和验收条件
-- [开发记录](<docs/开发记录/README.md>)：按日期记录代码结构、模块职责和工程实现的演进
-- [运行记录](<docs/运行记录/README.md>)：按日期归档主机观察、修复验证、测试与打包记录
-- [缺陷记录 Bug Report](<docs/CPU 内存清理 缺陷记录 Bug Report.md>)：待处理与待验证问题，已解决项归档到运行记录
-- [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)：直接采用飞书共用规范，正文同步于关联 DreamSoul 资料库
+当前独立文档统一将类型放在前、项目名放在后。每类维护一个现行入口，历史执行按日期分目录归档。
+
+| **文件或入口** | **维护内容** |
+| --- | --- |
+| [AGENTS.md](<AGENTS.md>) | 通用协作规则、资料定位、文档分工和自动化开发流程 |
+| [通用调研 CPU 内存清理.md](<docs/通用调研 CPU 内存清理.md>) | 360 产品对照、内存机制、方案、来源和证据限制，历史验证只留结论摘要并引用运行记录 |
+| [架构设计 Architecture Design CPU 内存清理.md](<docs/架构设计 Architecture Design CPU 内存清理.md>) | 三层职责、能力、结构与流程、部署和质量目标，不写 Python 文件或具体类型 |
+| [代码结构设计 Code Structure Design CPU 内存清理.md](<docs/代码结构设计 Code Structure Design CPU 内存清理.md>) | 架构到源码、模块、文件、公开入口、状态、依赖和测试的映射，区分当前实现与目标 |
+| [开发计划 Development Plan CPU 内存清理.md](<docs/开发计划 Development Plan CPU 内存清理.md>) | 后续目标、优先级、依赖和验收条件，探索与已决定任务分开，不产生运行授权 |
+| [缺陷记录 Bug Report CPU 内存清理.md](<docs/缺陷记录 Bug Report CPU 内存清理.md>) | 活动缺陷待办，验证关闭后将经过和证据归档到日期记录 |
+| [开发记录/](<docs/开发记录/README.md>) | 按日期记录实现、职责和工程组织的演进，不重复完整执行回执 |
+| [运行记录/](<docs/运行记录/README.md>) | 按日期记录实际命令、环境、版本、结果和限制，不冒充当前验证 |
+| [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf) | 关联 DreamSoul 资料库中的共用正文，不在本仓库复制一份规范 |
 
 ## 关联的 DreamSoul 资料
 本仓库：[DreamSoul-AI/cpu-memory-cleanup](https://github.com/DreamSoul-AI/cpu-memory-cleanup)。每次从当前项目关联文件夹和资料链接定位 DreamSoul 文档库，读取相关规范与已有研究，再沿用既有飞书分享链接。使用资料库的逻辑目录，不写死机器盘符或用户名。
@@ -55,7 +81,7 @@ cpu-memory-cleanup/
 相关测试目录按需设置局部 `manifest.json`，只描述该目录文件及子树的默认值和例外。测试代码与源码的对应关系见代码结构设计，辅助装配位于 `tests/fixtures.py`。测试编写和执行遵循 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。测试镜像当前沿用源码路径，调整目录时仍需保持目标可定位、测试发现与清单一致。产品运行记录写入调用方指定的位置，测试回执写入独立结果目录，均不属于产品源码。
 
 ## 产品定位与当前行为
-当前按历史内存小窗口重新实现：大号占用百分比、占用条、可用量与提交量、绿色“一键清理”及前后数值。打开后只读刷新内存显示，点击绿色按钮才清理，不需要 CPU 诊断或方案选择。产品范围见 [开发计划](<docs/CPU 内存清理 开发计划 Development Plan.md#七内存清理插件的产品基线>)。
+当前按历史内存小窗口重新实现：大号占用百分比、占用条、可用量与提交量、绿色“一键清理”及前后数值。打开后只读刷新内存显示，点击绿色按钮才清理，不需要 CPU 诊断或方案选择。产品范围见 [开发计划](<docs/开发计划 Development Plan CPU 内存清理.md#七内存清理插件的产品基线>)。
 
 ## 安装与启动
 产品包位于 `src/`，本地开发先在仓库根目录安装可编辑包，再使用 `python -m cpu_memory_cleanup`。使用当前 Python 环境已有的构建工具，安装命令不拉取运行依赖；产品运行依赖仍为标准库。
