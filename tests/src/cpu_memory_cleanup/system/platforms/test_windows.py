@@ -8,9 +8,10 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from tests.fixtures import create_application
+
 from cpu_memory_cleanup.system.platforms import windows as api
 from cpu_memory_cleanup.contracts import ActionRequest
-from tests.support import make_app
 
 
 class Function:
@@ -218,8 +219,58 @@ class WindowsTests(unittest.TestCase):
     def operation(self, mechanism="working-set"):
         return self.backend.open_operation(ActionRequest(mechanism, confirmed=True, confirmation_source="test"))
 
+    def test_light_memory_read_only_loads_psapi_and_has_no_native_maintenance(self):
+        sample = self.backend.read_memory()
+        self.assertEqual(sample.metrics["physical"]["available_bytes"], 300 * 4096)
+        self.assertEqual(sample.metrics["commit"]["used_bytes"], 600 * 4096)
+        self.assertEqual(self.fake.loads, ["psapi.dll"])
+        self.assertEqual(self.fake.collections, 0)
+        self.assertEqual(self.fake.opens, [])
+        self.assertEqual(self.fake.nt_calls, [])
+        self.assertEqual(sample.processes, [])
+
+    def test_light_memory_failure_is_propagated_without_zero_sample(self):
+        self.fake.fail_memory = True
+        with self.assertRaises(OSError):
+            self.backend.read_memory()
+
+    def test_light_memory_refresh_reuses_native_binding(self):
+        self.backend.read_memory()
+        self.backend.read_memory()
+        self.assertEqual(self.fake.loads, ["psapi.dll"])
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_light_memory_rejects_inconsistent_capacity(self):
+        original = self.fake.psapi.GetPerformanceInfo.function
+        def invalid(pointer, size):
+            original(pointer, size)
+            pointer._obj.PhysicalAvailable = pointer._obj.PhysicalTotal + 1
+            return True
+        self.fake.psapi.GetPerformanceInfo.function = invalid
+        with self.assertRaises(OSError):
+            self.backend.read_memory()
+
+    def test_light_memory_session_preserves_run_identity_and_rejects_read_after_close(self):
+        session = self.backend.open_memory_observation()
+        sample = session.read("operation-run", 1)
+        self.assertEqual((sample.run_id, sample.sequence), ("operation-run", 1))
+        self.assertEqual(session.close(), {"closed": True, "errors": []})
+        with self.assertRaises(RuntimeError):
+            session.read("operation-run", 2)
+        self.assertEqual(self.fake.loads, ["psapi.dll"])
+
+    def test_gui_cleanup_uses_memory_only_snapshots_without_pdh_or_process_scan(self):
+        app = create_application(self.backend, self.backend)
+        with tempfile.TemporaryDirectory() as directory:
+            report = app.maintain(ActionRequest("working-set", confirmed=True, confirmation_source="test"), directory, lightweight=True)
+        self.assertEqual(report.completion, "success")
+        self.assertEqual(len(self.fake.nt_calls), 1)
+        self.assertNotIn("pdh.dll", self.fake.loads)
+        self.assertEqual([item[0] for item in self.fake.opens], ["token", "token"])
+        self.assertEqual(len(report.samples), 2)
+
     def assert_new_application_maintenance_blocked(self, backend, fake):
-        app = make_app(backend, backend)
+        app = create_application(backend, backend)
         with tempfile.TemporaryDirectory() as directory:
             report = app.maintain(ActionRequest("standby", confirmed=True,
                                                 confirmation_source="test"), directory)
@@ -407,7 +458,7 @@ class WindowsTests(unittest.TestCase):
             raise interruption
 
         self.fake.pdh.PdhOpenQueryW = Function(interrupted_open)
-        app = make_app(self.backend, self.backend)
+        app = create_application(self.backend, self.backend)
         with self.assertRaises(KeyboardInterrupt) as caught:
             app.inspect()
         self.assertIs(caught.exception, interruption)
@@ -425,7 +476,7 @@ class WindowsTests(unittest.TestCase):
 
         self.fake.pdh.PdhOpenQueryW = Function(interrupted_open)
         self.fake.fail_close_query = True
-        app = make_app(self.backend, self.backend)
+        app = create_application(self.backend, self.backend)
         with self.assertRaises(KeyboardInterrupt) as caught:
             app.inspect()
         self.assertIs(caught.exception, interruption)
@@ -463,7 +514,7 @@ class WindowsTests(unittest.TestCase):
             raise interruption
 
         self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
-        app = make_app(self.backend, self.backend)
+        app = create_application(self.backend, self.backend)
         with self.assertRaises(KeyboardInterrupt) as caught:
             app.inspect()
         self.assertIs(caught.exception, interruption)
@@ -479,7 +530,7 @@ class WindowsTests(unittest.TestCase):
             raise interruption
 
         self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
-        app = make_app(self.backend, self.backend)
+        app = create_application(self.backend, self.backend)
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(KeyboardInterrupt) as caught:
                 app.maintain(ActionRequest("working-set", confirmed=True,
@@ -501,7 +552,7 @@ class WindowsTests(unittest.TestCase):
 
         self.fake.pdh.PdhAddEnglishCounterW = Function(interrupt_add)
         self.fake.fail_close_query = True
-        app = make_app(self.backend, self.backend)
+        app = create_application(self.backend, self.backend)
         with self.assertRaises(KeyboardInterrupt) as caught:
             app.inspect()
         self.assertIs(caught.exception, interruption)
@@ -595,7 +646,7 @@ class WindowsTests(unittest.TestCase):
                 fake.kernel.CloseHandle = Function(interrupted_close)
                 backend = api.WindowsBackend(fake.load)
                 session = backend.open_observation(with_processes=True)
-                app = make_app(backend, backend)
+                app = create_application(backend, backend)
                 with patch.object(backend, "open_observation", return_value=session):
                     with self.assertRaises(KeyboardInterrupt) as caught:
                         app.inspect({"count": 1, "interval": 0, "with_processes": True})
@@ -625,7 +676,7 @@ class WindowsTests(unittest.TestCase):
 
         self.fake.kernel.CloseHandle = Function(failed_close)
         session = self.backend.open_observation(with_processes=True)
-        app = make_app(self.backend, self.backend)
+        app = create_application(self.backend, self.backend)
         with patch.object(self.backend, "open_observation", return_value=session):
             report = app.inspect({"count": 1, "interval": 0, "with_processes": True})
         self.assertEqual(report.completion, "success")
@@ -659,7 +710,7 @@ class WindowsTests(unittest.TestCase):
                 fake.kernel.CloseHandle = Function(failed_close)
                 backend = api.WindowsBackend(fake.load)
                 session = backend.open_observation(with_processes=True)
-                app = make_app(backend)
+                app = create_application(backend)
                 with patch.object(backend, "open_observation", return_value=session):
                     with self.assertRaises(KeyboardInterrupt) as caught:
                         app.inspect({"count": 1, "interval": 0, "with_processes": True})
@@ -743,7 +794,7 @@ class WindowsTests(unittest.TestCase):
                     return original(handle)
 
                 fake.pdh.PdhCloseQuery = Function(interrupted_close)
-                app = make_app(api.WindowsBackend(fake.load))
+                app = create_application(api.WindowsBackend(fake.load))
                 with self.assertRaises(KeyboardInterrupt) as caught:
                     app.inspect()
                 self.assertIs(caught.exception, interruption)
@@ -851,7 +902,7 @@ class WindowsTests(unittest.TestCase):
         self.assertFalse(operation.close()["closed"])
         self.assertTrue(self.lock.locked())
         with tempfile.TemporaryDirectory() as directory:
-            app = make_app(self.backend, self.backend)
+            app = create_application(self.backend, self.backend)
             report = app.maintain(ActionRequest("working-set", confirmed=True,
                                                confirmation_source="test"), directory)
         self.assertEqual(report.completion, "failed")

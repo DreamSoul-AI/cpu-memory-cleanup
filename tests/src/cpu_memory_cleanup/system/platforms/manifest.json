@@ -1,0 +1,247 @@
+{
+  "files": {
+    "test_windows.py": {
+      "target": "src/cpu_memory_cleanup/system/platforms/windows.py",
+      "tags": [
+        "offline",
+        "module_windows"
+      ],
+      "cases": {
+        "WindowsTests.test_observation_has_memory_cpu_and_first_tick_gaps": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "WindowsTests.test_process_identity_cpu_and_commit_survive_top_one": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "WindowsTests.test_nonfinite_pdh_value_is_explicitly_missing": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "WindowsTests.test_observation_top_contract_rejects_out_of_range_before_loading": {
+          "subtests": [
+            {
+              "top": 0
+            },
+            {
+              "top": 101
+            },
+            {
+              "top": true
+            }
+          ]
+        },
+        "WindowsTests.test_preflight_queries_only_and_each_mechanism_calls_once": {
+          "subtests": [
+            {
+              "mechanism": "working-set"
+            },
+            {
+              "mechanism": "standby"
+            }
+          ]
+        },
+        "WindowsTests.test_missing_or_removed_privilege_is_refused": {
+          "subtests": [
+            {
+              "attrs": null
+            },
+            {
+              "attrs": 4
+            }
+          ]
+        },
+        "WindowsTests.test_busy_or_abandoned_mutex_is_zero_calls": {
+          "subtests": [
+            {
+              "status": 258
+            },
+            {
+              "status": 128
+            }
+          ]
+        },
+        "WindowsTests.test_pdh_open_failure_remains_visible_in_every_sample": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "WindowsTests.test_pdh_invalid_rates_keep_each_failure_after_first_sample_warmup": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "WindowsTests.test_pdh_formatting_preserves_capacity_and_rate_units": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "WindowsTests.test_pdh_initialization_error_is_not_retried_and_gaps_remain": {
+          "subtests": [
+            {
+              "exception_type": "OSError"
+            },
+            {
+              "exception_type": "AttributeError"
+            }
+          ]
+        },
+        "WindowsTests.test_process_handle_close_interrupt_keeps_unknown_and_blocks_replay": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_pending_process_close_interrupt_does_not_retry_confirmed_handles": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_pdh_close_interrupt_keeps_unknown_and_blocks_replay": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_operation_token_close_interrupt_keeps_unknown_and_blocks_replay": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_operation_mutex_close_interrupt_keeps_unknown_and_blocks_replay": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_operation_mutex_release_interrupt_keeps_unknown_and_blocks_replay": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_operation_known_close_failures_remain_retryable": {
+          "subtests": [
+            {
+              "resource": "token"
+            },
+            {
+              "resource": "mutex"
+            },
+            {
+              "resource": "release"
+            }
+          ]
+        },
+        "WindowsTests.test_operation_token_open_interrupt_closes_output_without_replaying": {
+          "subtests": [
+            {
+              "phase": "preflight",
+              "interruption_timing": "before"
+            },
+            {
+              "phase": "preflight",
+              "interruption_timing": "after"
+            },
+            {
+              "phase": "perform",
+              "interruption_timing": "before"
+            },
+            {
+              "phase": "perform",
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_operation_mutex_wait_interrupt_keeps_unknown_and_blocks_replay": {
+          "subtests": [
+            {
+              "interruption_timing": "before"
+            },
+            {
+              "interruption_timing": "after"
+            }
+          ]
+        },
+        "WindowsTests.test_preflight_query_and_close_interrupts_preserve_first_interrupt": {
+          "subtests": [
+            {
+              "query_failure": "interrupt",
+              "close_failure": "interrupt"
+            },
+            {
+              "query_failure": "interrupt",
+              "close_failure": "error"
+            },
+            {
+              "query_failure": "interrupt",
+              "close_failure": "none"
+            },
+            {
+              "query_failure": "error",
+              "close_failure": "interrupt"
+            },
+            {
+              "query_failure": "error",
+              "close_failure": "error"
+            },
+            {
+              "query_failure": "error",
+              "close_failure": "none"
+            }
+          ]
+        },
+        "WindowsTests.test_process_read_and_close_interrupts_preserve_first_interrupt": {
+          "subtests": [
+            {
+              "close_failure": "interrupt_before"
+            },
+            {
+              "close_failure": "interrupt_after"
+            },
+            {
+              "close_failure": "error"
+            }
+          ],
+          "level": "integration"
+        }
+      }
+    }
+  }
+}

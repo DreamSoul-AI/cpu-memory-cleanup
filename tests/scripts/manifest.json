@@ -1,0 +1,59 @@
+{
+  "files": {
+    "test_desktop_memory_ui.py": {
+      "target": "scripts/desktop-memory-ui.pyw",
+      "tags": [
+        "offline",
+        "module_desktop_memory_ui"
+      ],
+      "cases": {
+        "DesktopMemoryUiTests.test_gui_uses_composition_entry_and_forwards_exit_code": {
+          "target": "scripts/desktop-memory-ui.cmd"
+        }
+      }
+    },
+    "test_run_tests.py": {
+      "target": "scripts/run-tests.py",
+      "tags": [
+        "offline",
+        "module_run_tests"
+      ],
+      "cost_class": "c2",
+      "timeout_s": 60,
+      "memory_bytes": 2147483648,
+      "cost_estimate": {
+        "estimated_wall_time_ms": 2000
+      },
+      "cases": {
+        "CatalogTests.test_readonly_acceptance_remains_planned_outside_executable_plans": {
+          "cost_class": "c1",
+          "timeout_s": 1,
+          "memory_bytes": 268435456,
+          "cost_estimate": {
+            "estimated_wall_time_ms": 100
+          },
+          "plans": [
+            "regression",
+            "readonly_offline"
+          ]
+        },
+        "PersistenceTests.test_recovered_parameter_group_respects_required_policy": {
+          "subtests": [
+            {
+              "policy": "required_blocked"
+            },
+            {
+              "policy": "allowed"
+            },
+            {
+              "policy": "optional"
+            }
+          ]
+        }
+      },
+      "plans": [
+        "regression"
+      ]
+    }
+  }
+}

@@ -6,5 +6,5 @@ if defined PYTHONPATH (
 ) else (
   set "PYTHONPATH=%CD%\src"
 )
-python -m cpu_memory_cleanup --gui %*
+start "" pythonw "%~dp0desktop-memory-ui.pyw" %*
 exit /b %ERRORLEVEL%

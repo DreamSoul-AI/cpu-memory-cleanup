@@ -1,0 +1,500 @@
+{
+  "files": {
+    "test_core.py": {
+      "target": "src/cpu_memory_cleanup/application/core.py",
+      "tags": [
+        "offline",
+        "module_core"
+      ],
+      "level": "integration",
+      "cases": {
+        "CoreTests.test_review_invalid_samples_preserve_confirmed_action": {
+          "subtests": [
+            {
+              "source_case": "corrupt_tail"
+            },
+            {
+              "source_case": "header_only"
+            }
+          ]
+        },
+        "CoreTests.test_review_invalid_header_run_id_never_reads_actions": {
+          "subtests": [
+            {
+              "identity_case": "missing"
+            },
+            {
+              "identity_case": "empty"
+            },
+            {
+              "identity_case": "null"
+            },
+            {
+              "identity_case": "nonstring"
+            }
+          ]
+        },
+        "CoreTests.test_terminal_clock_failure_closes_records_and_releases_busy": {
+          "subtests": [
+            {
+              "mode": "inspect"
+            },
+            {
+              "mode": "maintain"
+            }
+          ]
+        },
+        "CoreTests.test_review_rejects_contradictory_action_intent": {
+          "subtests": [
+            {
+              "field": "mechanism"
+            },
+            {
+              "field": "scope"
+            }
+          ]
+        },
+        "CoreTests.test_review_accepts_legacy_undeclared_intent_fields": {
+          "subtests": [
+            {
+              "missing_fields": "intent"
+            },
+            {
+              "missing_fields": "header_mechanism"
+            }
+          ]
+        },
+        "CoreTests.test_review_rejects_success_terminal_with_errors": {
+          "subtests": [
+            {
+              "source_role": "primary"
+            },
+            {
+              "source_role": "comparison"
+            }
+          ]
+        },
+        "CoreTests.test_close_diagnostic_interrupt_finishes_resources_and_preserves_first_interrupt": {
+          "subtests": [
+            {
+              "mode": "inspect",
+              "close_failure": "error"
+            },
+            {
+              "mode": "inspect",
+              "close_failure": "interrupt"
+            },
+            {
+              "mode": "maintain",
+              "close_failure": "error"
+            },
+            {
+              "mode": "maintain",
+              "close_failure": "interrupt"
+            }
+          ]
+        },
+        "CoreTests.test_terminal_diagnostic_interrupt_closes_records_and_preserves_first_interrupt": {
+          "subtests": [
+            {
+              "clock_failure": "error"
+            },
+            {
+              "clock_failure": "interrupt"
+            }
+          ]
+        },
+        "CoreTests.test_review_close_diagnostic_interrupt_still_closes_both_readers": {
+          "subtests": [
+            {
+              "close_failure": "error"
+            },
+            {
+              "close_failure": "interrupt"
+            }
+          ]
+        },
+        "CoreTests.test_review_rejects_analysis_for_other_samples": {
+          "subtests": [
+            {
+              "source_role": "primary",
+              "analysis_field": "sample_count"
+            },
+            {
+              "source_role": "primary",
+              "analysis_field": "run_ids"
+            },
+            {
+              "source_role": "comparison",
+              "analysis_field": "sample_count"
+            },
+            {
+              "source_role": "comparison",
+              "analysis_field": "run_ids"
+            }
+          ]
+        },
+        "CoreTests.test_review_directory_action_cannot_be_hidden_by_inspect_header": {
+          "subtests": [
+            {
+              "source_case": "complete"
+            },
+            {
+              "source_case": "corrupt_tail"
+            },
+            {
+              "source_case": "foreign_run"
+            }
+          ]
+        },
+        "CoreTests.test_comparison_source_gaps_preserve_primary_facts": {
+          "subtests": [
+            {
+              "source_gap": "missing_mode"
+            },
+            {
+              "source_gap": "incomplete_terminal"
+            }
+          ]
+        },
+        "CoreTests.test_inspection_is_read_only": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_top_is_forwarded_to_analysis_and_saved_conditions": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_missing_confirmation_prevents_system_access": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_missing_preflight_capability_prevents_call": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_one_maintenance_has_one_native_call": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_after_read_failure_preserves_successful_call": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_intent_write_failure_prevents_call": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_result_write_failure_preserves_attempt": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_restore_failure_blocks_next_maintenance": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_unverified_action_stops_system_reads": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_close_failure_blocks_next_maintenance": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_unclosed_resources_block_further_system_reads": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_predispatch_cancel_is_persisted_and_closes_resources": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_duplicate_request_does_not_overlap": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_explicit_recompute_keeps_original_conditions": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_unknown_history_is_not_replayed": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_missing_action_file_is_unknown_in_review": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_empty_action_file_is_unknown_in_review": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_missing_version_cannot_be_complete_review": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_unknown_timestamp_marks_new_record_incomplete": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_contradictory_historical_action_is_rejected": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_record_close_failure_leaves_no_successful_terminal": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_legacy_tree_counts_and_signed_residual_survive_review": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_legacy_warnings_survive_review": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_empty_preflight_is_refused": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_invalid_interval_never_opens_reader": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_shutdown_before_worker_admission_prevents_call": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_diagnostic_failure_does_not_erase_call": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_reported_unknown_action_stops_after_sample_without_error_list": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_reported_unknown_action_blocks_new_system_requests_but_allows_review": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_after_read_interrupt_preserves_call_and_incomplete_terminal": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_dispatched_interrupt_saves_unknown_and_blocks_system_requests": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_dispatched_interrupt_survives_action_record_failure": {
+          "plans": [
+            "quick"
+          ]
+        },
+        "CoreTests.test_close_interrupt_finishes_other_resources_and_blocks_system_requests": {
+          "plans": [
+            "quick"
+          ]
+        }
+      },
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_analysis.py": {
+      "target": "src/cpu_memory_cleanup/application/analysis.py",
+      "tags": [
+        "offline",
+        "module_analysis"
+      ],
+      "cases": {
+        "RankingTests.test_top_limits_ranking_without_discarding_cpu_input": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CpuTests.test_first_sample_has_no_rate": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CpuTests.test_partial_coverage_is_not_global_cpu": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CpuTests.test_group_percentage_is_labeled": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CpuTests.test_pid_reuse_is_not_same_process": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CpuTests.test_duplicate_process_identity_has_no_cpu_difference": {
+          "subtests": [
+            {
+              "duplicate_side": "before"
+            },
+            {
+              "duplicate_side": "after"
+            }
+          ],
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "PressureAndTreeTests.test_pressure_prefers_current_commit_fields_over_legacy_values": {
+          "subtests": [
+            {
+              "limit_source": "current"
+            },
+            {
+              "limit_source": "legacy"
+            }
+          ],
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "PressureAndTreeTests.test_pressure_explicit_unknown_commit_fields_do_not_fall_back": {
+          "subtests": [
+            {
+              "field": "used_bytes"
+            },
+            {
+              "field": "limit_bytes"
+            }
+          ],
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "PressureAndTreeTests.test_pressure_legacy_commit_fields_remain_usable": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "ComparisonTests.test_calibration_experiment_mismatch_is_insufficient": {
+          "subtests": [
+            {
+              "mismatch_side": "metadata_a"
+            },
+            {
+              "mismatch_side": "metadata_b"
+            },
+            {
+              "mismatch_side": "both"
+            }
+          ],
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "StatisticsTests.test_extreme_finite_mean_survives_offline_cli_json": {
+          "level": "e2e",
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "PressureAndTreeTests.test_finite_summary_mean_preserves_extremes_and_missing_values": {
+          "subtests": [
+            {
+              "case": "maximum"
+            },
+            {
+              "case": "negative"
+            },
+            {
+              "case": "cancellation"
+            },
+            {
+              "case": "integers"
+            },
+            {
+              "case": "subnormal"
+            },
+            {
+              "case": "missing"
+            },
+            {
+              "case": "all_missing"
+            }
+          ],
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "ComparisonTests.test_finite_window_mean_preserves_extremes_and_missing_values": {
+          "subtests": [
+            {
+              "case": "maximum"
+            },
+            {
+              "case": "integers"
+            },
+            {
+              "case": "subnormal"
+            },
+            {
+              "case": "missing"
+            },
+            {
+              "case": "all_missing"
+            }
+          ],
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        }
+      }
+    }
+  }
+}

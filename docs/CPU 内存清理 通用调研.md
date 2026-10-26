@@ -1,4 +1,4 @@
-资料信息截止：2026年10月21日。实现状态更新：2026年10月22日。配套模块与测试方案见 [CPU 内存清理 架构设计](<CPU 内存清理 架构设计.md>)。源码与资料入口见 [项目协作约定](../AGENTS.md)。
+机制资料信息截止：2026年10月21日。360 公开页面与本仓库界面源码于2026年10月26日定向复核，具体范围见第二章第三节。本文研究技术机制、工具比较、方案取舍及证据限制，不维护代码演进或逐次运行结果。本次未重新验证操作系统机制或执行主机实验。设计输入见 [架构设计 Architecture Design](<CPU 内存清理 架构设计 Architecture Design.md>)，资料入口见 [项目协作约定](<../AGENTS.md>)。
 
 # 一、研究目标、范围与技术全景
 ## （一）核心问题
@@ -9,7 +9,7 @@
 | Q1 360 做了什么 | 展示、分类、程序关闭、启动管理分别怎样作用，哪些内部细节未知 | 360 官方产品页、2025隐私政策、历史官方产品说明 |
 | Q2 CPU 怎样治理 | 如何采样归因，减工作量、优先级、EcoQoS、配额分别解决什么 | Microsoft CPU/调度文档及公开应用生命周期机制 |
 | Q3 内存怎样清理 | 应用释放、工作集、Standby、Modified、提交量的区别和代价 | Microsoft 文档与固定提交的开源动作实现 |
-| Q4 当前如何实现 | 职责与接口如何落位，已实现哪些诊断与维护约束，哪些能力仍缺实机证据 | 当前源码、测试、重构前基线及离线假调用核验 |
+| Q4 方法如何用于本项目 | 各路线需要哪些输入、能力与安全条件，哪些结论仍缺验证 | 接口契约、固定提交源码、历史缺陷与验证限制 |
 | Q5 怎样评估 | 指标下降是否改善响应，怎样对照、恢复、测试和阻断不完整结果 | 历史 A/A、A/B，计数器定义与研发规范 |
 
 平台为 Windows 10/11 PC。CPU 研究包含负载治理，不将 CPU 硬件缓存作为清理对象。内存研究包含物理驻留与提交。磁盘垃圾、自启动、服务和应用关闭用于解释竞品及候选技术，本轮不扩展执行能力，不安装运行 360，不采样主机、不结束进程、不变更系统设置。
@@ -38,7 +38,7 @@ flowchart TB
 
 图1：依据第二至五章一手来源绘制的分析示意，Mermaid 源码直接维护于本文。箭头表示方法到资源变化及复测的关系，逻辑框不代表独立进程，也不代表 360 的内部实现。
 
-CPU 治理应先识别谁在持续执行什么，再减少不必要工作或调整竞争。内存页维护主要改变驻留，应用协作释放有机会减少业务持有资源。360 提供的是多类优化组合，不能仅用“清空 Standby”解释整个产品。当前已实现 CPU 时间差分、覆盖说明、内存分析和显式单项维护的模块边界，实施范围及证据限制见第六章。CPU 治理仍定位于诊断与建议。
+CPU 治理应先识别谁在持续执行什么，再减少不必要工作或调整竞争。内存页维护主要改变驻留，应用协作释放有机会减少业务持有资源。360 提供的是多类优化组合，不能仅用“清空 Standby”解释整个产品。本项目优先采用 CPU 归因与内存观察，页面维护按单一机制、明确确认和独立效果验证处理。方法适用条件见第六章。
 
 收益必须同时看响应、吞吐、恢复和副作用。工作集下降、Free 上升、综合分下降或 CPU 百分比降低，单独都不足以证明用户任务更快。
 
@@ -48,10 +48,10 @@ CPU 治理应先识别谁在持续执行什么，再减少不必要工作或调�
 
 | **产品能力** | **直接来源确认的行为** | **技术含义与未知** |
 | --- | --- | --- |
-| 资源看板 | 产品页展示 CPU、内存、温度与网速，极速版2022主帖描述看板和入口改版 | 是观察与交互，不直接证明使用某个清页 API。B01、B05 |
-| 智能显示值 | 12.0说明将 CPU、内存、I/O、网络按场景组合，可切换内存值 | 2018历史显示契约，权重未公开，不等于内存占用百分比。B04 |
-| 清理运行软件 | 2025政策说明加速球可关闭不用的进程，2019教程说明用户选择待结束程序 | 减少后台工作与资源持有；实际关闭 API、是否优雅退出未知。B02、B03 |
-| 启动与持续负载管理 | 公开列有软件、自启、服务等管理及优化恢复记录 | 针对后续启动和常驻工作，不是一次页面整理。B01、B02 |
+| 资源看板 | 产品页展示 CPU、内存、温度与网速，极速版2022主帖描述看板和入口改版 | 是观察与交互，不直接证明使用某个清页 API。[360 清理加速产品页](https://weishi.360.cn/clear/)、[极速版加速球说明](https://bbs.360.cn/thread-16074034-1-1.html) |
+| 智能显示值 | 12.0说明将 CPU、内存、I/O、网络按场景组合，可切换内存值 | 2018历史显示契约，权重未公开，不等于内存占用百分比。[12.0 智能数值说明](https://bbs.360.cn/thread-15621325-1-1.html) |
+| 清理运行软件 | 2025政策说明加速球可关闭不用的进程，2019教程说明用户选择待结束程序 | 减少后台工作与资源持有；实际关闭 API、是否优雅退出未知。[360 安全卫士隐私政策](https://weishi.360.cn/privacy.html)、[电脑卡慢优化方案](https://www.360.cn/n/10778.html) |
+| 启动与持续负载管理 | 公开列有软件、自启、服务等管理及优化恢复记录 | 针对后续启动和常驻工作，不是一次页面整理。[360 清理加速产品页](https://weishi.360.cn/clear/)、[360 安全卫士隐私政策](https://weishi.360.cn/privacy.html) |
 | 页面整理细节 | 上述来源未披露完整算法和调用路径 | 不把 EmptyWorkingSet、全局 NT 命令、申请大块内存等猜测写成 360 已确认实现 |
 
 直接依据：[产品页](https://weishi.360.cn/clear/)、[2025隐私政策第7节](https://weishi.360.cn/privacy.html)、[2019优化教程](https://www.360.cn/n/10778.html)、[12.0智能值说明](https://bbs.360.cn/thread-15621325-1-1.html)、[极速版看板说明](https://bbs.360.cn/thread-16074034-1-1.html)。
@@ -68,11 +68,30 @@ flowchart LR
     F --> V
 ```
 
-图2：根据官方公开行为绘制的产品流程示意，覆盖范围分别由 B01 至 B04 支撑，未复原内部分类算法、结束方式、时序或清页实现。减少后台工作可能降低 CPU，进程退出可能释放其私有资源，具体变化须按负载测量。
+图2：根据官方公开行为绘制的产品流程示意，覆盖范围分别由 360 产品页、隐私政策、优化教程和12.0智能值说明（链接见本章） 支撑，未复原内部分类算法、结束方式、时序或清页实现。减少后台工作可能降低 CPU，进程退出可能释放其私有资源，具体变化须按负载测量。
 
-当前政策记载优化功能会读取并上传部分启动、服务和任务信息，因此不能笼统沿用旧资料的“所有优化都仅在本地”结论。PC 当前保护白名单、自动选择规则、清页算法和各模式收益仍待版本核验。手机清理忽略名单不能填补 PC 证据缺口。[政策第7节](https://weishi.360.cn/privacy.html)
+2025年隐私政策记载优化功能会读取并上传部分启动、服务和任务信息，因此不能笼统沿用旧资料的“所有优化都仅在本地”结论。PC 当前保护白名单、自动选择规则、清页算法和各模式收益仍待版本核验。手机清理忽略名单不能填补 PC 证据缺口。[政策第7节](https://weishi.360.cn/privacy.html)
 ## （三）本项目可采用的产品思路
 采用独立可见指标、诊断说明、候选方案、用户选择、实际结果和复测的闭环。每种动作明确作用范围、前提、权限、可逆性和预期信号。综合评分若无公开规则和校准就不加入首版。程序关闭、启动项、服务变更均保留为技术比较，当前项目不据此执行或新增通用进程清理器。
+
+## （三）2026年10月26日的产品交互复核
+### 1. 本次实际读取的来源
+| **来源与范围** | **可确认内容** | **本项目采用方式** |
+| --- | --- | --- |
+| [360 清理加速产品页](https://weishi.360.cn/clear/) 的优化加速、悬浮加速球章节 | 页面说明资源监控、进程分类、方案入口，以及启动和服务等管理范围 | 借鉴状态、来源和快捷操作的组织，不推断内部清页算法 |
+| [360 安全卫士隐私政策](https://weishi.360.cn/privacy.html) 的日期及第7节 | 页面标注2025年9月8日，说明优化条目、记录恢复及加速球关闭进程等产品行为 | 进程关闭和系统配置管理与页面整理是不同路线，首版不提供前两类执行 |
+| [本仓库绿色按钮版本](https://github.com/DreamSoul-AI/cpu-memory-cleanup/blob/571d29b7b3216edf2c8b6209cad055c28a8a8782/cpu_memory_cleanup/desktop_ui.py) | 源码定义大字号内存值、进度条、绿色“一键加速”按钮和前后结果，按钮调用工作集整理 | 恢复醒目主操作和结果反馈，不恢复该版本直接调用、无确认的行为 |
+| [后续平滑显示版本](https://github.com/DreamSoul-AI/cpu-memory-cleanup/blob/74284f94129b559516a5ef987f1ce63e493772a1/cpu_memory_cleanup/desktop_ui.py) | 源码按物理总量与可用量推导占用百分比，并加入缓动 | 数值口径可复用，动画只影响展示，不能制造观测变化 |
+| 本轮重写前的桌面源码 | 有诊断刷新、取消和维护按钮，以及三张指标卡，但维护方式默认选中、操作与目录选择合并，缺少诊断到方案的呈现 | 现状用于识别交互差距，不据现有控件反推产品范围 |
+
+访问日期均为2026年10月26日。360 公开页为 HTML 正文阅读，产品页带历史版权和版本素材，不能据此确认当前安装包的精确布局、按钮颜色或行为细节。仓库历史与当前界面为源码阅读，没有启动历史版本、当前产品或360，也没有取得真实屏幕截图。
+
+### 2. 回到一键内存释放的产品目标
+历史提交 `fc26a00` 的目标说明明确为360加速球式一键内存释放，`571d29b` 和 `74284f9` 实现内存小窗口，`00dbcb2` 保持打开只读、点击按钮才释放。它们共同说明主要用户任务是查看内存、执行一次整理、查看前后数值。上一轮将 CPU 诊断、排名和方案选择提升为主流程，偏离了这个目标，本轮予以取代。
+
+当前产品采用紧凑内存窗口、绿色主操作和直接结果反馈。CPU 机制研究与历史分析作为辅助资料保留，不作为使用主按钮的前置。主按钮固定工作集方式，打开只读，点击形成一次明确请求，底层继续保留记录、准入、权限恢复、互斥、取消和未知不重放。
+
+这种交互定位不改变机制证据：工作集整理不保证降低提交量或改善任务速度，360 的进程关闭等能力也没有在本项目实现。首版不结束进程、不修改服务或系统设置，不将尚未定义的宿主插件协议声称为已实现集成。当前范围见 [开发计划](<CPU 内存清理 开发计划 Development Plan.md#七内存清理插件的产品基线>)。
 
 # 三、CPU 负载治理的方法与实现
 ## （一）先测量和归因
@@ -104,9 +123,9 @@ Chromium 页面生命周期将冻结与丢弃分开。冻结限制可冻结队�
 
 | **路线** | **公开契约与操作范围** | **代价及采用条件** |
 | --- | --- | --- |
-| PSAPI/PDH 只读观察 | 读取主机容量与速率，当前已有实现 | 有采样时差与读取缺口，不提供工具所有权 |
+| PSAPI/PDH 只读观察 | 读取主机容量与速率，可作为只读观察路线 | 有采样时差与读取缺口，不提供工具所有权 |
 | `EmptyWorkingSet` | 有公开文档，指定进程句柄需要查询权限与 `PROCESS_SET_QUOTA` | 是独立的逐进程路线，不能用它证明全局 NT 命令的权限或支持范围。本项目不新增逐 PID 释放 |
-| 全局内存列表命令 | 当前调用类80及命令2、4，需要按构建和特权验证 | 对整个系统页面列表生效，没有业务进程排除保证，保留为显式实验后端 |
+| 全局内存列表命令 | 可见实现使用类80及命令2、4，需要按构建和特权验证 | 对整个系统页面列表生效，没有业务进程排除保证，保留为显式实验后端 |
 | 宿主正常释放连接 | 根据业务引用和正常关闭契约回收工具 | 需要宿主证据及接口，不由 Windows 内存列表代替 |
 
 `NtSetSystemInformation` 函数本身存在 Microsoft 官方说明。该说明没有给出 `SystemMemoryListInformation=80`、命令2和4的稳定支持契约，因此准确边界是“函数有文档，当前内存列表信息类与命令不具备该页给出的 SDK 支持保证”。不能笼统称整个函数完全未文档化，也不能将代码注释中的“publicly documented commands”作为 ABI 依据。[函数说明](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ntsetsysteminformation)、[逐进程接口](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset)
@@ -129,7 +148,7 @@ flowchart LR
 ## （三）权限与并发
 `AdjustTokenPrivileges` 只能调整令牌已持有的特权，BOOL 非零仍须检查 `ERROR_NOT_ALL_ASSIGNED`，原状态可通过 `PreviousState` 保存并恢复。[官方返回与恢复语义](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-adjusttokenprivileges)
 
-据此实施项目约束：启用失败零 NT 动作，工具临时启用后尝试恢复，原先已启用则保持原状。恢复失败与动作结果分别保留。GUI 与 CLI 共用核心维护入口，Windows 接入包含进程内互斥与会话级命名互斥，未确认恢复或资源关闭时拒绝后续系统流程。这些是源码及假接入验证范围，真实权限恢复与跨实例行为尚未实机验证。当前不承诺跨会话互斥或持久化冷却。
+该权限语义要求在启用失败时停止动作，临时调整后核对原状态，恢复结果与动作结果分别保留。互斥还需明确进程、用户会话与跨会话范围，不能从某个命名空间推定已经覆盖全部实例。[对象命名空间](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces)、[CreateMutexW](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexw)。具体实现和验证状态由代码结构设计及测试规范维护。
 ## （四）计数器、因果与收益
 PDH 速率通常需要至少两次采集，首拍未知不能补0，记录实际间隔。进程实例名可能变化，当前逐进程 CPU 比较使用 PID 与创建时间，名称用于展示。[采集流程](https://learn.microsoft.com/en-us/windows/win32/perfctrs/collecting-performance-data)
 
@@ -155,98 +174,35 @@ System Informer 用统一的小函数传入不同内存列表命令，封装工�
 
 这些源码解释了常见“内存整理”工具如何落到系统调用，但不能证明 360 采用相同实现。依照产品资料，本项目先把“减少后台工作”“持有者释放”“改变页面驻留”建成不同的诊断与方案类型，再决定是否有足够能力执行。
 
-# 六、当前实现、缺口与验证输入
-## （一）当前实施进展与证据状态
-2026年10月21日按架构与代码结构设计完成模块落位。产品包维护在 src/cpu_memory_cleanup/，对应镜像测试在 tests/src/cpu_memory_cleanup/，脚本及其测试保留根目录布局。产品包现有8个 Python 文件：包标识、装配入口、共享合同、用例、规则、Windows 接入、CLI 和桌面交互。文件职责与依赖以 [代码结构设计](<CPU 内存清理 代码结构设计.md>) 为准。
+# 六、项目适用性与验证要求
+## （一）从机制研究得到的工程要求
+CPU 诊断需要稳定进程身份、一致采样窗口、明确覆盖和缺失原因。内存观察应分别记录提交、驻留、可用物理量和缺页代价。维护动作要求明确确认、单一机制、前置能力检查，并分开保存调用事实、恢复状态与整体完成度。
 
-| **实施范围** | **当前代码行为** | **证据边界** |
-| --- | --- | --- |
-| CPU 与内存分析 | 以 PID 和创建时间计算进程累计 CPU 差，分开单核与全机口径。首拍、处理器组及读取缺口保留未知 | 源码与合成样本验证，真实硬件与处理器组覆盖未验证 |
-| 有界观察与离线回看 | `inspect` 保存版本化样本及条件，`review` 保留原分析或明确重算。读取进程全集后再按 `top` 排名，不截断 CPU 分析输入 | 历史文件与假 Reader 路径，未启动真实采样 |
-| 单次维护与结果事实 | 明确确认、单一机制、保存意图后至多一次派发。调用、恢复、记录与整体完成度分开，后置失败保留已发生事实 | 假 Maintainer、假 DLL、权限与文件故障注入，不证明真实释放成功或有收益 |
-| 入口与生命周期 | CLI 和 GUI 使用同一核心，Tk 按需加载，工作结果由主线程呈现。关闭先停止接单并请求取消，等待已派发工作收尾 | 假 Tk 与可控线程验证，未打开真实界面 |
-| 测试与运行取证 | 测试按源码与脚本镜像组织，元数据、计划和逐项结果通过统一入口管理，诊断使用标准库日志 | 执行范围、实际回执与排除项统一见 [测试说明](../tests/README.md)，本文不另记易失效的测试总数 |
+历史实现的缺陷说明，缺字段、非有限指标、组合动作和后置失败都可能破坏解释或执行语义。具体复现与处理见 [缺陷记录 Bug Report](<运行记录/2026-10-21 重构前缺陷.md>)。这些证据用于推导输入校验和事实保留要求，不替代当前版本验证。
 
-当前不采集旧 PowerShell 路线的 owner 归属、Codex 子树与成员年龄桶。旧记录中的这些字段可离线回看，新采样不能冒充旧进程树序列的等价替代。跨会话协调、真实 Windows ABI、采样、GUI、权限启用与恢复，以及用户任务收益均未完成实机验证。本轮产品测试使用假接入或静态检查，其通过不能代替这些证据。
-src 布局采用根目录 pyproject.toml 配置包发现和可编辑安装，不增加产品运行依赖。迁移前回执保留当时的源码路径与测试标识，当前布局的验证范围及新回执见 [测试说明](../tests/README.md)；本次路径调整不重新验证或改写历史实验与固定提交证据。
-只读诊断验收准备已登记 CPU、内存、读取缺口、进程、记录、生命周期、GUI 和成本等检查，具体步骤与证据以 [测试说明](../tests/README.md) 及唯一测试清单为准。当前实机草案禁用，界面卡片、缺口呈现和刷新行为仅有假接入验证，不能作为新的主机观察或清理收益证据。
-2026年10月22日按三层架构完成模块目录迁移，用户交互、功能、系统分别由独立包承载。记录访问与运行支撑从功能编排中分离，操作系统接入按需选择，未适配平台保留实时能力不可用，离线回看仍可独立使用。此前八文件说明属于2026年10月21日的平铺基线，当前文件与职责以代码结构设计为准。本轮只进行离线与假接入验证，不补写真实采样、权限路径或清理收益证据。
-## （二）重构前基线
-以下状态对应重构前的 [6938f10 基线](https://github.com/DreamSoul-AI/cpu-memory-cleanup/tree/6938f10447b250958856a845fc5448aa1185b52d)。当时有13个 `.py` 模块，入口、系统调用、编排和展示之间仍有交叉依赖。`release.py` 同时包含 NT 绑定、权限、快照、动作和报告，`abprotocol.py` 混合计划、文件与执行，尚无 CPU 时间采样与完整诊断链。该结构已被本章第一节的实现替代。
-
-当时静态读取12个平铺测试文件，共131个 `test_` 方法。这是重构前源码计数，不是当前执行、收集或通过数。假 NT、假特权调整器、假时钟与临时文件的方法在新测试中继续使用。
-
-| **规范要求** | **重构前实际状态** | **采用的设计方向** |
-| --- | --- | --- |
-| 测试完整镜像源码骨架 | tests 平铺，Windows 与 CLI 测试混在 inspection，脚本混在同文件 | 镜像包与脚本，按入口落位集成/E2E，用标签表达层级 |
-| 五维声明与独立参数结果 | 没有统一元数据与计划，循环/subTest 常为方法级汇总 | 一份清单管理元数据与参数 ID，保留 unittest |
-| 逐用例持久化与可重建报告 | 主要依赖终端输出，没有统一 manifest/events/report | 增加最小标准库运行入口和结果适配 |
-| 数值、分类、执行状态分离 | A/B 动作成功和收益混用，测试尚无统一结果协议 | numeric 无质量阈值时为 measured、verdict=null |
-| 日志不作为业务状态权威 | 异常路径会丢失动作事实 | 分开业务动作记录、测量数据和诊断日志 |
-| 验证追溯到提交、目标基线及产物 | 没有已配置 workflow 和统一计划入口 | 先本地统一入口，CI 后续复用，不自动启用 Actions |
-
-Python 3.10 `unittest.TestResult` 提供结果回调，`addSubTest` 可取得参数结果，但默认成功子测试不写独立报告。利用这些平台能力增加适配比更换框架更小。[Python 官方文档](https://docs.python.org/3.10/library/unittest.html)
-## （三）日志与业务记录的边界
+模块职责与协作由 [架构设计 Architecture Design](<CPU 内存清理 架构设计 Architecture Design.md>) 维护，当前源码映射由 [代码结构设计 Code Structure Design](<CPU 内存清理 代码结构设计 Code Structure Design.md>) 维护，重构前后结构及实施过程见 [开发记录](<开发记录/README.md>)。实机验收计划、离线验证和未执行项见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。
+## （二）测量、动作与诊断的记录语义
 日志规范要求正常日志有运行和来源字段，未知可选字段省略，结果确认后再记录，敏感内容在源头排除。日志写不出不能改变已发生业务事实。[日志规范](https://dreamsoul.feishu.cn/docx/RBlFdcSSBo93q9x6p8kcdU6wnYb)
 
 因此三种文件不混用：测量数据保存未知指标和采样缺口，动作记录保存意图及真实执行结果，诊断日志解释事件。前两者是业务数据，其关键持久化失败可阻止后续动作。普通诊断 sink 故障采取应急说明与受限退化，但不能把已完成 NT 调用改成“未执行”。详细数据协议见架构设计的记录与结果章节。
-## （四）重构前离线核验与修复输入
-P01 至 P04 是重构前旧实现的离线核验，对应 C01 与上述6938f10时代的行为。核验使用合成输入、假调用及当时的纯解析函数，没有调用真实系统接口。以下保留原观测结果，当前实现已按这些故障输入重构，不将其列为仍未修复的现状：
 
-| **编号** | **重构前输入或路径** | **当时实际结果** | **设计影响** |
-| --- | --- | --- | --- |
-| P01 | both 中命令2返回拒绝，命令4假调用成功 | 两项都调用，`cleanup_performed=true` | 首项失败停止，完整成功不能用任一成功代替 |
-| P02 | 假 NT 成功，后快照抛 OSError，经过 CLI 格式化 | JSON 显示未清理，捕获消息称操作前失败 | 保存动作事实，后置失败独立表示 |
-| P03 | JSONL 的速率值为 NaN，经过 parse/extract | 非有限数进入指标 | 在输入边界拒绝非有限、布尔和错误形状 |
-| P04 | A/B 预检返回空对象 | 当时 guard 通过 | 必需能力必须显式为真，缺字段即未知/拒绝 |
+# 七、历史证据对方案选择的限制
+[运行记录](<运行记录/README.md>) 保存2026年10月17日至20日的主机观察和 A/A、A/B 摘要。原始 `logs/` 已删除，现存文字无法直接复算，也不代表当前主机或当前程序状态。
 
-重构前静态检查还发现特权启用错误仍进入 body、恢复失败只给 warning、A/B 释放后才打开 B 窗日志，以及旧用例保护“首项异常后继续第二项”。当前组合机制已拒绝，空预检与非有限数被拒绝，动作事实在后置失败时保留，恢复失败阻止后续系统流程。旧 A/B 自动实验入口已停用，不能把它的历史行为当作新维护流程。
-
-# 七、历史主机观察与验证边界
-以下结果继承仓库旧验证记录，原始 `logs/` 已在21日按指令删除。既有记录可供研究取舍，当前无法直接复算。原始数据缺失不被补造或用新样本冒充。（来源 H01）
-
-以下均为日常桌面场景，无训练或评测负载。容量单位 GiB，日期与时间为北京时间。历史 `PrivatePageCount` 统计的是私有提交量，不能解释为驻留量。
-
-## （一）基础测试和压力观察
-| **日期与窗口** | **方法** | **历史结果与限制** |
+| **历史证据支持的认识** | **对方案选择的影响** | **证据限制** |
 | --- | --- | --- |
-| 10月17日 21:53 | 一次性只读查询，9 个单元测试 | 总内存 47.113、可用 18.087、提交 56.895/95.113。498 个进程中可读 258 个。查询排名不完整 |
-| 10月18日 06:35 | 2 拍、间隔 1 秒。15 个测试 | 可用 2.549→2.679，提交 66.518→66.392。只验证启动、停止与速率输出，不是性能基线 |
-| 10月18日 20:09至20:24 | 90 拍、间隔 10 秒，空闲桌面 | 全窗可用中位数 27.144、提交 46.463、standby 18.536。最初阶段不稳定，约20:11至20:14指标发生明显变化，触发原因未识别 |
-| 上述后 60 拍 | 同一空闲窗较稳部分 | 可用中位数 27.151、提交 46.445。不是工具收益 |
-| 10月18日 21:59至22:14 | 90 拍、间隔 10 秒，启用进程排名 | 可用中位数 8.226、最低 6.366。提交中位数 64.699。standby 6.727。读入页速率中位数 52.501、95分位约5187，有短时突发，未观察到持续换页 |
-| 10月18日 22:19 | 单点进程与池计数交叉核对 | 1012 个进程私有提交合计约48.1，分页与非分页池约6.7，约9.7提交量仍未归属。不能据此指定清理目标 |
-| 10月18日 22:30至22:59 | 30 拍、间隔60秒，进程树聚合 | Codex 子树401至593个进程、私有提交7.94至10.69。新生407、退出298，曲线非单调。否定此前单点“累积而不回收”的猜测 |
+| 自然波动可触发原比较规则的代价判定 | 先用同负载 A/A 估计噪声，再做分机制 A/B 并观察恢复窗口 | 旧阈值和旧校准不直接迁移到新版本、新设备或新负载 |
+| 页面维护后容量数字改善可同时伴随缺页与 I/O 代价 | 保留提交、缺页、读写与任务响应等独立指标 | 历史桌面实验未证明持续净收益，也不能证明所有场景都无收益 |
+| 进程数量、年龄和短窗 CPU 不能解释完整生命周期 | 应用协作回收需要所有权、活动任务及可恢复性证据 | 缺少连接和消费者信息时，不据此关闭实例 |
+| 提交残差和进程排名只提供观测线索 | 保留未知归属，避免把残差或排名换算成可清理量 | 原始样本缺失，原因和归属无法由现存摘要补证 |
 
-桌面压力排名按每个名称的最大单实例统计，不叠加同名实例：codex.exe 最大实例中位数1.813 GiB、ChatGPT.exe 1.592、T'OWEI.exe 0.585、blender.exe 0.558（仅10拍进入前十）、360se.exe 0.542。共享页不能相加，前十排名也不能解释全部物理占用。
-
-## （二）年龄分桶与提交残差
-- 10月18日23:12至19日01:11的120拍序列中，Codex 私有提交12.50降至4.46。多数成员较年轻，观测到部分成员退出，退出原因未核实。超过3小时的成员确实存在，峰值12个 `server.mjs`、6个 `cua_repl`、18个 `node_repl`，合计私有提交最高约1.063 GiB。末拍约0.71 GiB。没有逐进程身份，不能声称始终是同一批幸存者
-- 19日00:04:56至02:03:57的120拍提交残差序列中，残差8.466至10.232 GiB，约占提交14.1%至16.4%。与进程数相关系数0.487。进程私有提交与主机提交相关系数0.994。残差由减法推算，不是可回收内存
-- 该窗01:22至01:45，WMI 可用物理量下降约4.524 GiB，提交增加5.485 GiB，进程私有提交增加5.151 GiB，残差只增0.227。主要变化来自 ChatGPT 所有者树，其中 Codex 子树增加约3.184 GiB，以年轻 Node 成员为主。不能据此推定某个聊天或审批审查的所有权
-- 19日01:42至01:46出现5拍低于4 GiB 的压力事件，随后自行恢复。4 GiB、85%、连续3拍是当时提案阈值，未完成通用校准。WMI 的 `FreePhysicalMemory` 与其它窗口 PDH 的 Available 分开记录，不直接混用
-- 未归属提交的组成仍未知。历史 GPU 共享系统内存约0.279 GiB，不能解释全部残差。共享节、页表、内核栈等只是候选解释，未运行 RAMMap 交叉验证
-
-## （三）A/A 噪声校准与 A/B 结果
-19日00:24至00:33的无释放 A/A 中，一次自然突发就使原始规则误报负面代价。因此历史比较器改用同次实验至少两个 A/A 对的逐指标超限比例上界作为噪声参照。规则是工程提案，不能提供因果保证。
-
-三次完成的实验都采用 `AA,AB,AA,AB`，8窗，每窗30拍、间隔10秒。只在每个 AB 的 B 窗开始前释放一次。
-
-| **时间** | **机制** | **关键结果** | **历史判定** |
-| --- | --- | --- | --- |
-| 19日05:20:44至05:59:40 | 工作集与 standby 合并 | 两个 AB 的可用尾段中位数分别增加21.59、5.05 GiB。提交中位数变化+0.45、−0.16。硬缺页与磁盘读超噪声上界。合并调用不能直接分离两种机制的因果贡献 | 两对均为“仅数字改善或有负面代价” |
-| 19日06:16:53至06:55:37 | 仅 standby | 即时可用仅增加0.24、0.30 GiB。提交中位数变化+0.33、+1.74。可用尾段变化−0.33、−1.49。硬缺页超过噪声上界 | 两对均为“仅数字改善或有负面代价” |
-| 20日02:04:20至02:43:07 | 仅工作集 | modified 约增加27、12 GiB。单拍磁盘写约2732、1059 MB/s。提交中位数变化+1.38、−0.48。可用尾段增加24.82、5.14，硬缺页仍超上界 | 两对均为“仅数字改善或有负面代价” |
-
-19日05:04开始的合并实验在首个 A 窗中断，未释放。19日07:13的工作集实验实际释放一次后因关机中断，B 窗仅14/30拍，不作完整判定。不能把中断实验当成完成实验。
-
-已完成实验每次释放前特权都已启用，`enabled_by_tool` 为假。“已持有但未启用→临时启用→恢复关闭”的真实路径没有实测。历史单元测试记录增长到122项，不代表本轮重新通过。当前测试数量及结果需实际运行后另记。
+具体日期、样本窗口、数值、中断及权限路径限制见运行记录。本文仅使用这些认识约束研究结论与后续验证方法。
 
 # 八、应用协作回收案例：Codex 工具实例
 ## （一）已有证据能证明什么
-DreamSoul《Codex 闲置工具进程安全回收调研》研究日期为2026年10月19日，桌面版本26.1013.40934、构建20770。它定位了部分 OS 进程身份、父链、桌面退订器、执行记录与强制中断代码，未验证本版 app-server 的 Rust transport 析构实现。内部报告定位见 N07。
+DreamSoul《Codex 闲置工具进程安全回收调研》研究日期为2026年10月19日，桌面版本26.1013.40934、构建20770。它定位了部分 OS 进程身份、父链、桌面退订器、执行记录与强制中断代码，未验证本版 app-server 的 Rust transport 析构实现。报告的逻辑位置与阅读范围见第十一章的《Codex 闲置工具进程安全回收调研》条目。
 
-原始台账30条中24条在历史采样匹配、6条未见。24条的连接 ID、owner、共享者和请求字段仍未知，正常释放入口未核实。限定生命周期元数据含9条退订事件。21日对这些存量文件的复核只证明其历史内容，没有读取当前进程或其它聊天载荷。
+历史资料能够匹配部分进程身份和生命周期事件，但连接、消费者、在途工作及正常释放入口仍缺证据。具体计数与历史复核范围见 [运行记录中的宿主研究证据](<运行记录/2026-10-17至21 主机观察.md#二引用的宿主研究证据>)。
 
 | **证据** | **可支持** | **不能支持** |
 | --- | --- | --- |
@@ -271,20 +227,20 @@ DreamSoul《Codex 闲置工具进程安全回收调研》研究日期为2026年1
 ## （一）架构输入
 | **决策** | **依据** | **目标与验收信号** |
 | --- | --- | --- |
-| D01 从驱动力推导最少边界 | Q4、产品行为、M01至M03 | 质量场景对应状态权威、黑盒合同与可检查源码依赖，旧代码框架不约束设计 |
-| D02 唯一动作入口保留事实 | P01/P02/P04、权限契约 | 前置失败零动作，首错停止，后置失败不抹调用结果 |
+| D01 从驱动力推导最少边界 | Q4、产品行为、软件架构设计通用调研、端侧智能体案例及来源索引（定位见第十一章） | 质量场景对应状态权威、黑盒合同与可检查源码依赖，旧代码框架不约束设计 |
+| D02 唯一动作入口保留事实 | [动作与后置失败缺陷](<运行记录/2026-10-21 重构前缺陷.md>)、权限契约 | 前置失败零动作，首错停止，后置失败不抹调用结果 |
 | D03 三类记录语义分别管理 | 日志规范 | 测量与动作由流程保存，诊断复用 logging，区分权威与失败语义，不各建存储子系统 |
-| D04 对照数据先准入 | Q5、P03、历史窗口 | 少拍、混 run、部分成功和未校准不支持收益 |
+| D04 对照数据先准入 | Q5、[非有限数缺陷](<运行记录/2026-10-21 重构前缺陷.md>)、[历史窗口](<运行记录/README.md>) | 少拍、混 run、部分成功和未校准不支持收益 |
 | D05 测试跟随模块与旅程 | 测试规范、现有 fake | CPU/策略/共享入口优先覆盖，元数据与逐项结果可定位 |
 | D06 本地验证先行 | CI/CD规范 | 关联实际提交和产物，必需项未完成阻断 |
 | D07 应用协作能力核验 | Q2/Q3、Codex证据缺口 | 无受支持接口不关闭实例，保留共享引用和状态 |
 | D08 CPU 与内存规则分开 | Q2/Q3及机制比较 | 同一分析模块内部按问题处理，CPU 问题不自动触发清页，方法能力状态可见 |
-| D09 以360产品闭环作主要对照 | Q1、B01至B05 | 观察、解释、选择、结果与效果可追溯，不把每个步骤都提升为独立模块，内部未知不补造 |
+| D09 以360产品闭环作主要对照 | Q1、第二章的360产品资料 | 观察、解释、选择、结果与效果可追溯，不把每个步骤都提升为独立模块，内部未知不补造 |
 
 ## （二）待验证事项
 360 当前构建的进程关闭方式、内存整理 API、保护名单、综合评分权重和净收益尚未知。若继续做版本验证，应先固定产品、构建、模式和受控无业务状态环境，区分“只整理页面”和“确实退出进程”，记录 CPU 时间、Commit、工作集、Available、缺页及任务响应。当前没有安装或执行授权，本研究不启动该实验。
 
-Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调、CPU 处理器组覆盖和应用动作接口仍待实机或接口核验。历史 A/B 无原始 logs，不能复算。模块化、CPU 差分、维护约束与统一测试入口已按第六章实施，应用协作治理和真实收益仍缺证据。后续验证须分别覆盖平台调用合同、资源恢复和同负载用户任务表现。
+Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调、CPU 处理器组覆盖和应用动作接口仍待实机或接口核验。历史 A/B 无原始 logs，不能复算。应用协作治理和真实收益仍缺证据，实现进展见开发记录及代码结构设计。后续验证须分别覆盖平台调用合同、资源恢复和同负载用户任务表现。
 
 ## （三）软件架构方法的采用
 2026年10月21日读取项目关联DreamSoul文档库的软件架构设计课题。将其方法用于这个小型工具，而不把案例中的智能体运行时、模型路由或服务拆分带入产品。
@@ -297,10 +253,11 @@ Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调
 | 第十五章及案例第四至八章：设计到验证 | 目标代码集合、依赖规则和关键异常/变更场景 | 分开图语法、源码结构、合同及场景验证 |
 | 第十七、十八章：简约和债务 | 本文保留少量决定、代价与升级触发条件 | 无工时/频率证据不计算虚假技术债，不以模块数量评价架构 |
 
-这些是对本地研究的裁剪应用，不能称为重新精读全部原始标准或完成正式方法评估。具体来源与阅读范围见M01至M03，行为与约束维护于架构设计，文件落位维护于 [CPU 内存清理 代码结构设计](<CPU 内存清理 代码结构设计.md>)。
+这些是对本地研究的裁剪应用，不能称为重新精读全部原始标准或完成正式方法评估。具体来源与阅读范围见软件架构设计通用调研、端侧智能体案例及来源索引（定位见第十一章），行为与约束维护于架构设计，文件落位维护于 [CPU 内存清理 代码结构设计 Code Structure Design](<CPU 内存清理 代码结构设计 Code Structure Design.md>)。
 
 # 十、依据、方法与证据分级
 ## （一）规范基线
+下表为2026年10月21日研究时保留的阅读状态。2026年10月25日整理另行读取本地通用调研规范的范围、分类、引用与证据管理条款，以及飞书文档规范的命名、层级和表格要求，未回读云端或重新核验其他来源。
 从当前项目关联的 DreamSoul 文档库读取实际文件，再沿其既有分享链接核对。路径相对于实际定位的文档库，不固定个人机器目录。
 
 | **依据** | **读取范围与状态** | **用于本研究的要求** |
@@ -312,7 +269,7 @@ Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调
 | CI CD 执行规范 | 本地全文，云端修订号30目录核对，未逐字比较云地全文 | 验证与提交/产物关联，必需项放行，允许本地验证策略 |
 | 日志规范 | 本地全文，云端链接由现行总索引核对，未重新读完整云端正文 | 日志不作业务权威、未知可选字段省略、结果确认后记录、隐私与故障隔离 |
 
-规范正文与入口见参考资料 N01 至 N06。目录核对不代表云地内容完全一致，也不代表当前程序已符合规范。
+规范正文与入口见参考资料 第十一章的通用调研、飞书文档、代码、测试、CI/CD 和日志规范条目。目录核对不代表云地内容完全一致，也不代表当前程序已符合规范。
 ## （二）研究方法与停止条件
 按“对象和状态 → 读取或调用路径 → 完成与异常 → 可观察证据 → 架构及测试约束”分析。先读取 DreamSoul 相关成果和本仓库历史研究，再按产品行为、CPU、内存及开源实现分别核查 360、Microsoft、Chromium 与固定提交源码。Codex 回收作为应用协作的一个案例。直接来源未覆盖的部分保留未知。
 
@@ -321,51 +278,51 @@ Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调
 同类实现按产品治理、页面维护、应用协作三条路线比较，以 360 为主要产品对照，以固定提交的 Mem Reduct 和 System Informer 解释可见实现。核心机制、失败路径和工程约束已足以支持设计时停止补查。宿主所有权与真实收益缺口需要新的受支持接口或另获授权的实验，不能靠增加阅读数量补齐。
 
 # 十一、参考资料与定位
-所有新外部阅读访问日期为2026年10月21日。Microsoft、OpenAI 及仓库滚动分支未固定文档提交，不能保证后续不变。规范和 DreamSoul 资料从项目关联文档库按名称及下列逻辑位置定位，避免个人盘符成为共享依赖。
+下表沿用2026年10月21日研究的外部访问与阅读范围，2026年10月25日未重新访问这些外部来源。Microsoft、OpenAI 及仓库滚动分支未固定文档提交，不能保证后续不变。规范和 DreamSoul 资料从项目关联文档库按名称及下列逻辑位置定位，避免个人盘符成为共享依赖。
 
-| **编号** | **来源及定位** | **版本/日期、阅读范围与用途** |
-| --- | --- | --- |
-| M01 | DreamSoul文档库 `研发/研究/软件开发 Software Engineering/软件架构设计 Software Architecture Design/软件架构设计 Software Architecture Design 通用调研.md` | 2026年10月21日，本地主报告正文，重点第三至六、十一至十五、十七至十八章；驱动力、多视图、合同、验证与简约 |
-| M02 | 同目录 `软件架构设计 Software Architecture Design 端侧智能体案例.md` | 同日，本地案例正文，重点第四至九章；状态、取消/恢复、部署与决策，非本项目实现证据 |
-| M03 | 同目录 `软件架构设计 Software Architecture Design 来源索引.md`及`通用调研 大纲.md` | 同日，核对分类与相关条目阅读范围；原标准/论文未在本轮逐项重读 |
-| N01 | [通用调研规范](https://dreamsoul.feishu.cn/docx/YcWIdE4INoLqoLxR5O8cbl7hnTf) | 修订号2，本地与云端全文，问题定义、来源、比较及验证边界 |
-| N02 | [飞书文档规范](https://dreamsoul.feishu.cn/docx/DdmxdrNvBo9AMXxkAYmc4EJ6nwe) | 修订号38，本地与云端全文，正式文档结构与引用 |
-| N03 | [代码规范](https://dreamsoul.feishu.cn/docx/FKrsdHO9bolq4YxV2KAcosghnme) | 修订号3，本地与云端全文，简单结构、输入和持久化边界 |
-| N04 | [测试规范 代码](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf) | 本地全文，云端目录修订号53。重点第一至五章，含执行和状态协议 |
-| N05 | [CI CD 执行规范](https://dreamsoul.feishu.cn/docx/NrJ4d0WVGo9t4uxAVwScFTBVnRb) | 本地全文，云端目录修订号30。重点总体流程、验证与产物追溯 |
-| N06 | [日志规范](https://dreamsoul.feishu.cn/docx/RBlFdcSSBo93q9x6p8kcdU6wnYb) | 本地全文、现行索引链接核对，重点字段、结果事实、隐私与故障隔离 |
-| N07 | DreamSoul 文档库 `研发/研究/软件开发 Software Engineering/Codex 闲置工具进程安全回收调研.md` | 19日研究，21日相关章节复读。代码清单、台账及元数据按报告原相对链接定位 |
-| N08 | DreamSoul 文档库 `tmp/node-runtime-audit-20261019/` 的 `candidate-direct-evidence-20261019-014800.json`、`host-lifecycle-metadata-20261019-014500.json` | 历史身份与限定事件，不代表当前状态。已核对其字段和计数 |
-| W01 | [PERFORMANCE_INFORMATION](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information) | 页面更新2024年2月22日，容量成员与换算 |
-| W02 | [Working Set](https://learn.microsoft.com/en-us/windows/win32/memory/working-set) | 页面更新2021年6月4日，驻留、共享、软硬缺页及脏页路径 |
-| W03 | [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset) | 页面更新2022年8月23日，参数、权限与返回值 |
-| W04 | [NtSetSystemInformation](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ntsetsysteminformation) | 页面更新2023年2月16日，函数级契约与信息类子集限制 |
-| W05 | [AdjustTokenPrivileges](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-adjusttokenprivileges) | 页面更新2021年10月13日，BOOL 与 LastError、持有范围及 PreviousState |
-| W06 | [Collecting Performance Data](https://learn.microsoft.com/en-us/windows/win32/perfctrs/collecting-performance-data) | 页面更新2025年7月14日，两次采集及进程实例警告 |
-| W07 | [System-Level Bottlenecks](https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks)、[PhysicalDisk 定义](https://learn.microsoft.com/en-us/previous-versions/aa394308(v=vs.85)) | 针对性读计数器定义，未采用其业务特定阈值 |
-| W08 | [Kernel object namespaces](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces)、[CreateMutexW](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexw) | 针对性读会话与全局命名空间、互斥创建和访问规则；不能用用户本地状态承诺跨用户冷却 |
-| O01 | [OpenAI App Server](https://learn.chatgpt.com/docs/app-server)、[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference) | 滚动文档，仅读订阅、MCP 状态及启动/调用超时相关条款，不证明本机构建内部实现 |
-| T01 | [Python 3.10 unittest](https://docs.python.org/3.10/library/unittest.html) | TestResult 与 addSubTest，采用已在项目最低版本存在的能力，不升级依赖 |
-| C01 | [重构前核验源码](https://github.com/DreamSoul-AI/cpu-memory-cleanup/tree/a0afe76168d2d649b44d13e0cc74a02358c3c9c3)、[重构前合并基线6938f10](https://github.com/DreamSoul-AI/cpu-memory-cleanup/tree/6938f10447b250958856a845fc5448aa1185b52d) | 21日旧源码与测试静态分析、P01 至 P04 离线复核。两者运行逻辑相同，属于本轮重构之前的证据，真实系统边界全部使用假调用 |
-| H01 | [旧验证正文](https://github.com/DreamSoul-AI/cpu-memory-cleanup/blob/00dbcb20f78fe9895121b25450b0c411527dbdc1/docs/validation.md) | 旧 Git 提交可复查文字，原始 logs 已删除，不代表可复算实验 |
+| **来源及定位** | **版本/日期、阅读范围与用途** |
+| --- | --- |
+| DreamSoul文档库 `研发/研究/软件开发 Software Engineering/软件架构设计 Software Architecture Design/软件架构设计 Software Architecture Design 通用调研.md` | 2026年10月21日，本地主报告正文，重点第三至六、十一至十五、十七至十八章；驱动力、多视图、合同、验证与简约 |
+| 同目录 `软件架构设计 Software Architecture Design 端侧智能体案例.md` | 同日，本地案例正文，重点第四至九章；状态、取消/恢复、部署与决策，非本项目实现证据 |
+| 同目录 `软件架构设计 Software Architecture Design 来源索引.md`及`通用调研 大纲.md` | 同日，核对分类与相关条目阅读范围；原标准/论文未在本轮逐项重读 |
+| [通用调研规范](https://dreamsoul.feishu.cn/docx/YcWIdE4INoLqoLxR5O8cbl7hnTf) | 修订号2，本地与云端全文，问题定义、来源、比较及验证边界 |
+| [飞书文档规范](https://dreamsoul.feishu.cn/docx/DdmxdrNvBo9AMXxkAYmc4EJ6nwe) | 修订号38，本地与云端全文，正式文档结构与引用 |
+| [代码规范](https://dreamsoul.feishu.cn/docx/FKrsdHO9bolq4YxV2KAcosghnme) | 修订号3，本地与云端全文，简单结构、输入和持久化边界 |
+| [测试规范 代码](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf) | 本地全文，云端目录修订号53。重点第一至五章，含执行和状态协议 |
+| [CI CD 执行规范](https://dreamsoul.feishu.cn/docx/NrJ4d0WVGo9t4uxAVwScFTBVnRb) | 本地全文，云端目录修订号30。重点总体流程、验证与产物追溯 |
+| [日志规范](https://dreamsoul.feishu.cn/docx/RBlFdcSSBo93q9x6p8kcdU6wnYb) | 本地全文、现行索引链接核对，重点字段、结果事实、隐私与故障隔离 |
+| DreamSoul 文档库 `研发/研究/软件开发 Software Engineering/Codex 闲置工具进程安全回收调研.md` | 19日研究，21日相关章节复读。代码清单、台账及元数据按报告原相对链接定位 |
+| DreamSoul 文档库 `tmp/node-runtime-audit-20261019/` 的 `candidate-direct-evidence-20261019-014800.json`、`host-lifecycle-metadata-20261019-014500.json` | 历史身份与限定事件，不代表当前状态。已核对其字段和计数 |
+| [PERFORMANCE_INFORMATION](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information) | 页面更新2024年2月22日，容量成员与换算 |
+| [Working Set](https://learn.microsoft.com/en-us/windows/win32/memory/working-set) | 页面更新2021年6月4日，驻留、共享、软硬缺页及脏页路径 |
+| [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset) | 页面更新2022年8月23日，参数、权限与返回值 |
+| [NtSetSystemInformation](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ntsetsysteminformation) | 页面更新2023年2月16日，函数级契约与信息类子集限制 |
+| [AdjustTokenPrivileges](https://learn.microsoft.com/en-us/windows/win32/api/securitybaseapi/nf-securitybaseapi-adjusttokenprivileges) | 页面更新2021年10月13日，BOOL 与 LastError、持有范围及 PreviousState |
+| [Collecting Performance Data](https://learn.microsoft.com/en-us/windows/win32/perfctrs/collecting-performance-data) | 页面更新2025年7月14日，两次采集及进程实例警告 |
+| [System-Level Bottlenecks](https://learn.microsoft.com/en-us/biztalk/technical-guides/system-level-bottlenecks)、[PhysicalDisk 定义](https://learn.microsoft.com/en-us/previous-versions/aa394308(v=vs.85)) | 针对性读计数器定义，未采用其业务特定阈值 |
+| [Kernel object namespaces](https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces)、[CreateMutexW](https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-createmutexw) | 针对性读会话与全局命名空间、互斥创建和访问规则；不能用用户本地状态承诺跨用户冷却 |
+| [OpenAI App Server](https://learn.chatgpt.com/docs/app-server)、[配置参考](https://learn.chatgpt.com/docs/config-file/config-reference) | 滚动文档，仅读订阅、MCP 状态及启动/调用超时相关条款，不证明本机构建内部实现 |
+| [Python 3.10 unittest](https://docs.python.org/3.10/library/unittest.html) | TestResult 与 addSubTest，采用已在项目最低版本存在的能力，不升级依赖 |
+| [重构前核验源码](https://github.com/DreamSoul-AI/cpu-memory-cleanup/tree/a0afe76168d2d649b44d13e0cc74a02358c3c9c3)、[重构前合并基线6938f10](https://github.com/DreamSoul-AI/cpu-memory-cleanup/tree/6938f10447b250958856a845fc5448aa1185b52d) | 21日旧源码与测试静态分析、P01 至 P04 离线复核。两者运行逻辑相同，属于本轮重构之前的证据，真实系统边界全部使用假调用 |
+| [旧验证正文](https://github.com/DreamSoul-AI/cpu-memory-cleanup/blob/00dbcb20f78fe9895121b25450b0c411527dbdc1/docs/validation.md) | 旧 Git 提交可复查文字，原始 logs 已删除，不代表可复算实验 |
 
 开源来源现已固定到下列提交，针对性读取动作及自动筛选实现。未审查完整程序、完整许可证链、构建或驱动，不复制代码或服务提权路径。公开源码不能证明 Windows 内部 ABI 稳定，也不能反推 360 内部实现。
 
-| **编号** | **新增来源及定位** | **日期、阅读范围与证据边界** |
-| --- | --- | --- |
-| B01 | [360 清理加速产品页](https://weishi.360.cn/clear/) | 访问2026年10月21日，产品功能段全文，页面未标具体构建号，不用宣传文案作性能测量 |
-| B02 | [360 安全卫士隐私政策](https://weishi.360.cn/privacy.html) | 更新/生效2025年9月8日，针对性读第3、5、7节，确认进程关闭、启动项管理与数据处理范围 |
-| B03 | [电脑卡慢优化方案](https://www.360.cn/n/10778.html) | 2019年7月23日，针对性读程序选择、进程结束和自启段落，属于历史产品说明 |
-| B04 | [12.0 智能数值说明](https://bbs.360.cn/thread-15621325-1-1.html) | 2018年11月12日，编辑11月30日，主帖全文，确认指标组成，不提供算法权重 |
-| B05 | [极速版加速球说明](https://bbs.360.cn/thread-16074034-1-1.html) | 2022年12月23日，主帖全文，界面与看板变化，不提供底层动作证据 |
-| S01 | [Mem Reduct main.c](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L270) | 提交04402de，2026年10月7日，读取270至466行相关动作/筛选及 [main.h](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.h)，未构建或运行 |
-| S02 | [System Informer memlists.c](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L196) | 提交2e1349b，2026年10月20日，读取196至299行系统调用和包装，未构建或运行 |
-| F01 | [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | 更新2022年11月1日，累计线程时间、创建时间和多核口径 |
-| F02 | [GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes) | 更新2025年8月15日，Kernel 含 Idle 及处理器组限制 |
-| F03 | [CPU Analysis](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/cpu-analysis) | 更新2021年3月25日，CPU 热点、关键路径、Ready 与归因方法 |
-| F04 | [SetPriorityClass](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setpriorityclass) | 更新2022年11月1日，相对优先级、后台模式及访问边界 |
-| F05 | [SetProcessInformation](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessinformation) | 更新2024年10月31日，ProcessPowerThrottling 与 EcoQoS 版本边界 |
-| F06 | [Job CPU rate control](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_cpu_rate_control_information) | 更新2021年4月2日，权重、硬上限、版本和 DFSS 限制 |
-| F07 | [Suspending Thread Execution](https://learn.microsoft.com/en-us/windows/win32/procthread/suspending-thread-execution) | 更新2025年7月14日，挂起用途及同步风险 |
-| F08 | [Page Lifecycle API](https://developer.chrome.com/docs/web-platform/page-lifecycle-api) | 页面更新2026年10月16日，针对性读 freeze/discard/恢复，不代表 360 实现 |
-| W09 | [VirtualFree](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree) | 更新2024年2月5日，去提交、释放地址空间、数据与再访问边界 |
+| **来源及定位** | **日期、阅读范围与证据边界** |
+| --- | --- |
+| [360 清理加速产品页](https://weishi.360.cn/clear/) | 访问2026年10月21日，产品功能段全文，页面未标具体构建号，不用宣传文案作性能测量 |
+| [360 安全卫士隐私政策](https://weishi.360.cn/privacy.html) | 更新/生效2025年9月8日，针对性读第3、5、7节，确认进程关闭、启动项管理与数据处理范围 |
+| [电脑卡慢优化方案](https://www.360.cn/n/10778.html) | 2019年7月23日，针对性读程序选择、进程结束和自启段落，属于历史产品说明 |
+| [12.0 智能数值说明](https://bbs.360.cn/thread-15621325-1-1.html) | 2018年11月12日，编辑11月30日，主帖全文，确认指标组成，不提供算法权重 |
+| [极速版加速球说明](https://bbs.360.cn/thread-16074034-1-1.html) | 2022年12月23日，主帖全文，界面与看板变化，不提供底层动作证据 |
+| [Mem Reduct main.c](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L270) | 提交04402de，2026年10月7日，读取270至466行相关动作/筛选及 [main.h](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.h)，未构建或运行 |
+| [System Informer memlists.c](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L196) | 提交2e1349b，2026年10月20日，读取196至299行系统调用和包装，未构建或运行 |
+| [GetProcessTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getprocesstimes) | 更新2022年11月1日，累计线程时间、创建时间和多核口径 |
+| [GetSystemTimes](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-getsystemtimes) | 更新2025年8月15日，Kernel 含 Idle 及处理器组限制 |
+| [CPU Analysis](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/cpu-analysis) | 更新2021年3月25日，CPU 热点、关键路径、Ready 与归因方法 |
+| [SetPriorityClass](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setpriorityclass) | 更新2022年11月1日，相对优先级、后台模式及访问边界 |
+| [SetProcessInformation](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/nf-processthreadsapi-setprocessinformation) | 更新2024年10月31日，ProcessPowerThrottling 与 EcoQoS 版本边界 |
+| [Job CPU rate control](https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_cpu_rate_control_information) | 更新2021年4月2日，权重、硬上限、版本和 DFSS 限制 |
+| [Suspending Thread Execution](https://learn.microsoft.com/en-us/windows/win32/procthread/suspending-thread-execution) | 更新2025年7月14日，挂起用途及同步风险 |
+| [Page Lifecycle API](https://developer.chrome.com/docs/web-platform/page-lifecycle-api) | 页面更新2026年10月16日，针对性读 freeze/discard/恢复，不代表 360 实现 |
+| [VirtualFree](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree) | 更新2024年2月5日，去提交、释放地址空间、数据与再访问边界 |

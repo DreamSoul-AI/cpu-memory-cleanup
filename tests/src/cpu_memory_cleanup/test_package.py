@@ -20,10 +20,10 @@ class ImportTests(unittest.TestCase):
     def test_dependency_direction_excludes_concrete_backend_from_core(self):
         folder = Path(cpu_memory_cleanup.__file__).parent
         banned = {"core": {"windows", "cli", "desktop", "tkinter", "ctypes", "system", "pathlib", "os", "platform", "logging", "hashlib"},
-                  "rules": {"core", "windows", "cli", "desktop", "tkinter", "ctypes", "pathlib", "time"},
-                  "contracts": {"core", "rules", "windows", "cli", "desktop", "tkinter", "ctypes"}}
+                  "analysis": {"core", "windows", "cli", "desktop", "tkinter", "ctypes", "pathlib", "time"},
+                  "contracts": {"core", "analysis", "windows", "cli", "desktop", "tkinter", "ctypes"}}
         for name, forbidden in banned.items():
-            location = "application/" + name if name in ("core", "rules") else name
+            location = "application/" + name if name in ("core", "analysis") else name
             tree = ast.parse((folder / f"{location}.py").read_text(encoding="utf-8-sig"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):

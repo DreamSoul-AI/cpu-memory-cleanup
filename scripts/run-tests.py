@@ -1,6 +1,7 @@
-"""按唯一清单选择并隔离运行 unittest，保存逐次结果及可重建报告。"""
+"""展开分层测试配置并隔离运行 unittest，保存逐次结果及可重建报告。"""
 
 import argparse
+import ast
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 import ctypes
 from datetime import datetime, timezone
@@ -72,6 +73,104 @@ def _strings(value, name):
     if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
         raise ValueError(f"{name}: 必须为字符串列表")
     return value
+
+
+def load_catalog(path, root):
+    """按目录继承测试元数据，静态发现方法后展开为现有执行合同。"""
+    path, root = Path(path).resolve(), Path(root).resolve()
+    catalog = _read_json(path)
+    if not isinstance(catalog, dict):
+        raise ValueError("测试清单必须是对象")
+    if catalog.get("schema_version") != 2:
+        if path == root / "tests" / "manifest.json" and any(
+                config != path for config in path.parent.rglob("manifest.json")):
+            raise ValueError("根清单仍为旧格式，但存在局部清单，不能静默忽略分层配置")
+        return validate_catalog(catalog)
+    if path != root / "tests" / "manifest.json":
+        raise ValueError("树状清单必须从项目 tests/manifest.json 加载")
+    allowed = {"target", "tags", "level", "type", "priority", "cost_class", "result_type",
+               "result_detail", "timeout_s", "memory_bytes", "quality_assertion", "cost_estimate", "plans"}
+
+    def merge(base, updates, *, cases=False, global_defaults=False):
+        keys = allowed | ({"subtests", "depends_on", "rerun_safe"} if cases else set())
+        if global_defaults:
+            keys |= {"resources"}
+        if not isinstance(updates, dict) or set(updates) - keys:
+            raise ValueError("测试元数据包含无效字段或子目录不可覆盖的全局策略")
+        result = dict(base)
+        for key, value in updates.items():
+            result[key] = {**result[key], **value} if isinstance(value, dict) and isinstance(result.get(key), dict) else value
+        return result
+
+    base = merge({}, catalog.get("defaults", {}), global_defaults=True)
+    if not isinstance(catalog.get("plans"), dict) or not catalog["plans"]:
+        raise ValueError("缺少全局测试计划")
+    plans = {}
+    for name, plan in catalog["plans"].items():
+        if not isinstance(plan, dict) or plan.get("required") != "all" or "test_ids" in plan:
+            raise ValueError("树状计划必须声明 required=all，由测试归属生成名单")
+        plans[name] = {**plan, "test_ids": [], "required": []}
+    scopes, config_files = {}, []
+    for config in sorted(path.parent.rglob("manifest.json"), key=lambda item: (len(item.parts), item.as_posix())):
+        if not config.resolve().is_relative_to(path.parent):
+            raise ValueError("测试配置不能越出 tests 目录")
+        data = catalog if config == path else _read_json(config)
+        if config != path and (not isinstance(data, dict) or set(data) - {"defaults", "files"}):
+            raise ValueError("子目录清单只允许 defaults 和 files")
+        inherited = base
+        for ancestor in reversed(config.parent.parents):
+            if ancestor in scopes:
+                inherited = scopes[ancestor]["defaults"]
+        defaults = inherited if config == path else merge(inherited, data.get("defaults", {}))
+        files = data.get("files", {})
+        if not isinstance(files, dict):
+            raise ValueError("files 必须是当前目录测试文件的映射")
+        for filename, settings in files.items():
+            if (not isinstance(filename, str) or Path(filename).name != filename
+                    or not filename.startswith("test_") or not filename.endswith(".py")
+                    or not (config.parent / filename).is_file() or not isinstance(settings, dict)):
+                raise ValueError("files 只能配置当前目录存在的 test_*.py")
+        scopes[config.parent] = {"defaults": defaults, "files": files}
+        config_files.append({"path": config.relative_to(root).as_posix(),
+                             "sha256": hashlib.sha256(config.read_bytes()).hexdigest()})
+    entries, sources = [], {}
+    for test_file in sorted(path.parent.rglob("test_*.py")):
+        if not test_file.resolve().is_relative_to(path.parent):
+            raise ValueError("测试源文件不能越出 tests 目录")
+        defaults, origins = base, [path.relative_to(root).as_posix()]
+        for folder in [*reversed(test_file.parent.parents), test_file.parent]:
+            if folder in scopes:
+                defaults = scopes[folder]["defaults"]
+                config_name = (folder / "manifest.json").relative_to(root).as_posix()
+                if config_name not in origins:
+                    origins.append(config_name)
+        settings = scopes.get(test_file.parent, {}).get("files", {}).get(test_file.name, {})
+        overrides = settings.get("cases", {})
+        if not isinstance(overrides, dict):
+            raise ValueError("cases 必须是方法配置映射")
+        defaults = merge(defaults, {k: v for k, v in settings.items() if k != "cases"})
+        tree = ast.parse(test_file.read_text(encoding="utf-8-sig"), filename=str(test_file))
+        # shortcut: 只发现类内直接定义的方法，采用继承或动态用例前扩展发现合同。
+        methods = [node.name + "." + method.name for node in tree.body if isinstance(node, ast.ClassDef)
+                   for method in node.body if isinstance(method, ast.FunctionDef) and method.name.startswith("test_")]
+        if set(overrides) - set(methods):
+            raise ValueError(f"{test_file.name}: cases 引用了不存在的方法")
+        relative = test_file.relative_to(root).as_posix()
+        for method in methods:
+            entry = merge(defaults, overrides.get(method, {}), cases=True)
+            memberships = _strings(entry.pop("plans", []), "plans")
+            if not memberships or set(memberships) - set(plans):
+                raise ValueError("测试必须归属已定义的全局执行计划")
+            identity = relative + "::" + method
+            entry.update(test_id=identity, file=relative,
+                         unittest_id=relative[:-3].replace("/", ".") + "." + method)
+            entries.append(entry)
+            sources[identity] = origins
+            for name in memberships:
+                plans[name]["test_ids"].append(identity)
+                plans[name]["required"].append(identity)
+    return validate_catalog({**catalog, "schema_version": 1, "defaults": {}, "tests": entries,
+                             "plans": plans, "config_sources": sources, "config_files": config_files})
 
 
 def validate_catalog(catalog):
@@ -613,7 +712,7 @@ def _source_info(root, catalog):
     paths = {Path(__file__).resolve()}
     for folder in ("src", "scripts", "tests"):
         paths.update(path for path in (root / folder).rglob("*")
-                     if path.is_file() and path.suffix.lower() in (".py", ".cmd", ".ps1"))
+                     if path.is_file() and path.suffix.lower() in (".py", ".pyw", ".cmd", ".ps1"))
     if (root / "pyproject.toml").is_file():
         paths.add(root / "pyproject.toml")
     for path in sorted(paths):
@@ -799,10 +898,11 @@ def run(args, *, root=ROOT):
         print(_json(summary))
         return 0 if summary["release_allowed"] else 1
     path = Path(args.manifest) if args.manifest else root / "tests" / "manifest.json"
-    catalog = validate_catalog(_read_json(path))
+    catalog = load_catalog(path, root)
     plan, selected, excluded = select_tests(catalog, args)
     if args.list:
-        print(_json({"plan_id": args.plan, "selected": selected, "required": plan["required"], "excluded": excluded}))
+        print(_json({"plan_id": args.plan, "selected": selected, "required": plan["required"], "excluded": excluded,
+                     "config_sources": catalog.get("config_sources", {})}))
         return 0
     if not selected and not args.resume:
         raise ValueError("筛选未得到任何用例")
@@ -834,7 +934,7 @@ def run(args, *, root=ROOT):
                                   "memory_control": "WindowsJob commit cap" if os.name == "nt" else "RLIMIT_AS",
                                   "wall_control": "own worker process deadline",
                                   "shared_preparation_cost": "计入整批墙钟，不重复计入逐用例"},
-                    "selected": selected,
+                    "selected": selected, "config_sources": catalog.get("config_sources", {}),
                     "required": [child["test_id"] for entry in catalog["tests"] if entry["test_id"] in plan["required"] for child in _expanded([entry])],
                     "excluded": excluded, "attempts_started": [], "unexecuted": {}, "elapsed_wall_seconds": 0}
     _save_json(directory / "manifest.json", manifest)
@@ -946,7 +1046,7 @@ def main(argv=None, *, root=ROOT):
         return _worker()
     try:
         return run(parser().parse_args(argv), root=root)
-    except (ValueError, OSError, KeyError, TypeError) as error:
+    except (ValueError, OSError, KeyError, TypeError, SyntaxError) as error:
         print(f"测试入口错误：{error}", file=sys.stderr)
         return 2
 

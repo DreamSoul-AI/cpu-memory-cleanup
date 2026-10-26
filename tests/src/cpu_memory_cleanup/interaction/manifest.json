@@ -1,0 +1,65 @@
+{
+  "files": {
+    "test_cli.py": {
+      "target": "src/cpu_memory_cleanup/interaction/cli.py",
+      "tags": [
+        "offline",
+        "module_cli"
+      ],
+      "cases": {
+        "CliTests.test_default_only_requests_one_readonly_sample": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CliJourneyTests.test_offline_review_uses_saved_run_with_zero_backend_calls": {
+          "level": "e2e"
+        },
+        "CliJourneyTests.test_post_read_failure_preserves_successful_action_in_cli_result": {
+          "level": "e2e"
+        },
+        "CliTests.test_text_report_preserves_sample_gap_reasons": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        }
+      }
+    },
+    "test_desktop.py": {
+      "target": "src/cpu_memory_cleanup/interaction/desktop.py",
+      "tags": [
+        "offline",
+        "module_desktop"
+      ],
+      "cases": {
+        "DesktopTests.test_readonly_journey_uses_core_without_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopTests.test_cancel_before_worker_enters_core_prevents_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopTests.test_cancel_after_worker_entry_before_core_begin_prevents_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_mainloop_interrupt_cancels_and_joins_undispatched_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_mainloop_unexpected_return_discards_pending_maintenance_and_joins_reader": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_mainloop_error_after_root_destroy_still_joins_and_preserves_error": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_normal_close_returns_without_destroying_root_twice": {
+          "level": "e2e"
+        }
+      },
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    }
+  }
+}
