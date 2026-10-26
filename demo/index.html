@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CPU 内存清理交互演示：用合成数据理解工作集整理与内存占用变化。">
+  <title>内存清理 · 交互演示</title>
+  <link rel="stylesheet" href="styles.css?v=20261027-2">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true">↗</span> CPU 内存清理</a><nav class="page-links" aria-label="项目入口"><span class="badge">交互演示 · 合成数据</span><a href="https://github.com/DreamSoul-AI/cpu-memory-cleanup" target="_blank" rel="noopener noreferrer">GitHub 仓库 ↗</a></nav></header>
+  <main>
+    <section class="intro" aria-labelledby="intro-title">
+      <p class="eyebrow">一个按钮，理解背后的机制</p>
+      <h1 id="intro-title">腾出内存，<br>数据去了哪里？</h1>
+      <p class="lead">试着点击绿色按钮。看看工作集整理如何改变内存占用，以及程序再次访问数据时会发生什么。</p>
+      <p class="notice">这是网页模拟，不读取你的设备内存，也不会执行真实清理。数值变化是预设情景，不代表性能测试结果。</p>
+      <ol class="steps">
+        <li><span>01</span><div><strong>整理驻留页面</strong><p>请求操作系统裁剪工作集，让部分页面退出程序当前的驻留集合。</p></div></li>
+        <li><span>02</span><div><strong>空间可以被复用</strong><p>页面可能仍缓存在 RAM 中。脏页需要写回后才能复用，应用分配的内存并未因此全部释放。</p></div></li>
+        <li><span>03</span><div><strong>再次使用，重新装入</strong><p>程序继续工作时，占用可能回升。需要读磁盘的页面可能带来等待。</p></div></li>
+      </ol>
+    </section>
+    <section class="preview" aria-label="内存清理模拟窗口">
+      <div class="window-top"><span class="window-dot" aria-hidden="true"></span><span>内存清理</span><span class="sample-tag">模拟</span></div>
+      <div class="window-body">
+        <p class="metric-label">物理内存占用</p>
+        <div class="percent"><span id="percent">76</span><span class="unit">%</span></div>
+        <div id="usage" class="usage" role="progressbar" aria-label="模拟物理内存占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="76"><div id="fill"></div></div>
+        <div class="numbers"><span>可用内存</span><strong><span id="available">3.84</span> / 16.00 GiB</strong></div>
+        <div class="numbers secondary"><span>提交量</span><span>18.20 / 32.00 GiB</span></div>
+        <button id="clean" class="clean" type="button"><span aria-hidden="true">✦</span> 一键清理<span class="button-note">模拟工作集整理</span></button>
+        <div class="result" role="status" aria-live="polite" aria-atomic="true"><strong id="status">准备就绪</strong><p id="message">点击按钮，查看一次预设的整理过程。</p></div>
+        <div class="controls"><button id="revisit" type="button" disabled>模拟再次使用</button><button id="reset" type="button">重置演示</button></div>
+        <p class="footnote">占用下降 ≠ 数据删除 ≠ 实际提速</p>
+      </div>
+    </section>
+    <section class="context" aria-labelledby="context-title">
+      <div><p class="eyebrow">FUTURE WORK · 后续方向</p><h2 id="context-title">从整理内存，<br>到提前协调资源。</h2></div>
+      <p>我们想探索的是：在资源压力持续升高时，根据用户正在做什么，提前协调应用和后台任务。目标是保护任务响应，不是持续压低内存数字。以下均为候选研究，尚未实现自动监测、Linux 接入或 Agent 干预。</p>
+      <div class="future-grid">
+        <article class="future-card"><span class="platform">WINDOWS</span><h3>能管理，难在理解业务</h3><p>Windows 已有内存管理、低内存通知，以及 Job Object 的任务组限额。可以结合应用增长趋势与用户优先级，研究提前预警和受管任务预算。</p><p>难点是普通外部工具不知道哪些对象可以删除，也不能通用地拦截所有应用的每次申请。超出硬限额可能导致申请失败，必须核验应用能否处理。</p><a href="https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_extended_limit_information" target="_blank" rel="noopener noreferrer">Windows 限额机制 ↗</a></article>
+        <article class="future-card"><span class="platform">LINUX</span><h3>把压力检测与任务组控制连接起来</h3><p>Linux 的 cgroup v2 可以管理任务组资源，memory.high 用于压力下的节流与回收，memory.max 提供硬限制。PSI 衡量任务因资源不足而停顿的时间，比只看占用百分比更接近受影响程度。</p><p>配置适当时，systemd-oomd 可依据压力提前选择任务组终止。但 Linux 也可能换页卡顿，终止可能损失状态，效果仍依赖内核、配置、权限与应用归组。</p><div class="source-links"><a href="https://docs.kernel.org/admin-guide/cgroup-v2.html" target="_blank" rel="noopener noreferrer">cgroup v2 ↗</a><a href="https://docs.kernel.org/accounting/psi.html" target="_blank" rel="noopener noreferrer">PSI ↗</a><a href="https://www.freedesktop.org/software/systemd/man/latest/systemd-oomd.service.html" target="_blank" rel="noopener noreferrer">systemd-oomd ↗</a></div></article>
+        <article class="future-card"><span class="platform">AGENT</span><h3>理解优先级，按能力干预</h3><p>识别持续增长、区分前台任务与重要后台工作，结合用户保护名单解释风险。对有协作接口的应用请求减并发或释放缓存，对自己启动的任务研究预算与延后执行。</p><p>AI 用于提出策略，轻量规则执行器负责及时判断、权限、记录和冷却。紧急路径不等待大模型回复，不按内存排名自动杀进程，不承诺防止所有死机。</p></article>
+      </div>
+      <div class="agent-flow"><span>观察趋势</span><span aria-hidden="true">→</span><span>判断优先级</span><span aria-hidden="true">→</span><span>按授权干预</span><span aria-hidden="true">→</span><span>核对效果</span></div>
+      <div class="roadmap"><h3>我们准备怎样验证？</h3><ol><li><strong>先模拟</strong>：用合成轨迹验证持续增长、短时峰值、数据缺失与误判，只输出建议。</li><li><strong>再只读</strong>：分别核对 Windows 与 Linux 的数据口径、监测开销和权限，不把当前 Windows 实现当成跨平台支持。</li><li><strong>最后控制</strong>：先在可重跑的受管任务上验证预算和应用协作，再评估是否扩大自动动作范围。</li></ol><p>比较同样任务在无干预与干预后的响应时间、吞吐、误干预和恢复成本。占用下降或结束一个任务，都不能单独证明方案更好。</p></div>
+    </section>
+  </main>
+  <footer><span>参考 360 式快捷交互，自行实现的演示。与 360 无关联。</span><nav class="page-links" aria-label="项目与参考资料"><a href="https://github.com/DreamSoul-AI/cpu-memory-cleanup" target="_blank" rel="noopener noreferrer">GitHub 源码 ↗</a><a href="https://learn.microsoft.com/en-us/windows/win32/memory/working-set" target="_blank" rel="noopener noreferrer">了解工作集机制 ↗</a></nav></footer>
+  <noscript><p class="notice">启用 JavaScript 后可体验模拟按钮；本页所有数值均为合成数据。</p></noscript>
+</body>
+</html>
