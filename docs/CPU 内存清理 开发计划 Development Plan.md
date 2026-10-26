@@ -202,3 +202,10 @@ AI 适合解释趋势、梳理用户优先级和提出策略，轻量执行器�
 GitHub Pages 仅发布 `demo/` 中的静态交互演示，使用合成数据展示绿色按钮、工作集整理与再次访问后的占用回升。页面明确标注演示，浏览器不读取访客进程、不调用操作系统维护，也不宣称性能收益。Agent 计划以文字说明，不能把模拟按钮当成已实现的跨应用智能管理。
 
 实现采用无第三方依赖的 HTML、CSS 与 JavaScript，保留键盘操作、窄屏布局与减少动态效果支持。演示源码随项目提交，发布副本放在独立 Pages 分支，不发布研究与运行记录，不启用项目自动测试工作流。验证按钮单次运行、防重入、复位、数值换算、页面机制说明和实际浏览器布局后再核对公开链接。
+
+## （一）Future Work 的跨平台比较
+演示页明确展示 Windows、Linux 与 Agent 三方面的候选方向，不表述为“Linux 能管理而 Windows 不能”。Windows 的进程统计、压力通知与 Job Object 可支撑策略执行。Linux 的 cgroup v2 将任务组与资源控制关联，`memory.high` 在超过边界时施加节流与回收压力，`memory.max` 在达到且无法回收时可能触发组内 OOM。两种限额的行为和 Windows 提交量限额不可直接等同。[cgroup v2](https://docs.kernel.org/admin-guide/cgroup-v2.html)
+
+Linux PSI 提供 CPU、内存与 I/O 竞争造成的任务停顿信息，可作为压力依据。配置与系统支持满足条件时，systemd-oomd 可基于 PSI 和任务组选择提前终止对象。它并非所有 Linux 的默认行为，也不保证在突发压力下及时响应，强制终止仍会损失状态。[PSI](https://docs.kernel.org/accounting/psi.html)、[systemd-oomd](https://www.freedesktop.org/software/systemd/man/latest/systemd-oomd.service.html)
+
+这些资料于2026年10月27日定向读取相关章节，属于接口与机制证据，未执行 Linux 接入或平台实验。跨平台实现应先定义共同观察与动作语义，再按实际能力适配，不为了表面统一强行映射阈值或终止策略。路线仍为合成策略、平台只读、受管任务控制三阶段，按任务响应、误干预与恢复成本评价。网页卡片展示方向，开发计划保留实施条件。
