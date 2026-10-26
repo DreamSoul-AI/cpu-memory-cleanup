@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CPU 内存清理交互演示：用合成数据理解工作集整理与内存占用变化。">
+  <title>内存清理 · 交互演示</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="./"><span class="brand-mark" aria-hidden="true">↗</span> CPU 内存清理</a><span class="badge">交互演示 · 合成数据</span></header>
+  <main>
+    <section class="intro" aria-labelledby="intro-title">
+      <p class="eyebrow">一个按钮，理解背后的机制</p>
+      <h1 id="intro-title">腾出内存，<br>数据去了哪里？</h1>
+      <p class="lead">试着点击绿色按钮。看看工作集整理如何改变内存占用，以及程序再次访问数据时会发生什么。</p>
+      <p class="notice">这是网页模拟，不读取你的设备内存，也不会执行真实清理。数值变化是预设情景，不代表性能测试结果。</p>
+      <ol class="steps">
+        <li><span>01</span><div><strong>整理驻留页面</strong><p>请求操作系统裁剪工作集，让部分页面退出程序当前的驻留集合。</p></div></li>
+        <li><span>02</span><div><strong>空间可以被复用</strong><p>页面可能仍缓存在 RAM 中。脏页需要写回后才能复用，应用分配的内存并未因此全部释放。</p></div></li>
+        <li><span>03</span><div><strong>再次使用，重新装入</strong><p>程序继续工作时，占用可能回升。需要读磁盘的页面可能带来等待。</p></div></li>
+      </ol>
+    </section>
+    <section class="preview" aria-label="内存清理模拟窗口">
+      <div class="window-top"><span class="window-dot" aria-hidden="true"></span><span>内存清理</span><span class="sample-tag">模拟</span></div>
+      <div class="window-body">
+        <p class="metric-label">物理内存占用</p>
+        <div class="percent"><span id="percent">76</span><span class="unit">%</span></div>
+        <div id="usage" class="usage" role="progressbar" aria-label="模拟物理内存占用" aria-valuemin="0" aria-valuemax="100" aria-valuenow="76"><div id="fill"></div></div>
+        <div class="numbers"><span>可用内存</span><strong><span id="available">3.84</span> / 16.00 GiB</strong></div>
+        <div class="numbers secondary"><span>提交量</span><span>18.20 / 32.00 GiB</span></div>
+        <button id="clean" class="clean" type="button"><span aria-hidden="true">✦</span> 一键清理<span class="button-note">模拟工作集整理</span></button>
+        <div class="result" role="status" aria-live="polite" aria-atomic="true"><strong id="status">准备就绪</strong><p id="message">点击按钮，查看一次预设的整理过程。</p></div>
+        <div class="controls"><button id="revisit" type="button" disabled>模拟再次使用</button><button id="reset" type="button">重置演示</button></div>
+        <p class="footnote">占用下降 ≠ 数据删除 ≠ 实际提速</p>
+      </div>
+    </section>
+    <section class="context" aria-labelledby="context-title">
+      <div><p class="eyebrow">从一键清理，到资源协调</p><h2 id="context-title">Agent 可以提前做什么？</h2></div>
+      <p>候选方向是周期观察系统压力与应用增长趋势，结合用户优先级给出建议，再对明确授权的受管任务执行预算或协作式干预。它尚未实现，也无法保证阻止所有卡顿。</p>
+      <div class="agent-flow"><span>观察趋势</span><span aria-hidden="true">→</span><span>判断优先级</span><span aria-hidden="true">→</span><span>按授权干预</span><span aria-hidden="true">→</span><span>核对效果</span></div>
+    </section>
+  </main>
+  <footer><span>参考 360 式快捷交互，自行实现的演示。与 360 无关联。</span><a href="https://learn.microsoft.com/en-us/windows/win32/memory/working-set" target="_blank" rel="noopener noreferrer">了解工作集机制 ↗</a></footer>
+  <noscript><p class="notice">启用 JavaScript 后可体验模拟按钮；本页所有数值均为合成数据。</p></noscript>
+</body>
+</html>
