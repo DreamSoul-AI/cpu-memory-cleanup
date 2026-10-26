@@ -4,7 +4,7 @@
 打开只读，点击才清理。桌面固定工作集方式，CPU 与历史分析命令属于辅助工具。可用内存上升不等于加速收益。
 
 ## 网页演示
-交互演示源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。它不读取访客设备，也不执行真实清理。Agent 的周期监测与分级干预仍是候选计划，见开发计划第九章。
+打开 [在线交互演示](https://dreamsoul-ai.github.io/cpu-memory-cleanup/)。源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。它不读取访客设备，也不执行真实清理。Agent 的周期监测与分级干预仍是候选计划，见开发计划第九章。
 
 本地可运行 `python -m http.server 8765 --bind 127.0.0.1 --directory demo`，再访问 `http://127.0.0.1:8765/`。演示逻辑测试单独执行 `node --test tests/demo/app.test.cjs`，使用 Node 内置测试能力，不是桌面 Python 测试计划的一部分。产品运行依赖仍为 Python 标准库。
 
