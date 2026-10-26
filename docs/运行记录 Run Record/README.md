@@ -28,4 +28,4 @@
 - 新日期新建文件，同日有独立主题时增加主题后缀。索引只放链接和简短范围，不累加完整执行正文
 - `.test-results/` 中的原始报告继续保持忽略，不因文档归档重新运行、恢复已删除日志或发布产物
 
-测试执行和验收方法见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)，工程演进见 [开发记录](<../开发记录/README.md>)，目标与待办见 [开发计划 Development Plan](<../开发计划 Development Plan CPU 内存清理.md>)。
+测试执行和验收方法见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)，工程演进见 [开发记录 Development Record](<../开发记录 Development Record/README.md>)，目标与待办见 [开发计划 Development Plan](<../开发计划 Development Plan CPU 内存清理.md>)。

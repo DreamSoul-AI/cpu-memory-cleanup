@@ -37,13 +37,13 @@
 | **文件或入口** | **维护内容** |
 | --- | --- |
 | [AGENTS.md](<AGENTS.md>) | 通用协作规则、资料定位、文档分工和自动化开发流程 |
-| [通用调研 CPU 内存清理.md](<docs/通用调研 CPU 内存清理.md>) | 360 产品对照、内存机制、方案、来源和证据限制，历史验证只留结论摘要并引用运行记录 |
+| [通用调研 General Research CPU 内存清理.md](<docs/通用调研 General Research CPU 内存清理.md>) | 360 产品对照、内存机制、方案、来源和证据限制，历史验证只留结论摘要并引用运行记录 |
 | [架构设计 Architecture Design CPU 内存清理.md](<docs/架构设计 Architecture Design CPU 内存清理.md>) | 三层职责、能力、结构与流程、部署和质量目标，不写 Python 文件或具体类型 |
 | [代码结构设计 Code Structure Design CPU 内存清理.md](<docs/代码结构设计 Code Structure Design CPU 内存清理.md>) | 架构到源码、模块、文件、公开入口、状态、依赖和测试的映射，区分当前实现与目标 |
 | [开发计划 Development Plan CPU 内存清理.md](<docs/开发计划 Development Plan CPU 内存清理.md>) | 后续目标、优先级、依赖和验收条件，探索与已决定任务分开，不产生运行授权 |
 | [缺陷记录 Bug Report CPU 内存清理.md](<docs/缺陷记录 Bug Report CPU 内存清理.md>) | 活动缺陷待办，验证关闭后将经过和证据归档到日期记录 |
-| [开发记录/](<docs/开发记录/README.md>) | 按日期记录实现、职责和工程组织的演进，不重复完整执行回执 |
-| [运行记录/](<docs/运行记录/README.md>) | 按日期记录实际命令、环境、版本、结果和限制，不冒充当前验证 |
+| [开发记录 Development Record/](<docs/开发记录 Development Record/README.md>) | 按日期记录实现、职责和工程组织的演进，不重复完整执行回执 |
+| [运行记录 Run Record/](<docs/运行记录 Run Record/README.md>) | 按日期记录实际命令、环境、版本、结果和限制，不冒充当前验证 |
 | [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf) | 关联 DreamSoul 资料库中的共用正文，不在本仓库复制一份规范 |
 
 ## 关联的 DreamSoul 资料
@@ -130,9 +130,9 @@ python scripts/run-tests.py --plan regression --list
 python scripts/run-tests.py --rebuild-report .test-results/运行ID
 ```
 
-日常完整离线检查执行 `python scripts/run-tests.py --plan regression`，其中已包含 quick 阶段。`tests/fixtures.py` 只复用合成运行信息与应用装配；根 `tests/manifest.json` 保留全局预算、计划和禁用实机验收草案，局部清单就近提供默认值与方法差异；普通方法自动发现，执行器统一展开，计划所选项全部为必需项。产品测试的完整模块名使用 `tests.src.cpu_memory_cleanup` 前缀；迁移前回执保留当时的路径和测试标识，当前布局的运行回执统一见 [运行记录](<docs/运行记录/README.md>)。默认计划全部使用合成数据、假 DLL、假界面或受控测试工作进程。结果保存在 `.test-results/<run_id>/`，包含运行清单、逐项事件和可从磁盘重建的报告。`--list` 只显示最终名单及 `config_sources` 来源链，不启动测试；每次运行的回执也保存来源链。未启用 GitHub Actions。
+日常完整离线检查执行 `python scripts/run-tests.py --plan regression`，其中已包含 quick 阶段。`tests/fixtures.py` 只复用合成运行信息与应用装配；根 `tests/manifest.json` 保留全局预算、计划和禁用实机验收草案，局部清单就近提供默认值与方法差异；普通方法自动发现，执行器统一展开，计划所选项全部为必需项。产品测试的完整模块名使用 `tests.src.cpu_memory_cleanup` 前缀；迁移前回执保留当时的路径和测试标识，当前布局的运行回执统一见 [运行记录 Run Record](<docs/运行记录 Run Record/README.md>)。默认计划全部使用合成数据、假 DLL、假界面或受控测试工作进程。结果保存在 `.test-results/<run_id>/`，包含运行清单、逐项事件和可从磁盘重建的报告。`--list` 只显示最终名单及 `config_sources` 来源链，不启动测试；每次运行的回执也保存来源链。未启用 GitHub Actions。
 
-CFG-01 已修复，根入口恢复分层加载，并阻止旧根格式静默忽略子清单，验证见 [本轮运行记录](<docs/运行记录/2026-10-26 桌面诊断与配置修复.md>)。
+CFG-01 已修复，根入口恢复分层加载，并阻止旧根格式静默忽略子清单，验证见 [本轮运行记录 Run Record](<docs/运行记录 Run Record/2026-10-26 桌面诊断与配置修复.md>)。
 
 真实 Windows 采集、GUI 显示、特权路径和清理效果均未做本轮平台验证。历史桌面 A/B 没有证明持续净收益，原始 `logs/` 已删除，不重建或以新数据冒充。
 
