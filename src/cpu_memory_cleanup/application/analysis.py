@@ -694,3 +694,22 @@ def compare(samples_a, samples_b, *, conditions=None, metadata_a=None, metadata_
                            "spike_floors": dict(SPIKE_FLOORS), "tail_fraction": "last third of each window"},
             "verdict": verdict, "reason": reason, "evidence_issues": issues,
             "caveats": ["结论仅适用于已记录的机制、负载与环境；前后容量变化不能单独证明加速。"]}
+
+
+def cleanup_summary(samples, action, header):
+    """内存整理的事实摘要，不作清理收益或CPU诊断。"""
+    first = samples[0].metrics if samples else {}
+    last = samples[-1].metrics if len(samples) >= 2 else {}
+    scope = header.get("scope", "system")
+    before = _number((first.get("physical") or {}).get("available_bytes"))
+    after = _number((last.get("physical") or {}).get("available_bytes"))
+    result = {"mode": "memory-cleanup", "scope": scope, "target": header.get("target"),
+              "action": action.copy(), "available_before_bytes": before, "available_after_bytes": after,
+              "available_delta_bytes": None if before is None or after is None else after - before,
+              "caveat": "工作集与可用量变化不代表永久释放或实际提速"}
+    if scope == "process":
+        a = _number((first.get("target") or {}).get("working_set_bytes"))
+        b = _number((last.get("target") or {}).get("working_set_bytes"))
+        result.update(working_set_before_bytes=a, working_set_after_bytes=b,
+                      working_set_delta_bytes=None if a is None or b is None else b - a)
+    return result

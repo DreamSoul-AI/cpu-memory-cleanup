@@ -20,6 +20,7 @@ class Capabilities:
     reading: str = "unsupported"
     mechanisms: tuple = ()
     reason: str = ""
+    scopes: tuple = ("system",)
 
     def __post_init__(self):
         if (not isinstance(self.operating_system, str) or not self.operating_system
@@ -27,7 +28,9 @@ class Capabilities:
                 or not isinstance(self.mechanisms, tuple)
                 or any(not isinstance(x, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", x) or x == "both" for x in self.mechanisms)
                 or len(set(self.mechanisms)) != len(self.mechanisms)
-                or not isinstance(self.reason, str)):
+                or not isinstance(self.reason, str)
+                or not isinstance(self.scopes, tuple) or not self.scopes
+                or any(scope not in ("system", "process") for scope in self.scopes)):
             raise ValueError("系统能力信息无效")
 
 
@@ -93,17 +96,38 @@ class Sample:
         return asdict(self)
 
 
+class ResourceCloseError(RuntimeError):
+    """原生资源关闭未确认，需要阻断后续系统请求。"""
+
+
+@dataclass(frozen=True)
+class ProcessTarget:
+    pid: int
+    created_at: str
+    name: str = ""
+
+    def __post_init__(self):
+        if (type(self.pid) is not int or not 0 < self.pid <= 0xffffffff
+                or not isinstance(self.created_at, str) or not re.fullmatch(r"[1-9][0-9]{0,19}", self.created_at)
+                or int(self.created_at) > 0xffffffffffffffff or not isinstance(self.name, str)):
+            raise ValueError("目标需要有效PID与原始创建身份")
+
+
 @dataclass(frozen=True)
 class ActionRequest:
     mechanism: str
     scope: str = "system"
     confirmed: bool = False
     confirmation_source: str = ""
+    target: ProcessTarget | None = None
 
     def __post_init__(self):
         if (not isinstance(self.mechanism, str) or not re.fullmatch(r"[a-z][a-z0-9-]*", self.mechanism)
-                or self.mechanism == "both" or self.scope != "system"):
-            raise ValueError("只支持明确的单项系统范围维护")
+                or self.mechanism == "both" or self.scope not in ("system", "process")):
+            raise ValueError("只支持明确的单项范围维护")
+        if (self.scope == "system" and self.target is not None or self.scope == "process"
+                and (self.mechanism != "working-set" or not isinstance(self.target, ProcessTarget))):
+            raise ValueError("process范围仅支持具有完整目标的工作集整理")
         if type(self.confirmed) is not bool or not isinstance(self.confirmation_source, str):
             raise ValueError("维护确认格式无效")
 

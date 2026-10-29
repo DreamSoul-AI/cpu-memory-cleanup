@@ -6,10 +6,10 @@ import math
 from pathlib import Path
 import sys
 
-from ..contracts import ActionRequest
+from ..contracts import ActionRequest, ProcessTarget
 
 TOOL_SCHEMA_VERSION = 1
-TOOL_NAMES = ("memory_status", "memory_cleanup", "memory_result")
+TOOL_NAMES = ("memory_status", "memory_cleanup", "memory_result", "memory_targets", "memory_process_cleanup")
 
 
 def tool_info():
@@ -30,6 +30,18 @@ def tool_info():
              "required": ["run_dir"], "additionalProperties": False},
          "requires_confirmation": False, "arguments": ["--run-dir", "{run_dir}"]},
     ]
+    tools.extend([
+        {"name": "memory_targets", "description": "按需列出可读进程、创建身份和工作集，不整理内存。",
+         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+         "requires_confirmation": False, "arguments": []},
+        {"name": "memory_process_cleanup", "description": "仅整理指定PID及创建身份的一个进程工作集，不关闭进程。",
+         "inputSchema": {"type": "object", "properties": {
+             "pid": {"type": "integer", "minimum": 1}, "created_at": {"type": "string"},
+             "output_dir": {"type": "string"}, "confirm": {"type": "boolean", "const": True}},
+             "required": ["pid", "created_at", "output_dir", "confirm"], "additionalProperties": False},
+         "requires_confirmation": True,
+         "arguments": ["--pid", "{pid}", "--created-at", "{created_at}", "--confirm", "--output-dir", "{output_dir}"]},
+    ])
     for tool in tools:
         tool["command"] = ["python", "-m", "cpu_memory_cleanup", "--tool", tool["name"], *tool.pop("arguments")]
     return {"tool_schema_version": TOOL_SCHEMA_VERSION, "transport": "local-cli",
@@ -73,6 +85,8 @@ def parse_args(argv=None):
     mode.add_argument("--tool", choices=TOOL_NAMES, help="以 JSON 调用包的单项内存能力")
     mode.add_argument("--tool-info", action="store_true", help="输出静态工具目录，不读取系统")
     parser.add_argument("--comparison", type=Path, help="--review 的对照运行")
+    parser.add_argument("--pid", type=int, help="定向整理的目标PID")
+    parser.add_argument("--created-at", help="memory_targets返回的原始创建身份")
     parser.add_argument("--confirm", action="store_true", help="明确确认本次 memory_cleanup；宿主仍须核对授权")
     parser.add_argument("--run-dir", type=Path, help="memory_result 使用的已有运行记录位置")
     parser.add_argument("--json", action="store_true", help="输出完整 JSON 结果")
@@ -100,7 +114,14 @@ def parse_args(argv=None):
         if (args.comparison is not None or args.release_what is not None or args.count is not None
                 or args.interval is not None or args.jsonl is not None or args.with_processes or args.top is not None):
             parser.error("工具模式不接受采样、诊断或机制选择参数")
-        if args.tool == "memory_cleanup":
+        if args.tool != "memory_process_cleanup" and (args.pid is not None or args.created_at is not None):
+            parser.error("目标身份只用于memory_process_cleanup")
+        if args.tool in ("memory_cleanup", "memory_process_cleanup"):
+            if args.tool == "memory_process_cleanup":
+                try:
+                    ProcessTarget(args.pid, args.created_at)
+                except ValueError as error:
+                    parser.error(str(error))
             if not args.confirm or args.output_dir is None or args.run_dir is not None:
                 parser.error("memory_cleanup 必须指定 --confirm 和 --output-dir，不接受 --run-dir")
         elif args.tool == "memory_result":
@@ -110,7 +131,7 @@ def parse_args(argv=None):
             parser.error("内存状态与工具目录不接受维护或记录参数")
         args.json = True
         return args
-    if args.confirm or args.run_dir is not None:
+    if args.confirm or args.run_dir is not None or args.pid is not None or args.created_at is not None:
         parser.error("--confirm 和 --run-dir 只用于对应 --tool 调用")
     if args.release_what is not None and (args.release_what == "both" or not args.release_what or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in args.release_what) or not args.release_what[0].isalpha()):
         parser.error("both 已停用；一次维护只允许明确的一种机制")
@@ -162,7 +183,12 @@ def run(app, args):
             print(json.dumps(tool_info(), ensure_ascii=True, allow_nan=False, indent=2))
             return 0
         path = args.review or args.analyze or args.pressure or args.tree_summary
-        if args.tool == "memory_status":
+        if args.tool == "memory_targets":
+            report = app.memory_targets()
+        elif args.tool == "memory_process_cleanup":
+            report = app.memory_process_cleanup(ProcessTarget(args.pid, args.created_at), args.output_dir,
+                confirmed=args.confirm, confirmation_source="cli:--tool memory_process_cleanup --confirm")
+        elif args.tool == "memory_status":
             report = app.memory_status()
         elif args.tool == "memory_cleanup":
             report = app.memory_cleanup(args.output_dir, confirmed=args.confirm,

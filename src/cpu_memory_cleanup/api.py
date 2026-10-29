@@ -1,14 +1,14 @@
 """可直接调用的包入口；导入和创建应用均不采样或打开界面。"""
 
 from .application.core import Application
-from .contracts import ActionRequest, Capabilities, RunReport, Sample
+from .contracts import ActionRequest, Capabilities, RunReport, Sample, ProcessTarget
 from .system.operating_system import select_backend
 from .system.records import RecordStore
 from .system.runtime import Runtime
 
 API_VERSION = 1
 
-__all__ = ["API_VERSION", "create_application", "ActionRequest", "Capabilities", "RunReport", "Sample"]
+__all__ = ["API_VERSION", "create_application", "ActionRequest", "Capabilities", "RunReport", "Sample", "ProcessTarget"]
 
 
 def create_application(*, offline=False, reader=None, maintainer=None,

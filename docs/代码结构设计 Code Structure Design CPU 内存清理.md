@@ -145,7 +145,7 @@ flowchart TB
 
 # 六、实施状态与验证边界
 ## （一）实际完成范围
-产品已按三层分包，系统能力选择、记录与运行支撑独立于功能流程，公共工厂负责统一装配。当前源码包含16个 Python 文件，其中5个为包标识。测试按实际源码目录镜像，运行与预算入口仍见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。
+产品已按三层分包，系统能力选择、记录与运行支撑独立于功能流程，公共工厂负责统一装配。当前源码包含17个 Python 文件，其中5个为包标识。测试按实际源码目录镜像，运行与预算入口仍见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。
 
 | **职责** | **当前位置与公共入口** | **状态归属** |
 | --- | --- | --- |
@@ -269,3 +269,59 @@ src/cpu_memory_cleanup/
 包公共入口的镜像测试为 `tests/src/cpu_memory_cleanup/test_api.py`，检查惰性工厂、合成状态→整理→离线回看、未确认零动作和离线不接入实时平台。`interaction/test_cli.py` 检查静态目录、工具参数、JSON 与模拟 Agent 链路，`interaction/test_desktop.py` 检查包返回值到环形显示及按钮结果的映射。现有层间依赖、历史命令、关闭与单次控制继续验证，不因增加包入口删除既有合同。
 
 隔离构建并安装后，从源码目录外导入公共 API、执行静态目录和合成调用链是独立验收，源码目录内 import 成功不能替代它。实现与完整验收分别判断，本轮实际结果见 [包与工具接入运行记录](<运行记录 Run Record/2026-10-30 包与工具接入.md>)。具体阶段与执行边界见 [开发计划](<开发记录 Development Record/2026-10-30 阶段完成与计划整理.md#十一agent-工具化开发计划>)。MCP、实机采样、清理、GUI 与发布当前均不执行，也不据包可安装宣称这些能力已验收。
+
+# 十、定向工作集整理的源码映射设计
+状态：FUN-01、FUN-02及后续接入已实现，本轮离线与隔离安装验收已通过，见日期运行记录。本章依据 [架构第九章](<架构设计 Architecture Design CPU 内存清理.md#九定向工作集整理的增量设计>)，以下映射已落到实际源码，不创建空模块。
+
+## （一）最小文件划分
+```text
+src/cpu_memory_cleanup/
+├── api.py                       继续提供统一公共装配
+├── contracts.py                 新增ProcessTarget及有目标的process请求
+├── application/
+│   ├── core.py                  共用流程、单目标准入及记录解释
+│   └── analysis.py              内存与目标的结果解释，不接触原生调用
+├── interaction/
+│   ├── cli.py                   目标发现及定向整理参数，调用包
+│   └── desktop.py               详情内按需目标选择，不持有原生句柄
+└── system/
+    ├── operating_system.py      实现后才登记process能力
+    ├── records.py               继续只负责物理记录访问
+    └── platforms/
+        ├── windows.py          保留系统整理及共享互斥，装配目标会话
+        └── windows_process.py  目标枚举、身份、句柄与单目标动作
+```
+
+已新增一个有实际职责的原生模块，不复制全套application或SDK。`windows_process.py`不得反向导入windows.py，原生加载能力通过装配传入。维护互斥由windows.py的会话适配与既有资源持有者管理，目标模块只拥有目标句柄，不复制互斥、提权或记录逻辑。若现有会话实现只能整块复制才能接入，应先抽出其共享准入与收尾的最小部分，再写单目标动作。
+
+## （二）公开合同与调用边界
+| **对象或入口** | **当前合同** | **约束** |
+| --- | --- | --- |
+| ProcessTarget | pid为正整数，created_at为系统创建身份的原始整数文本，name仅作可选展示 | 创建身份不转换成有损浮点时间。核心与系统会话都核对范围，不能仅凭名称决定目标 |
+| ActionRequest | 现有system请求参数保持兼容；process范围仅允许working-set并要求ProcessTarget，system不接受target | 原始数据与反序列化均验证，不将scope验证简单删除 |
+| memory_targets | 返回RunReport，样本的processes列出可读目标及工作集值，错误和覆盖在报告中保留 | 按需有界枚举，不采集CPU排名、不维护。列表只是一时快照 |
+| memory_process_cleanup(target, output_dir, confirmed=False, confirmation_source="", cancel_event=None) | 复用既有maintain流程，单目标模式另取目标工作集前后值并返回RunReport | 每请求至多一次目标EmptyWorkingSet，不用全局NT调用代替，不循环处理其他进程 |
+| 原memory_cleanup | 继续请求system/working-set | 行为不变，不接受隐式进程参数 |
+
+公共入口拟作为Application上的附加方法，经api.create_application返回，保留现有三个内存方法。能力元数据增加可执行范围声明，默认只含system，Windows实现及测试就绪后才声明process。不据方法名存在推定底层支持。
+
+目标执行会话在preflight打开请求中的目标，使用同一句柄读取创建身份、目标前值、执行动作、读取目标后值并最终关闭。借用目标数据的观察适配不拥有句柄，不能提前或重复关闭。相同会话对当前请求只可派发一次。系统可用量仍由现有轻量Reader取得，目标工作集值来自目标会话，二者按来源记录。
+
+## （三）记录、命令和前端映射
+system写入及读取既有schema_version=1。process运行采用schema_version=2，核心读者显式接受1、2，并限制process只出现在2中。target身份和scope进入header及intent，两处必须一致，动作结果和样本引用同一原run_id。版本2样本在metrics.target内记录pid、created_at、working_set_bytes，未取得值保留None与原因。记录访问层不承担业务迁移判断。
+
+CLI新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … --created-at … --confirm --output-dir …`，目标名称不能替代身份输入。现有三工具与普通CLI行为保持，工具目录及字段版本在当前按新增合同一致维护（工具版本1新增目录项，记录版本按范围分开）。桌面以请求目标列表的按钮进入详情选择，列表显示名称、PID与工作集，单独显示“仅整理选中进程”，原绿色按钮仍标识全局整理。未选中目标不派发，自动刷新不更新用户选择为另一个进程。列表读取、定向动作均使用现有工作线程生命周期，不阻塞界面或另建后台服务。
+
+## （四）必要验证与实现差距
+遵循共用测试规范，测试按源码镜像就近登记，不增加框架或额外测试层级目录。优先正常旅程及会改变动作对象的必要验证：
+
+| **验证信号** | **位置与方法** |
+| --- | --- |
+| 新旧请求分离、身份必须完整 | test_contracts.py，system旧调用可用，process缺目标不能执行 |
+| 单目标动作与资源生命周期 | system/platforms/test_windows_process.py，假DLL验证只打开期望目标、身份一致、一次调用、一次关闭，身份不符或未确认时零动作 |
+| 包到记录及新离线实例回看 | test_api.py与application/test_core.py，合成目标前后值和动作对应同一身份，回看无原生接入，v1历史system继续可读 |
+| CLI与桌面的正常使用 | interaction/test_cli.py和test_desktop.py，目标按需读取、显式选择和确认、旧全局按钮不变、失败不转全局 |
+
+目标工作集下降不作为测试通过条件，测试验证返回值、动作次数、对象和记录含义，真实效果另验。实施完成后运行受影响定向检查及完整离线回归，并核对安装包。新测试原始执行证据由日期运行记录维护，不以设计内容冒充验证。
+
+本轮目标相关跨层旅程集中在test_windows_process.py，以共享禁止真实DLL的假系统装配，分别验证原生、包、CLI和假界面路径，按level标注integration/e2e。该文件包含具名跨层入口映射，不复制完整假系统；既有CLI和桌面镜像测试继续验证原有入口。
