@@ -242,6 +242,29 @@
           "level": "integration"
         }
       }
+    },
+    "test_windows_process.py": {
+      "target": "src/cpu_memory_cleanup/system/platforms/windows_process.py",
+      "tags": [
+        "offline",
+        "module_windows_process"
+      ],
+      "level": "integration",
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ],
+      "cases": {
+        "ProcessTests.test_target_cleanup_and_offline_replay_keep_identity_and_single_call": {
+          "level": "e2e"
+        },
+        "ProcessTests.test_cli_target_journey_preserves_scope_and_replays_without_actions": {
+          "level": "e2e"
+        },
+        "ProcessTests.test_fake_window_selects_target_without_changing_global_button": {
+          "level": "e2e"
+        }
+      }
     }
   }
 }

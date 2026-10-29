@@ -57,7 +57,18 @@ python -m cpu_memory_cleanup --tool memory_cleanup --confirm --output-dir 记录
 python -m cpu_memory_cleanup --tool memory_result --run-dir 保存的运行目录
 ```
 
-三个 `--tool` 调用默认输出 JSON，在 `RunReport` 字段上增加 `tool_schema_version: 1` 和 `tool`，整体 `completion == "success"` 时退出码为 0，其余为 1，参数错误为 2。工具 JSON 使用 ASCII 转义，解析后的中文值不变，便于 Windows 重定向读取。`--confirm` 表达当前请求的确认，真实授权由可信宿主核对，模型填写布尔值不自动取得权限。状态与清理命令不是本轮执行指令。回看使用离线装配，顶层 `run_id` 标识本次回看请求，原清理身份保留在 `metadata.header.run_id` 和原样本中，不再执行动作。旧 CLI 参数与普通 `--json` 表示保持兼容。
+现有三个内存工具与新增两个定向工具的 `--tool` 调用默认输出 JSON，在 `RunReport` 字段上增加 `tool_schema_version: 1` 和 `tool`，整体 `completion == "success"` 时退出码为 0，其余为 1，参数错误为 2。工具 JSON 使用 ASCII 转义，解析后的中文值不变，便于 Windows 重定向读取。`--confirm` 表达当前请求的确认，真实授权由可信宿主核对，模型填写布尔值不自动取得权限。状态与清理命令不是本轮执行指令。回看使用离线装配，顶层 `run_id` 标识本次回看请求，原清理身份保留在 `metadata.header.run_id` 和原样本中，不再执行动作。旧 CLI 参数与普通 `--json` 表示保持兼容。
+
+接入方安装与调用方式见 [工具接入说明](<docs/工具接入 Tool Integration CPU 内存清理.md>)，明确区分原发布版与本轮固定功能提交。
+
+## 开发中的定向整理
+当前开发工作区新增单进程定向整理，尚未包含在已发布的v0.2.0预览包中。现有全局绿色按钮不变，窗口详情新增按需读取目标列表和“仅整理选中进程”。列表中的名字只作显示，目标由PID与原始创建身份绑定，一个程序的其他进程不会自动加入。
+
+Package入口为 `app.memory_targets()` 与 `app.memory_process_cleanup(ProcessTarget(pid, created_at, name), output_dir, confirmed=True, confirmation_source="可信宿主的本次授权")`，ProcessTarget从 `cpu_memory_cleanup.api` 导入。前者读取一次进程列表，后者只调用一次指定进程的EmptyWorkingSet，不结束程序、不启用调试特权，不自动切换全局方式。目标工作集前后值与系统可用量是不同指标，均不证明永久释放或提速。
+
+CLI对应新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … --created-at … --confirm --output-dir …`。创建身份须原样使用列表返回值，不自行用当前时间替代。进程列表可能不完整，不可读项保留错误，不能据可读列表声称全机覆盖。新进程运行记录采用schema2，旧system记录schema1仍可回看，回看不重新打开目标。
+
+工具目录新增两项，原有字段与三个工具语义保留。工具版本仍为1，新增名字是目录的附加能力，调用方按实际目录发现。记录版本、工具版本和包API版本分别管理。实际执行边界与前文一致，本轮不运行这些实时示例，仅离线验证。
 
 ## 文档入口
 

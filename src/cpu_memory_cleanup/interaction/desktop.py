@@ -5,6 +5,8 @@ import queue
 import threading
 import time
 
+from ..contracts import ProcessTarget
+
 GREEN = "#087F4F"
 BACKGROUND = "#F3F7F4"
 
@@ -40,6 +42,19 @@ def _present(report):
         if report.action.get("privilege_restored") is not True and report.action.get("attempted"):
             lines.append("权限恢复未确认，请查看详情。")
         lines.append("数值变化不代表实际提速。")
+    header = report.metadata.get("header") or {}
+    if report.mode == "maintain" and header.get("scope") == "process":
+        target = header.get("target") or {}
+        title = f"{target.get('name') or '选中进程'}（PID {target.get('pid')}）"
+        lines.insert(0, "定向整理：" + title)
+        result_note = title + "；只整理此进程，程序继续运行。"
+        if len(report.samples) >= 2 and report.action.get("call_outcome") == "success":
+            a = (report.samples[0].metrics.get("target") or {}).get("working_set_bytes")
+            b = (report.samples[-1].metrics.get("target") or {}).get("working_set_bytes")
+            if a is not None and b is not None:
+                delta = b - a
+                result = f"目标工作集{'增加' if delta > 0 else '减少'} {_gib(abs(delta))}" if delta else "目标工作集没有变化"
+                lines.append(f"目标工作集：{_gib(a)} → {_gib(b)}")
     errors = (report.samples[-1].errors if report.samples else []) + report.errors
     details = lines + [str(e.get("message") or e.get("reason") or e) if isinstance(e, dict) else str(e) for e in errors]
     if percent is None:
@@ -116,6 +131,16 @@ class MemoryWindow:
         self.cancel_button.pack(side="left")
         self.details = tk.Text(self.detail_panel, height=4, width=36, wrap="word", state="disabled", relief="flat", bg="#EAF0EC", fg="#355A46")
         self.details.grid(row=3, column=0, sticky="ew", pady=6)
+        self._targets = []
+        self.target_list = self.target_button = self.targets_button = None
+        if "process" in app.capabilities.scopes:
+            tk.Label(self.detail_panel, text="定向整理：只处理选中的一个进程", bg=BACKGROUND).grid(row=5, column=0, sticky="w")
+            self.targets_button = tk.Button(self.detail_panel, text="读取/刷新进程列表", command=self.load_targets)
+            self.targets_button.grid(row=6, column=0, sticky="ew")
+            self.target_list = tk.Listbox(self.detail_panel, height=4, exportselection=False)
+            self.target_list.grid(row=7, column=0, sticky="ew")
+            self.target_button = tk.Button(self.detail_panel, text="仅整理选中进程", command=self.maintain_target)
+            self.target_button.grid(row=8, column=0, sticky="ew")
         self._details_open = False
         tk.Label(self.detail_panel, text="整理部分内存页面的驻留状态，程序继续运行。\n不结束进程、不清 Standby；可能产生缺页和 I/O，\n不保证提速。提交量是系统承诺提供的内存。",
                  bg=BACKGROUND, fg="#6C7D73", justify="left", wraplength=320, font=("Microsoft YaHei UI", 9)).grid(row=4, column=0, sticky="w")
@@ -194,11 +219,15 @@ class MemoryWindow:
         else:
             self.detail_panel.grid_remove()
         self.details_button.configure(text="收起详情 ⌃" if self._details_open else "查看详情 ⌄")
-        self.root.geometry("380x790" if self._details_open else "380x560")
+        self.root.geometry(("380x980" if self.target_list is not None else "380x790") if self._details_open else "380x560")
 
     def _controls(self):
         busy = self._closing or self._worker is not None or self.app.busy
         self.button.configure(state="normal" if self._supported and not busy else "disabled")
+        if self.target_button is not None:
+            self.target_button.configure(state="disabled" if busy or not self._targets else "normal")
+            self.targets_button.configure(state="disabled" if busy else "normal")
+            self.target_list.configure(state="disabled" if busy else "normal")
         self.refresh_button.configure(state="disabled" if busy else "normal")
         self.cancel_button.configure(state="normal" if self._worker is not None and not self._closing else "disabled")
 
@@ -241,6 +270,22 @@ class MemoryWindow:
             return
         if self._submit(self.app.inspect, {"count": 1, "interval": 1, "with_processes": False}):
             self.status.configure(text="正在读取内存状态，不执行清理…")
+
+    def load_targets(self):
+        if self._submit(self.app.memory_targets):
+            self.status.configure(text="正在按需读取进程列表，不执行整理…")
+
+    def maintain_target(self):
+        selected = self.target_list.curselection() if self.target_list is not None else ()
+        if not selected or selected[0] >= len(self._targets):
+            self.status.configure(text="请先读取列表并选择一个进程。")
+            return
+        target = self._targets[selected[0]]
+        if self._submit(self.app.memory_process_cleanup, target, self._output_dir, confirmed=True,
+                        confirmation_source="desktop:selected-process-button"):
+            self.status.configure(text=f"正在仅整理 {target.name}（PID {target.pid}）…")
+            self.result.configure(text="正在整理选中进程…")
+            self.result_note.configure(text="不关闭程序，不处理其他进程。")
 
     def maintain(self):
         if not self._supported:
@@ -305,7 +350,15 @@ class MemoryWindow:
                     self.result_note.configure(text="本次未完成，具体原因可在详情中查看。")
                 else:
                     view = _present(report)
-                    if not self._live:
+                    if report.mode == "targets" and self.target_list is not None:
+                        self._targets = []
+                        self.target_list.configure(state="normal")
+                        self.target_list.delete(0, "end")
+                        for row in report.samples[0].processes if report.samples else []:
+                            target = ProcessTarget(row["pid"], row["created_at"], row.get("name", ""))
+                            self._targets.append(target)
+                            self.target_list.insert("end", f"{target.name} | PID {target.pid} | {_gib(row.get('working_set_bytes'))}")
+                    elif not self._live:
                         self._target_memory(view)
                     if report.mode == "maintain":
                         self.result.configure(text=view["result"])

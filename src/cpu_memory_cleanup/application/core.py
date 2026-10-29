@@ -6,7 +6,7 @@ import threading
 import uuid
 
 from ..contracts import (ActionRequest, Capabilities, RULE_VERSION, SCHEMA_VERSION, PROGRAM_VERSION,
-                         MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_SAMPLES, RunReport, Sample,
+                         ProcessTarget, ResourceCloseError, MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_SAMPLES, RunReport, Sample,
                          finite_number, validate_action)
 from . import analysis
 
@@ -75,8 +75,10 @@ def _load_run(reader, check_cancel, result):
                     if ("mechanism" in record and "mechanism" in header
                             and record["mechanism"] != header["mechanism"]):
                         raise ValueError("动作机制与运行头不一致")
-                    if "scope" in record and record["scope"] != "system":
-                        raise ValueError("动作范围无效")
+                    if record.get("scope", "system") != header.get("scope", "system"):
+                        raise ValueError("动作范围与运行头不一致")
+                    if header.get("scope") == "process" and record.get("target") != header.get("target"):
+                        raise ValueError("动作目标与运行头不一致")
                     action_phase = "intent"
                     result["action"] = {"attempted": None, "call_outcome": "unknown"}
                 elif record.get("record_type") == "action_result":
@@ -112,10 +114,16 @@ def _load_run(reader, check_cancel, result):
         if kind == "header":
             if (result["header"] is not None or result["samples"]
                     or not isinstance(record.get("run_id"), str) or not record["run_id"]
-                    or type(record.get("schema_version")) is not int or record["schema_version"] != SCHEMA_VERSION
+                    or type(record.get("schema_version")) is not int or record["schema_version"] not in (SCHEMA_VERSION, 2)
                     or type(record.get("expected_count")) is not int or not 1 <= record["expected_count"] <= MAX_SAMPLES
                     or not isinstance(record.get("parameters"), dict)):
                 raise ValueError("运行头重复、顺序或版本错误")
+            if record.get("scope", "system") == "process":
+                if record["schema_version"] != 2:
+                    raise ValueError("process记录需要版本2")
+                ActionRequest(record.get("mechanism"), scope="process", target=ProcessTarget(**record["target"]))
+            elif record.get("scope", "system") != "system":
+                raise ValueError("未知运行范围")
             result["header"] = record
             for key in ("program_version", "rule_version", "build_id", "environment_id", "started_at", "mode"):
                 if not isinstance(record.get(key), str) or not record[key]:
@@ -140,6 +148,11 @@ def _load_run(reader, check_cancel, result):
             if result["analysis"] is not None:
                 raise ValueError("分析结果之后存在样本")
             sample = Sample(**record["sample"])
+            if result["header"].get("scope") == "process":
+                target = result["header"]["target"]
+                observed = sample.metrics.get("target") or {}
+                if type(observed.get("pid")) is not int or any(observed.get(key) != target[key] for key in ("pid", "created_at")):
+                    raise ValueError("样本目标与运行头不一致")
             if sample.timestamp is None:
                 result["gaps"].append("新版样本缺少时刻")
             if sample.run_id != result["header"].get("run_id") or record.get("run_id") != sample.run_id:
@@ -237,6 +250,7 @@ class Application:
             "reading": self.capabilities.reading,
             "mechanisms": list(self.capabilities.mechanisms),
             "reason": self.capabilities.reason,
+            "scopes": list(self.capabilities.scopes),
         }
         try:
             sample = self.memory_snapshot()
@@ -251,6 +265,35 @@ class Application:
     def memory_cleanup(self, output_dir, *, confirmed=False, confirmation_source="", cancel_event=None):
         """明确请求一次工作集整理，使用内存专用前后快照。"""
         request = ActionRequest("working-set", confirmed=confirmed, confirmation_source=confirmation_source)
+        return self.maintain(request, output_dir, cancel_event=cancel_event, lightweight=True)
+
+    def memory_targets(self, *, cancel_event=None):
+        """按需发现可读进程，不采集CPU或执行维护。"""
+        report = self._report("targets")
+        if not self._begin(report, cancel_event):
+            return report
+        try:
+            self._check_cancel()
+            if "process" not in self.capabilities.scopes:
+                raise ValueError("当前接入不支持定向整理")
+            processes, errors = self.reader.process_targets()
+            self._check_cancel()
+            report.samples.append(Sample(report.run_id, 0, self._clock(), {}, processes, errors))
+            report.completion = "partial" if errors else "success"
+        except _Cancelled:
+            pass
+        except Exception as error:
+            if isinstance(error, ResourceCloseError):
+                self._unsafe = True
+            self._error(report, "targets", error)
+        finally:
+            self._finish(report, None, [])
+        return report
+
+    def memory_process_cleanup(self, target, output_dir, *, confirmed=False,
+                               confirmation_source="", cancel_event=None):
+        request = ActionRequest("working-set", scope="process", target=target,
+                                confirmed=confirmed, confirmation_source=confirmation_source)
         return self.maintain(request, output_dir, cancel_event=cancel_event, lightweight=True)
 
     def memory_result(self, path):
@@ -328,11 +371,14 @@ class Application:
         report.output_dir = journal.output_dir
         return journal
 
-    def _read(self, session, report, journal):
+    def _read(self, session, report, journal, target_reader=None):
         sample = session.read(report.run_id, len(report.samples))
         if (not isinstance(sample, Sample) or sample.run_id != report.run_id
                 or sample.sequence != len(report.samples) or sample.timestamp is None):
             raise ValueError("Reader 返回的样本身份无效")
+        if target_reader is not None:
+            sample = Sample(sample.run_id, sample.sequence, sample.timestamp,
+                            {**sample.metrics, "target": target_reader()}, sample.processes, sample.errors)
         # 再检查可变数据，不能只相信构造时的校验。
         Sample(**sample.to_dict())
         if len(_json(sample.to_dict()).encode("utf-8")) > MAX_LINE_BYTES:
@@ -373,6 +419,8 @@ class Application:
             return "failed"
         if report.cancel_requested and not self._dispatched:
             return "cancelled"
+        if report.mode == "targets" and any(sample.errors for sample in report.samples):
+            return "partial"
         if report.mode == "maintain" and outcome == "not_started":
             return "failed"
         return "success"
@@ -454,6 +502,8 @@ class Application:
                 raise ValueError("当前接入不支持所需的轻量内存快照")
             if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
                 raise ValueError("维护必须有明确确认及来源")
+            if request.scope not in self.capabilities.scopes:
+                raise ValueError("当前接入不提供该维护范围")
             if request.mechanism not in self.capabilities.mechanisms:
                 raise ValueError("当前操作系统接入不提供该维护机制")
             if output_dir is None or self.maintainer is None or self.reader is None:
@@ -461,6 +511,9 @@ class Application:
             options = _options({"count": 2, "interval": 0, "output_dir": output_dir})
             report.metadata["header"] = self._header(report, options)
             report.metadata["header"]["mechanism"] = request.mechanism
+            if request.scope == "process":
+                report.metadata["header"].update(schema_version=2, scope="process", target={
+                    "pid": request.target.pid, "created_at": request.target.created_at, "name": request.target.name})
             report.metadata["header"]["observation_scope"] = "memory-only" if lightweight else "full"
             journal = self._journal(report, options)
             journal.append("samples", report.metadata["header"])
@@ -473,11 +526,13 @@ class Application:
                 raise ValueError("维护准入能力缺失或未知")
             session = self.reader.open_memory_observation() if lightweight else self.reader.open_observation(with_processes=False, top=10)
             report.phase = "before"
-            before = self._read(session, report, journal)
+            target_reader = operation.read_target if request.scope == "process" else None
+            before = self._read(session, report, journal, target_reader)
             for block, key in (("physical", "available_bytes"), ("commit", "used_bytes"), ("commit", "limit_bytes")):
                 finite_number((before.metrics.get(block) or {}).get(key), f"{block}.{key}")
             journal.append("operation", {"record_type": "intent", "mechanism": request.mechanism,
-                                         "scope": request.scope, "confirmation_source": request.confirmation_source})
+                                         "scope": request.scope, "confirmation_source": request.confirmation_source,
+                                         **({"target": report.metadata["header"]["target"]} if request.scope == "process" else {})})
             with self._lock:
                 accepted_cancel = self._cancel.is_set()
                 if not accepted_cancel:
@@ -508,8 +563,9 @@ class Application:
             if self._unsafe:
                 return report
             report.phase = "after"
-            self._read(session, report, journal)
-            report.analysis = analysis.analyze(report.samples)
+            self._read(session, report, journal, target_reader)
+            report.analysis = (analysis.cleanup_summary(report.samples, report.action, report.metadata["header"])
+                               if lightweight else analysis.analyze(report.samples))
             journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
         except _Cancelled:
             pass

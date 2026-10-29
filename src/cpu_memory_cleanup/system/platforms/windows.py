@@ -370,6 +370,10 @@ class WindowsBackend:
     def open_memory_observation(self):
         return _MemoryObservation(self)
 
+    def process_targets(self):
+        from .windows_process import targets
+        return targets(self._dll)
+
     def open_operation(self, request):
         if (not isinstance(request, ActionRequest) or request.mechanism not in COMMANDS
                 or not request.confirmed or not request.confirmation_source.strip()):
@@ -537,6 +541,7 @@ class _Operation:
         self.owner_thread = None
         self._preflight = None
         self._restore_failed = False
+        self.target_session = None
 
     def preflight(self):
         if self.closed:
@@ -544,7 +549,7 @@ class _Operation:
         if self._preflight is not None:
             return dict(self._preflight)
         result = {"supported": False, "privilege_available": False, "lock_acquired": False,
-                  "scope": "system", "lock_scope": "windows_session", "errors": []}
+                  "scope": self.request.scope, "lock_scope": "windows_session", "errors": []}
         self._preflight = result
         if not _maintenance_lock.acquire(blocking=False):
             result["errors"].append("当前进程另有维护或安全上下文待核对")
@@ -553,8 +558,9 @@ class _Operation:
         self.owner_thread = threading.get_ident()
         try:
             self.kernel, self.advapi = self.backend._dll("kernel32.dll"), self.backend._dll("advapi32.dll")
-            ntdll = self.backend._dll("ntdll.dll")
-            self.nt_call = bind(ntdll, "NtSetSystemInformation", [c.c_int, c.c_void_p, w.ULONG], c.c_long)
+            if self.request.scope == "system":
+                ntdll = self.backend._dll("ntdll.dll")
+                self.nt_call = bind(ntdll, "NtSetSystemInformation", [c.c_int, c.c_void_p, w.ULONG], c.c_long)
             result["supported"] = True
             create = bind(self.kernel, "CreateMutexW", [c.c_void_p, w.BOOL, w.LPCWSTR], w.HANDLE)
             self.handle = create(None, False, MUTEX_NAME)
@@ -567,6 +573,12 @@ class _Operation:
             if status != 0:
                 raise OSError("维护互斥被遗弃，需要核对" if status == 0x80 else "维护互斥忙或不可用")
             result["lock_acquired"] = True
+            if self.request.scope == "process":
+                from .windows_process import TargetSession
+                self.target_session = TargetSession(self.backend._dll, self.request.target)
+                self.target_session.verify()
+                result["privilege_available"] = True
+                return dict(result)
             token = _open_token(self.kernel, self.advapi, TOKEN_QUERY, self.tokens)
             interruption = None
             try:
@@ -586,9 +598,12 @@ class _Operation:
                 raise interruption
             if not result["errors"]:
                 result["privilege_available"] = attrs is not None and not bool(attrs & SE_PRIVILEGE_REMOVED)
-        except (OSError, AttributeError) as error:
+        except (OSError, AttributeError, ValueError) as error:
             result["errors"].append(_error_text(error))
         return dict(result)
+
+    def read_target(self):
+        return self.target_session.read()
 
     def _close_token(self, token, errors):
         if not token.value:
@@ -620,6 +635,8 @@ class _Operation:
         if threading.get_ident() != self.owner_thread:
             result["errors"].append("维护必须在取得互斥的线程执行")
             return result
+        if self.request.scope == "process":
+            return self.target_session.perform_once()
         token, original, luid, adjusted = None, None, None, False
         interruption = None
         try:
@@ -696,6 +713,10 @@ class _Operation:
         errors = []
         if self.owned and threading.get_ident() != self.owner_thread:
             return {"closed": False, "errors": ["必须由取得互斥的线程关闭维护会话"]}
+        if self.target_session is not None:
+            facts = self.target_session.close()
+            if not facts["closed"]:
+                return facts
         for token in list(self.tokens):
             self._close_token(token, errors)
         if self.owned:

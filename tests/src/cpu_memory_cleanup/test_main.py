@@ -85,7 +85,7 @@ class MainTests(unittest.TestCase):
         with patch.object(entry, "create_application") as factory, contextlib.redirect_stdout(output):
             self.assertEqual(entry.main(["--tool-info"]), 0)
         factory.assert_not_called()
-        self.assertEqual(len(json.loads(output.getvalue())["tools"]), 3)
+        self.assertEqual(len(json.loads(output.getvalue())["tools"]), 5)
 
     def test_memory_result_tool_uses_offline_package_assembly(self):
         app = Mock()
