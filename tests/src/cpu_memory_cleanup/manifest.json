@@ -66,6 +66,22 @@
           ]
         }
       }
+    },
+    "test_api.py": {
+      "target": "src/cpu_memory_cleanup/api.py",
+      "tags": [
+        "offline",
+        "module_api"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ],
+      "cases": {
+        "ApiTests.test_package_memory_journey_returns_objects_and_reuses_original_run": {
+          "level": "e2e"
+        }
+      }
     }
   }
 }

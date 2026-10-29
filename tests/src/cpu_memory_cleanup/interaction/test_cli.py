@@ -31,6 +31,15 @@ class FakeApplication:
     def maintain(self, request, directory):
         return self._report("maintain", request, directory)
 
+    def memory_status(self):
+        return self._report("inspect")
+
+    def memory_cleanup(self, directory, **confirmation):
+        return self._report("maintain", directory, confirmation)
+
+    def memory_result(self, directory):
+        return self._report("review", directory)
+
 
 class CliTests(unittest.TestCase):
     def execute(self, argv, app=None):
@@ -136,6 +145,49 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertNotIn("attempted", json.loads(error.getvalue()))
 
+    def test_tool_catalog_describes_three_capabilities_without_calling_application(self):
+        app, code, text = self.execute(["--tool-info"])
+        catalog = json.loads(text)
+        self.assertEqual(code, 0)
+        self.assertEqual(catalog["tool_schema_version"], 1)
+        self.assertEqual([t["name"] for t in catalog["tools"]], list(cli.TOOL_NAMES))
+        self.assertTrue(catalog["tools"][1]["requires_confirmation"])
+        self.assertEqual(app.calls, [])
+
+    def test_memory_status_tool_returns_versioned_json_without_legacy_inspection(self):
+        app, code, text = self.execute(["--tool", "memory_status"])
+        record = json.loads(text)
+        self.assertEqual(code, 0)
+        self.assertEqual(app.calls, [("inspect",)])
+        self.assertEqual((record["tool_schema_version"], record["tool"]), (1, "memory_status"))
+        self.assertNotIn("tool", json.loads(self.execute(["--json"])[2]))
+
+    def test_memory_cleanup_tool_forwards_explicit_confirmation(self):
+        app, code, text = self.execute(["--tool", "memory_cleanup", "--confirm", "--output-dir", "中文记录"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(text)["tool"], "memory_cleanup")
+        self.assertEqual(app.calls, [("maintain", Path("中文记录"), {
+            "confirmed": True, "confirmation_source": "cli:--tool memory_cleanup --confirm"})])
+
+    def test_memory_cleanup_tool_requires_confirmation_before_dispatch(self):
+        self.rejected(["--tool", "memory_cleanup", "--output-dir", "out"])
+
+    def test_memory_result_tool_only_forwards_existing_run_location(self):
+        app, code, text = self.execute(["--tool", "memory_result", "--run-dir", "已有记录"])
+        self.assertEqual(code, 0)
+        self.assertEqual(app.calls, [("review", Path("已有记录"))])
+        self.assertEqual(json.loads(text)["tool"], "memory_result")
+
+    def test_tool_execution_error_does_not_invent_action_fact(self):
+        app = FakeApplication()
+        app.memory_cleanup = lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("记录返回中断"))
+        _, code, text = self.execute(["--tool", "memory_cleanup", "--confirm", "--output-dir", "out"], app)
+        result = json.loads(text)
+        self.assertEqual(code, 1)
+        self.assertEqual(result["completion"], "failed")
+        self.assertEqual(result["tool"], "memory_cleanup")
+        self.assertNotIn("action", result)
+
 
 class FakeSession:
     def __init__(self, fail_after=False):
@@ -177,6 +229,38 @@ class FakeBackend:
 
 
 class CliJourneyTests(unittest.TestCase):
+    def test_synthetic_agent_uses_catalog_status_cleanup_and_original_result(self):
+        from cpu_memory_cleanup import api
+        from tests.fixtures import FakeRuntime
+        from ..test_api import SyntheticMemory
+
+        backend = SyntheticMemory()
+        app = api.create_application(reader=backend, maintainer=backend, runtime=FakeRuntime(),
+                                     capabilities=api.Capabilities("synthetic", "available", ("working-set",)))
+
+        def call(argv, application=app):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                code = cli.run(application, cli.parse_args(argv))
+            self.assertEqual(code, 0, output.getvalue())
+            return json.loads(output.getvalue())
+
+        self.assertEqual([t["name"] for t in call(["--tool-info"])["tools"]], list(cli.TOOL_NAMES))
+        self.assertEqual((backend.reads, backend.actions), (0, 0))
+        status = call(["--tool", "memory_status"])
+        self.assertEqual(status["samples"][0]["metrics"]["physical"]["available_bytes"], 2 * 1024 ** 3)
+        with tempfile.TemporaryDirectory() as directory:
+            cleaned = call(["--tool", "memory_cleanup", "--confirm", "--output-dir", directory])
+            self.assertEqual(cleaned["action"]["call_outcome"], "success")
+            self.assertEqual([s["metrics"]["physical"]["available_bytes"] for s in cleaned["samples"]],
+                             [2 * 1024 ** 3, 3 * 1024 ** 3])
+            app.shutdown()
+            replay = call(["--tool", "memory_result", "--run-dir", cleaned["output_dir"]],
+                          api.create_application(offline=True, runtime=FakeRuntime()))
+        self.assertEqual(replay["action"], cleaned["action"])
+        self.assertEqual(replay["metadata"]["header"]["run_id"], cleaned["run_id"])
+        self.assertEqual((backend.reads, backend.actions), (3, 1))
+
     def test_offline_review_uses_saved_run_with_zero_backend_calls(self):
         backend = FakeBackend()
         app = create_application(backend, backend)

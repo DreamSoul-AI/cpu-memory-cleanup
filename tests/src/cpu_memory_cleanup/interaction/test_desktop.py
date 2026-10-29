@@ -1,5 +1,6 @@
 """假 Tk 和可控工作线程验证桌面调度，不创建窗口或读取系统。"""
 
+from pathlib import Path
 import unittest
 import tempfile
 import sys
@@ -9,8 +10,13 @@ from unittest.mock import patch
 from tests.fixtures import create_application
 
 from cpu_memory_cleanup.interaction import desktop
-from cpu_memory_cleanup.contracts import Capabilities, RunReport, Sample
-from .test_cli import FakeBackend
+from cpu_memory_cleanup.contracts import ActionRequest, Capabilities, RunReport, Sample
+from .test_cli import FakeBackend as ObservationBackend
+
+
+class FakeBackend(ObservationBackend):
+    def open_memory_observation(self):
+        return self.open_observation(with_processes=False, top=10)
 
 
 class DeferredThread:
@@ -44,15 +50,20 @@ class DeferredThread:
 class Widget:
     def __init__(self, *args, **kwargs):
         self.options = {"state": "normal", **kwargs}
+        self.items = {}
 
     def pack(self, **kwargs):
         pass
 
     def grid(self, **kwargs):
         self.options["grid"] = kwargs
+        self.options["visible"] = True
 
     def grid_remove(self):
-        pass
+        self.options["visible"] = False
+
+    def place(self, **kwargs):
+        self.options["place"] = kwargs
 
     def columnconfigure(self, *args, **kwargs):
         pass
@@ -66,8 +77,18 @@ class Widget:
     def yview(self, *args):
         pass
 
-    def create_rectangle(self, *args, **kwargs):
-        return "bar"
+    def create_oval(self, *args, **kwargs):
+        self.items["track"] = {"coords": args, **kwargs}
+        return "track"
+
+    def create_arc(self, *args, **kwargs):
+        self.items["arc"] = {"coords": args, **kwargs}
+        return "arc"
+
+    def itemconfigure(self, item, **kwargs):
+        if DeferredThread.in_worker:
+            raise AssertionError("工作线程不能更新 Tk")
+        self.items[item].update(kwargs)
 
     def coords(self, *args):
         if DeferredThread.in_worker:
@@ -78,7 +99,10 @@ class Widget:
         pass
 
     def winfo_width(self):
-        return 360
+        return self.options.get("width", 360)
+
+    def winfo_height(self):
+        return self.options.get("height", 220)
 
     def pack_forget(self):
         pass
@@ -123,10 +147,10 @@ class Root:
         pass
 
     def geometry(self, value):
-        pass
+        self.size = value
 
     def minsize(self, width, height):
-        pass
+        self.minimum = (width, height)
 
     def configure(self, **kwargs):
         pass
@@ -154,6 +178,7 @@ class FakeApplication:
 
     def __init__(self):
         self.calls = []
+        self.cleanup_calls = []
         self.cancelled = 0
         self.closed = False
 
@@ -169,6 +194,14 @@ class FakeApplication:
         self.calls.append(("maintain", request, directory))
         self.lightweight = lightweight
         return RunReport("run", "maintain", completion="success", action={"attempted": True, "call_outcome": "success"})
+
+    def memory_status(self):
+        return RunReport("display", "inspect", completion="success", samples=[self.memory_snapshot()])
+
+    def memory_cleanup(self, directory, *, confirmed=False, confirmation_source="", cancel_event=None):
+        self.cleanup_calls.append((directory, confirmed, confirmation_source))
+        return self.maintain(ActionRequest("working-set", confirmed=confirmed, confirmation_source=confirmation_source),
+                             directory, cancel_event=cancel_event, lightweight=True)
 
     def request_cancel(self):
         self.cancelled += 1
@@ -208,6 +241,7 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(self.app.calls, [])
         self.finish_worker()
         self.assertEqual(len(self.app.calls), 1)
+        self.assertEqual(self.app.cleanup_calls, [(Path("chosen"), True, "desktop:memory-clean-button")])
         mode, request, directory = self.app.calls[0]
         self.assertEqual(mode, "maintain")
         self.assertEqual(request.mechanism, "working-set")
@@ -254,10 +288,10 @@ class DesktopTests(unittest.TestCase):
             self.window.start()
             self.finish_worker()
         self.assertEqual(self.window.percent.cget("text"), "75%")
-        self.assertIn("2.000 GiB", self.window.available.cget("text"))
+        self.assertIn("6.000 GiB", self.window.available.cget("text"))
         self.assertIn("0.000 GiB", self.window.commit.cget("text"))
         self.assertIn("2026-10-26", self.window.context.cget("text"))
-        self.assertEqual(self.window.bar.cget("coords"), ("bar", 0, 0, 270.0, 12))
+        self.assertEqual(self.window.ring.items[self.window._ring_fill]["extent"], -270)
 
     def test_unknown_and_inconsistent_memory_never_become_zero(self):
         for metrics in ({}, {"physical": {"total_bytes": 8, "available_bytes": 9}},
@@ -273,10 +307,37 @@ class DesktopTests(unittest.TestCase):
             Sample("mem", 0, None, {"physical": {"available_bytes": 2 * 1024 ** 3}}),
             Sample("mem", 1, None, {"physical": {"available_bytes": 3 * 1024 ** 3}})])
         view = desktop._present(report)
-        self.assertIn("已执行清理", view["result"])
-        self.assertIn("2.000 GiB → 3.000 GiB", view["result"])
-        self.assertIn("恢复未确认", view["result"])
-        self.assertIn("不代表实际提速", view["result"])
+        self.assertIn("已执行清理", view["details"])
+        self.assertIn("2.000 GiB → 3.000 GiB", view["details"])
+        self.assertIn("恢复未确认", view["details"])
+        self.assertIn("不代表实际提速", view["details"])
+
+    def test_result_summary_uses_available_snapshot_change(self):
+        for after, wording in ((3, "可用内存增加"), (1, "可用内存减少"), (2, "可用内存没有变化")):
+            with self.subTest(after=after):
+                report = RunReport("mem", "maintain", completion="success", action={
+                    "attempted": True, "call_outcome": "success", "privilege_restored": True}, samples=[
+                    Sample("mem", 0, None, {"physical": {"available_bytes": 2 * 1024 ** 3}}),
+                    Sample("mem", 1, None, {"physical": {"available_bytes": after * 1024 ** 3}})])
+                view = desktop._present(report)
+                self.assertIn(wording, view["result"])
+                self.assertNotIn("释放了", view["result"])
+                self.assertIn("2.000 GiB →", view["details"])
+
+    def test_compact_window_starts_with_details_collapsed(self):
+        self.assertFalse(self.window._details_open)
+        self.assertNotIn("grid", self.window.detail_panel.options)
+        width, height = (int(value) for value in self.root.size.split("x"))
+        self.assertLess(width, 460)
+        self.assertLess(height, 660)
+        self.assertEqual(self.window.button.cget("text"), "一键清理")
+        self.assertEqual(self.window.ring.items[self.window._ring_fill]["extent"], 0)
+        self.window.toggle_details()
+        self.assertTrue(self.window._details_open)
+        self.assertTrue(self.window.detail_panel.options["visible"])
+        self.window.toggle_details()
+        self.assertFalse(self.window._details_open)
+        self.assertFalse(self.window.detail_panel.options["visible"])
 
     def test_unsupported_working_set_never_falls_back_to_standby(self):
         self.app.capabilities = Capabilities("fake", "available", ("standby",))
@@ -288,11 +349,11 @@ class DesktopTests(unittest.TestCase):
 
     def test_worker_only_updates_widgets_on_main_thread(self):
         self.window.start()
-        before = self.window.result.cget("text")
+        before = self.window.status.cget("text")
         self.window._worker.finish()
-        self.assertEqual(before, self.window.result.cget("text"))
+        self.assertEqual(before, self.window.status.cget("text"))
         self.window.pump()
-        self.assertIn("未执行清理", self.window.result.cget("text"))
+        self.assertIn("完成", self.window.status.cget("text"))
 
     def test_start_failure_restores_controls_without_retry(self):
         with patch.object(DeferredThread, "start", side_effect=RuntimeError("thread failed")):
@@ -400,7 +461,7 @@ class DesktopTests(unittest.TestCase):
         self.advance_animation(0.2)
         self.assertTrue(worker.is_alive())
         self.assertEqual(window.percent.cget("text"), "50%")
-        self.assertEqual(window.bar.cget("coords"), ("bar", 0, 0, 180.0, 12))
+        self.assertEqual(window.ring.items[window._ring_fill]["extent"], -180)
         self.assertIn("4.000 GiB", window.available.cget("text"))
         self.assertEqual(self.app.calls, [])
         self.assertIn("正在整理", window.status.cget("text"))
@@ -409,6 +470,27 @@ class DesktopTests(unittest.TestCase):
         self.finish_worker()
         self.assertEqual([c[0] for c in self.app.calls], ["maintain"])
         self.assertTrue(self.app.lightweight)
+
+    def test_live_display_preserves_last_cleanup_snapshot_result(self):
+        window = self.live_window()
+        report = RunReport("mem", "maintain", completion="success", action={
+            "attempted": True, "call_outcome": "success", "privilege_restored": True}, samples=[
+            Sample("mem", 0, None, {"physical": {"available_bytes": 2 * 1024 ** 3}}),
+            Sample("mem", 1, None, {"physical": {"available_bytes": 3 * 1024 ** 3}})])
+        with patch.object(self.app, "maintain", return_value=report):
+            window.maintain()
+            self.finish_worker()
+        result, details = window.result.cget("text"), window.details.cget("text")
+        note = window.result_note.cget("text")
+        self.assertIn("可用内存增加", result)
+        self.assertIn("2.000 GiB → 3.000 GiB", note)
+        self.current_sample.metrics["physical"]["available_bytes"] = 1024 ** 3
+        self.next_memory()
+        self.advance_animation(0.4)
+        self.assertEqual(window.percent.cget("text"), "88%")
+        self.assertEqual(window.result.cget("text"), result)
+        self.assertEqual(window.result_note.cget("text"), note)
+        self.assertEqual(window.details.cget("text"), details)
 
     def test_smooth_retarget_starts_from_current_display_and_unknown_does_not_animate_to_zero(self):
         window = self.live_window()
@@ -427,9 +509,8 @@ class DesktopTests(unittest.TestCase):
 
     def test_live_reader_failure_preserves_sample_timestamp_and_readings(self):
         window = self.live_window()
-        def fail():
-            raise OSError("controlled display failure")
-        self.app.memory_snapshot = fail
+        self.app.memory_status = lambda: RunReport(
+            "display-failure", "inspect", completion="failed", errors=["controlled display failure"])
         self.next_memory()
         self.assertEqual(window.percent.cget("text"), "75%")
         self.assertIn("2026-10-26T08:00:00", window.context.cget("text"))
