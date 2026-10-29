@@ -8,6 +8,35 @@ import sys
 
 from ..contracts import ActionRequest
 
+TOOL_SCHEMA_VERSION = 1
+TOOL_NAMES = ("memory_status", "memory_cleanup", "memory_result")
+
+
+def tool_info():
+    """静态工具说明；读取目录不装配应用、不采样或执行维护。"""
+    tools = [
+        {"name": "memory_status", "description": "读取一次内存状态，不采集 CPU 或进程列表。",
+         "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+         "requires_confirmation": False, "arguments": []},
+        {"name": "memory_cleanup", "description": "执行一次已授权的系统工作集整理，保存前后内存与动作记录。",
+         "inputSchema": {"type": "object", "properties": {
+             "output_dir": {"type": "string", "description": "宿主指定的运行记录基目录"},
+             "confirm": {"type": "boolean", "const": True}},
+             "required": ["output_dir", "confirm"], "additionalProperties": False},
+         "requires_confirmation": True, "arguments": ["--confirm", "--output-dir", "{output_dir}"]},
+        {"name": "memory_result", "description": "离线回看已有运行记录，不重新采样或执行维护。",
+         "inputSchema": {"type": "object", "properties": {
+             "run_dir": {"type": "string", "description": "上次结果返回的运行记录位置"}},
+             "required": ["run_dir"], "additionalProperties": False},
+         "requires_confirmation": False, "arguments": ["--run-dir", "{run_dir}"]},
+    ]
+    for tool in tools:
+        tool["command"] = ["python", "-m", "cpu_memory_cleanup", "--tool", tool["name"], *tool.pop("arguments")]
+    return {"tool_schema_version": TOOL_SCHEMA_VERSION, "transport": "local-cli",
+            "authorization": "维护授权由可信宿主落实，--confirm 或模型提供的布尔值不自证用户许可。",
+            "result": "RunReport 字段加 tool_schema_version 和 tool；完成状态与动作事实分别判断。",
+            "tools": tools}
+
 
 def _count(text):
     value = int(text)
@@ -41,7 +70,11 @@ def parse_args(argv=None):
     mode.add_argument("--pressure", type=Path, help="--review 的兼容别名")
     mode.add_argument("--tree-summary", type=Path, help="--review 的兼容别名")
     mode.add_argument("--ab-compare", type=Path, nargs=2, metavar=("A", "B"), help="离线比较两个运行")
+    mode.add_argument("--tool", choices=TOOL_NAMES, help="以 JSON 调用包的单项内存能力")
+    mode.add_argument("--tool-info", action="store_true", help="输出静态工具目录，不读取系统")
     parser.add_argument("--comparison", type=Path, help="--review 的对照运行")
+    parser.add_argument("--confirm", action="store_true", help="明确确认本次 memory_cleanup；宿主仍须核对授权")
+    parser.add_argument("--run-dir", type=Path, help="memory_result 使用的已有运行记录位置")
     parser.add_argument("--json", action="store_true", help="输出完整 JSON 结果")
     parser.add_argument("--output-dir", type=Path, help="显式运行记录目录；维护时必需")
     parser.add_argument("--release-what", help="当前操作系统提供的单一维护机制，例如 working-set 或 standby")
@@ -63,6 +96,22 @@ def parse_args(argv=None):
                    "release_preflight")
     if any(getattr(args, name) is not None and getattr(args, name) is not False for name in unsupported):
         parser.error("旧组合实验、跟随、独立预检与自定义阈值入口已停用；请使用 --review 或 --sample")
+    if args.tool or args.tool_info:
+        if (args.comparison is not None or args.release_what is not None or args.count is not None
+                or args.interval is not None or args.jsonl is not None or args.with_processes or args.top is not None):
+            parser.error("工具模式不接受采样、诊断或机制选择参数")
+        if args.tool == "memory_cleanup":
+            if not args.confirm or args.output_dir is None or args.run_dir is not None:
+                parser.error("memory_cleanup 必须指定 --confirm 和 --output-dir，不接受 --run-dir")
+        elif args.tool == "memory_result":
+            if args.run_dir is None or args.confirm or args.output_dir is not None:
+                parser.error("memory_result 只接受必需的 --run-dir")
+        elif args.confirm or args.output_dir is not None or args.run_dir is not None:
+            parser.error("内存状态与工具目录不接受维护或记录参数")
+        args.json = True
+        return args
+    if args.confirm or args.run_dir is not None:
+        parser.error("--confirm 和 --run-dir 只用于对应 --tool 调用")
     if args.release_what is not None and (args.release_what == "both" or not args.release_what or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-" for c in args.release_what) or not args.release_what[0].isalpha()):
         parser.error("both 已停用；一次维护只允许明确的一种机制")
     if args.release:
@@ -109,8 +158,18 @@ def format_report(report):
 
 def run(app, args):
     try:
+        if args.tool_info:
+            print(json.dumps(tool_info(), ensure_ascii=True, allow_nan=False, indent=2))
+            return 0
         path = args.review or args.analyze or args.pressure or args.tree_summary
-        if args.ab_compare is not None:
+        if args.tool == "memory_status":
+            report = app.memory_status()
+        elif args.tool == "memory_cleanup":
+            report = app.memory_cleanup(args.output_dir, confirmed=args.confirm,
+                                        confirmation_source="cli:--tool memory_cleanup --confirm")
+        elif args.tool == "memory_result":
+            report = app.memory_result(args.run_dir)
+        elif args.ab_compare is not None:
             report = app.review(*args.ab_compare)
         elif path is not None:
             report = app.review(path, comparison=args.comparison)
@@ -125,9 +184,15 @@ def run(app, args):
             if args.jsonl is not None:
                 options["jsonl_path"] = args.jsonl
             report = app.inspect(options)
-        print(json.dumps(report.to_dict(), ensure_ascii=False, allow_nan=False, indent=2) if args.json else format_report(report))
+        record = report.to_dict()
+        if args.tool:
+            record.update(tool_schema_version=TOOL_SCHEMA_VERSION, tool=args.tool)
+        print(json.dumps(record, ensure_ascii=bool(args.tool), allow_nan=False, indent=2) if args.json else format_report(report))
         return 0 if report.completion == "success" else 1
     except (OSError, ValueError) as error:
         message = {"completion": "failed", "error": str(error)}
-        print(json.dumps(message, ensure_ascii=False) if args.json else str(error), file=sys.stderr)
+        if args.tool:
+            message.update(tool_schema_version=TOOL_SCHEMA_VERSION, tool=args.tool)
+        print(json.dumps(message, ensure_ascii=bool(args.tool)) if args.json else str(error),
+              file=sys.stdout if args.tool else sys.stderr)
         return 1

@@ -16,6 +16,9 @@
         "CliJourneyTests.test_offline_review_uses_saved_run_with_zero_backend_calls": {
           "level": "e2e"
         },
+        "CliJourneyTests.test_synthetic_agent_uses_catalog_status_cleanup_and_original_result": {
+          "level": "e2e"
+        },
         "CliJourneyTests.test_post_read_failure_preserves_successful_action_in_cli_result": {
           "level": "e2e"
         },
@@ -34,6 +37,13 @@
         "module_desktop"
       ],
       "cases": {
+        "DesktopTests.test_result_summary_uses_available_snapshot_change": {
+          "subtests": [
+            {"after": 3},
+            {"after": 1},
+            {"after": 2}
+          ]
+        },
         "DesktopTests.test_readonly_journey_uses_core_without_maintenance": {
           "level": "e2e"
         },
@@ -54,6 +64,14 @@
         },
         "DesktopRunTests.test_normal_close_returns_without_destroying_root_twice": {
           "level": "e2e"
+        },
+        "DesktopTests.test_live_display_preserves_last_cleanup_snapshot_result": {
+          "level": "integration",
+          "tags": [
+            "offline",
+            "module_desktop",
+            "feature_cleanup_feedback"
+          ]
         }
       },
       "plans": [

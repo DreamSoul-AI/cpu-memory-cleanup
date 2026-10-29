@@ -1,4 +1,4 @@
-机制资料信息截止：2026年10月21日。360 公开页面与本仓库界面源码于2026年10月26日定向复核，具体范围见第二章第三节。本文研究技术机制、工具比较、方案取舍及证据限制，不维护代码演进或逐次运行结果。2026年10月27日补充当前按钮的源码调用链，并定向复读三篇 Microsoft 机制与接口文档，范围见第四章第五节。未执行主机实验。设计输入见 [架构设计 Architecture Design](<架构设计 Architecture Design CPU 内存清理.md>)，资料入口见 [项目协作约定](<../AGENTS.md>)。
+原机制资料信息截止：2026年10月21日。2026年10月30日补充同类源码与包分发比较，见第十二章。360 公开页面与本仓库界面源码于2026年10月26日定向复核，具体范围见第二章第三节。本文研究技术机制、工具比较、方案取舍及证据限制，不维护代码演进或逐次运行结果。2026年10月27日补充当前按钮的源码调用链，并定向复读三篇 Microsoft 机制与接口文档，范围见第四章第五节。未执行主机实验。设计输入见 [架构设计 Architecture Design](<架构设计 Architecture Design CPU 内存清理.md>)，资料入口见 [项目协作约定](<../AGENTS.md>)。
 
 # 一、研究目标、范围与技术全景
 ## （一）核心问题
@@ -91,7 +91,7 @@ flowchart LR
 
 当前产品采用紧凑内存窗口、绿色主操作和直接结果反馈。CPU 机制研究与历史分析作为辅助资料保留，不作为使用主按钮的前置。主按钮固定工作集方式，打开只读，点击形成一次明确请求，底层继续保留记录、准入、权限恢复、互斥、取消和未知不重放。
 
-这种交互定位不改变机制证据：工作集整理不保证降低提交量或改善任务速度，360 的进程关闭等能力也没有在本项目实现。首版不结束进程、不修改服务或系统设置，不将尚未定义的宿主插件协议声称为已实现集成。当前范围见 [开发计划](<开发计划 Development Plan CPU 内存清理.md#七内存清理插件的产品基线>)。
+这种交互定位不改变机制证据：工作集整理不保证降低提交量或改善任务速度，360 的进程关闭等能力也没有在本项目实现。首版不结束进程、不修改服务或系统设置，不将尚未定义的宿主插件协议声称为已实现集成。当前范围见 [开发计划](<开发记录 Development Record/2026-10-30 阶段完成与计划整理.md#七内存清理插件的产品基线>)。
 
 # 三、CPU 负载治理的方法与实现
 ## （一）先测量和归因
@@ -187,7 +187,7 @@ flowchart TD
 
 `PhysicalAvailable` 包含 Standby、Free 和 Zero，转入 Standby 的页面仍可能保有内容且计入可用量。因此界面上的占用减少不能理解为内容消失。[容量字段定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information)
 
-桌面独立使用 `GetPerformanceInfo` 只读刷新，并在读数间缓动。动作结果使用记录中的前后快照，动画值不进入记录，实时变化本身不能证明清理成功。360 是产品对照，其内部调用仍未知，本项目的 NT 路线不能用作 360 实现的证据。交互反馈与验收安排见 [开发计划第七章](<开发计划 Development Plan CPU 内存清理.md#四实现机制与用户反馈的对应>)。
+桌面独立使用 `GetPerformanceInfo` 只读刷新，并在读数间缓动。动作结果使用记录中的前后快照，动画值不进入记录，实时变化本身不能证明清理成功。360 是产品对照，其内部调用仍未知，本项目的 NT 路线不能用作 360 实现的证据。交互反馈与验收安排见 [产品反馈决策记录](<开发记录 Development Record/2026-10-30 阶段完成与计划整理.md#四实现机制与用户反馈的对应>)。
 
 # 五、现有工具与可见实现比较
 ## （一）按同一任务比较
@@ -359,3 +359,46 @@ Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调
 | [Suspending Thread Execution](https://learn.microsoft.com/en-us/windows/win32/procthread/suspending-thread-execution) | 更新2025年7月14日，挂起用途及同步风险 |
 | [Page Lifecycle API](https://developer.chrome.com/docs/web-platform/page-lifecycle-api) | 页面更新2026年10月16日，针对性读 freeze/discard/恢复，不代表 360 实现 |
 | [VirtualFree](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree) | 更新2024年2月5日，去提交、释放地址空间、数据与再访问边界 |
+
+# 十二、同类源码与包分发方案
+## （一）问题与研究范围
+2026年10月30日补查，回答同类项目怎样组织能力、CLI 与界面，以及本项目怎样便于其他程序和 Agent 复用。原调研已包含360产品、Mem Reduct 和 System Informer 的机制分析，本章补充此前不足的库与外层接入比较，不将“没有竞品”作为发布理由。
+
+本次定向读取两个公开仓库的固定提交及相关入口，没有构建或执行外部程序，没有验证其性能、完整调用链、安全性或实际安装体验。没有穷尽 GitHub 或 PyPI，不能据此声称不存在同类 Python 包。源码只作理解与设计参考，没有复制代码，也未完成各项目完整许可证链审查。
+
+## （二）同类实现与源码依据
+| **项目与固定版本** | **实际阅读范围与发现** | **对本项目的意义** |
+| --- | --- | --- |
+| [Mem Reduct](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L270) | 沿用第十一章固定提交与阅读范围，原调研已经分析动作和自动筛选。此次没有重新审查全部源码 | 已有同类产品，清理机制本身不是独有能力，不用再次阅读冒充新发现 |
+| [System Informer](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L196) | 沿用既有系统调用与包装证据，是系统工具中的维护能力对照 | 帮助解释接口，不直接作为本项目包分发模板 |
+| [WinMemoryCleaner](https://github.com/IgorMundstein/WinMemoryCleaner/tree/a19f25719c9b9a58a0acea99cb8adb4737d2d318) | 读取 README、工程元数据、App装配、IMemoryService、ComputerService、MainViewModel 与 Memory模型。界面命令通过服务执行，服务按内存区域分别记录处理信息 | 借鉴交互与能力分离、忙碌反馈和动作后重新读取，不照搬托盘、计划清理、优先级或服务能力 |
+| [WinMemClean](https://github.com/nusu-github/WinMemClean/tree/36729828ed032b6fd6dc08b0c0788a125f9bd28d) | 读取 README、workspace配置、core/lib.rs、CLI/main.rs和privilege.rs。workspace将core、CLI、service及bindings生成分开，CLI直接引用核心库 | 明确存在“核心库＋CLI”的同类源码组织。当前 Python 包与 CLI 方向有参考依据，不需要为了 Tool 再造执行器 |
+
+### 1. 界面、动作与结果的关系
+[WinMemoryCleaner MainViewModel 的 Optimize](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L1749) 在锁内设置忙碌状态、保存前置可用量、调用服务，再更新内存信息。[ComputerService.Optimize](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L147) 按选中的区域执行并收集信息或错误。以上证明职责与呈现路径，不能证明执行没有代价。
+
+该 ViewModel 在通知中对前后可用量取绝对差。对本项目不采用这一结果表达：可用量减少必须保留负方向，增加、减少与不变分别解释，不把任意波动都显示为“释放”。本项目已有带方向差额与独立结果区，继续保留，不为模仿外观改写事实。
+
+### 2. 核心库与 CLI 的关系
+[WinMemClean core/lib.rs](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L361) 的 `optimize_with_options` 读取 before，逐区域保存结果，再读取 after，返回结构化 OptimizationReport。[CLI入口](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-cli/src/main.rs#L15) 从 core 引入快照、选项和动作函数，负责命令参数与输出。该证据支持库拥有能力、CLI消费结果的划分，不代表已经提供本项目采用的 JSON Tool 合同。
+
+同一核心 [WorkingSet 分支](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L443) 在存在排除项时走进程工作集路线，否则走 EmptyWorkingSets。由此不能把“有排除名单”直接移植到本项目的全局工作集方式。若将来需要保护特定应用，必须先评估动作范围及实现路径，当前不新增这一功能。
+
+## （三）采用方向与分发方式
+```mermaid
+flowchart TD
+    CORE[一个能力包与结果合同] --> CLI[CLI参数与JSON工具入口]
+    CORE --> UI[桌面按钮与结果展示]
+    CORE --> PY[其他同进程程序直接调用]
+    DIST[版本化安装产物] --> CORE
+    GUIDE[Knowledge安装与调用说明] --> DIST
+    GUIDE --> CLI
+```
+
+当前判断：继续采用现有 Package、CLI、前端并列复用结构，发布价值是容易安装、结果可解释和可被程序调用，不是宣称内存机制创新。没有竞品不是发布前提，有开源实现也不代表可直接替代本项目的包合同、记录回看或授权边界。
+
+Knowledge 本地 README 与通知工具指南只证明该仓库能承载独立工具与文档，不证明已有统一 Tool 注册协议。建议 Knowledge 维护安装来源、版本和调用指引，必要时放薄入口，产品源码与测试继续留在本仓库，避免两个副本分别维护。具体宿主没有确定前不增加 MCP、服务或安装器。
+
+现有 pyproject 已定义0.2.0且能构建 wheel，但仓库当前未提供顶层许可证，项目地址、平台声明和发布方式仍需准备。建议先核对许可与元数据，再准备可追溯的 wheel/源码分发包，以 GitHub Release 为首个候选渠道，PyPI 待确认包名、账号与版本后采用。这是建议顺序，未查询包名可用性、未验证上传权限，也没有执行任何发布。
+
+本章结论进入 [当前开发计划](<开发计划 Development Plan CPU 内存清理.md#二下一步开发任务>)。本次阅读支持职责与分发选择，不支持真实清理收益、自动化干预有效性或多平台兼容性。

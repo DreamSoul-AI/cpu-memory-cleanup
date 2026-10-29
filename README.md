@@ -1,5 +1,5 @@
 # CPU 内存清理
-360加速球式的轻量内存清理桌面工具。主窗口显示内存，绿色按钮执行一次工作集整理。Python 3.10+，使用标准库 ctypes、tkinter 和 unittest。
+360加速球式的轻量内存清理桌面工具。紧凑主窗口以环形仪表显示内存状态，绿色按钮执行一次工作集整理，结果区呈现本次可用内存变化。Python 3.10+，使用标准库 ctypes、tkinter 和 unittest。
 
 打开只读，点击才清理。桌面固定工作集方式，CPU 与历史分析命令属于辅助工具。可用内存上升不等于加速收益。
 
@@ -26,9 +26,38 @@
 - 已删除的历史 `logs/` 不自动重建。新验证使用当前计划的独立输出，旧回执保留原路径、版本和标识，不改写成新布局通过
 
 ## 网页演示
-打开 [在线交互演示](https://dreamsoul-ai.github.io/cpu-memory-cleanup/)。源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。它不读取访客设备，也不执行真实清理。Agent 的周期监测与分级干预仍是候选计划，见开发计划第九章。
+打开 [在线交互演示](https://dreamsoul-ai.github.io/cpu-memory-cleanup/)。源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。它不读取访客设备，也不执行真实清理。Agent 的周期监测与分级干预仍是候选计划，见开发计划的候选研究方向。
 
 本地可运行 `python -m http.server 8765 --bind 127.0.0.1 --directory demo`，再访问 `http://127.0.0.1:8765/`。演示逻辑测试单独执行 `node --test tests/demo/app.test.cjs`，使用 Node 内置测试能力，不是桌面 Python 测试计划的一部分。产品运行依赖仍为 Python 标准库。
+
+## Package 与工具入口
+当前已实现“Package → CLI/Tool → 前端接入”的源码：`cpu_memory_cleanup.api` 提供公共创建入口，包内提供一次内存状态、一次明确工作集整理和离线回看。CLI 与现有桌面使用同一套能力，当前改动已通过完整离线与隔离安装验收，证据见 [包与工具接入运行记录](<docs/运行记录 Run Record/2026-10-30 包与工具接入.md>)。后续安排见 [当前开发计划](<docs/开发计划 Development Plan CPU 内存清理.md#二下一步开发任务>)。MCP 和持续监控仍是后续选项，当前没有网络服务或后台 Agent。
+
+安装后可直接使用包，创建实例本身不采样、不维护、不打开界面。下面示例仅离线回看已有记录，`保存的运行目录` 替换为实际位置：
+
+```python
+from cpu_memory_cleanup.api import API_VERSION, create_application
+
+app = create_application(offline=True)
+try:
+    report = app.memory_result("保存的运行目录")
+    print(API_VERSION, report.completion, report.action)
+finally:
+    app.shutdown()
+```
+
+实时实例使用 `create_application()`。`app.memory_status()` 返回一次内存专用 `RunReport`，原始容量位于 `samples[].metrics.physical.total_bytes / available_bytes` 和 `commit.used_bytes / limit_bytes`，时间带时区，平台能力在 `metadata.capabilities`。已用量按总量减可用量计算，占用百分比按已用量除总量计算，包不添加重复派生字段。`app.memory_cleanup(记录基目录, confirmed=True, confirmation_source="可信宿主的授权来源")` 固定执行一次工作集整理，并返回前后原始快照、动作事实和 `output_dir`。调用这两个方法会读取当前系统，后者还会尝试维护，必须遵守本次执行授权。包只返回对象，JSON、终端退出码和控件呈现由外层负责。
+
+跨进程工具使用下列接口。`--tool-info` 只输出静态目录，可在未连接实时能力时读取，目录包含参数 schema、命令模板与维护确认要求。
+
+```powershell
+python -m cpu_memory_cleanup --tool-info
+python -m cpu_memory_cleanup --tool memory_status
+python -m cpu_memory_cleanup --tool memory_cleanup --confirm --output-dir 记录基目录
+python -m cpu_memory_cleanup --tool memory_result --run-dir 保存的运行目录
+```
+
+三个 `--tool` 调用默认输出 JSON，在 `RunReport` 字段上增加 `tool_schema_version: 1` 和 `tool`，整体 `completion == "success"` 时退出码为 0，其余为 1，参数错误为 2。工具 JSON 使用 ASCII 转义，解析后的中文值不变，便于 Windows 重定向读取。`--confirm` 表达当前请求的确认，真实授权由可信宿主核对，模型填写布尔值不自动取得权限。状态与清理命令不是本轮执行指令。回看使用离线装配，顶层 `run_id` 标识本次回看请求，原清理身份保留在 `metadata.header.run_id` 和原样本中，不再执行动作。旧 CLI 参数与普通 `--json` 表示保持兼容。
 
 ## 文档入口
 
@@ -81,7 +110,7 @@ cpu-memory-cleanup/
 相关测试目录按需设置局部 `manifest.json`，只描述该目录文件及子树的默认值和例外。测试代码与源码的对应关系见代码结构设计，辅助装配位于 `tests/fixtures.py`。测试编写和执行遵循 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。测试镜像当前沿用源码路径，调整目录时仍需保持目标可定位、测试发现与清单一致。产品运行记录写入调用方指定的位置，测试回执写入独立结果目录，均不属于产品源码。
 
 ## 产品定位与当前行为
-当前按历史内存小窗口重新实现：大号占用百分比、占用条、可用量与提交量、绿色“一键清理”及前后数值。打开后只读刷新内存显示，点击绿色按钮才清理，不需要 CPU 诊断或方案选择。产品范围见 [开发计划](<docs/开发计划 Development Plan CPU 内存清理.md#七内存清理插件的产品基线>)。
+当前主窗口围绕“看内存—点击清理—看本次变化”组织：环形仪表与大号占用百分比、已用量与总量、绿色“一键清理”，以及独立的本次结果区。打开后只读刷新，点击才清理。提交量、更新时间、技术说明、刷新和取消操作收进可展开详情。产品范围见 [开发计划](<docs/开发记录 Development Record/2026-10-30 阶段完成与计划整理.md#七内存清理插件的产品基线>)。
 
 ## 安装与启动
 产品包位于 `src/`，本地开发先在仓库根目录安装可编辑包，再使用 `python -m cpu_memory_cleanup`。使用当前 Python 环境已有的构建工具，安装命令不拉取运行依赖；产品运行依赖仍为标准库。
@@ -93,7 +122,7 @@ python -m pip install --no-build-isolation --no-deps -e .
 桌面启动入口从自身位置定位源码。`.pyw` 使用窗口版 Python，直接启动不创建控制台；CMD 兼容入口改用 `start` 启动 `pythonw` 后退出，不再保留背后的终端。直接双击 `.pyw` 需要系统已有对应文件关联，CMD 直接把文件交给 `pythonw`，不依赖该关联，启动可能有短暂闪窗。统一测试入口自行定位源码与测试目录，命令仍为 `python scripts/run-tests.py`。
 
 ## 辅助只读与离线命令
-下面是安装后的命令说明。安装包与离线验证的执行结果见运行记录，示例本身不表示已经执行。除 `--help` 和离线回看外，执行会读取当前 Windows 指标。
+下面是安装后的命令说明。安装包与离线验证的执行结果见运行记录，示例本身不表示已经执行。`--help`、`--tool-info` 和离线回看不读取当前系统，状态读取及采样命令会读取当前 Windows 指标。
 
 ```powershell
 python -m cpu_memory_cleanup --help
@@ -114,7 +143,7 @@ python -m cpu_memory_cleanup --ab-compare A运行目录 B运行目录 --json
 
 使用 `scripts/desktop-memory-ui.pyw` 或原 CMD 入口打开小窗口。当前 Windows 接入使用轻量只读接口，窗口存活时约每500毫秒尝试刷新一次，清理期间继续更新，关闭后停止。不会自动清理。点击绿色“一键清理”即明确提交一次系统工作集整理，不清 Standby、不结束进程，也不要求先运行诊断。
 
-百分比、占用条、可用量与提交量在真实读数之间以约400毫秒缓动过渡，不将动画值写入动作记录。桌面清理前后快照只取内存，不等待 PDH 或枚举进程，命令行完整采集保持原样。清理前后分别显示可用量与提交量，动作失败、结果未知或恢复未确认时保留原因。默认记录位置为当前用户主目录下的 `.cpu-memory-cleanup/runs/`，也可通过已有 `--output-dir` 指定。目录和记录在用户发起清理后由核心准备，无法保存则阻止动作。忙时不排队，不自动重试。真实采样与清理仍未在本轮执行。
+环形仪表、百分比和内存数值在真实读数之间以约400毫秒缓动过渡，不将动画值写入动作记录。按钮忙碌状态与动作结果连续呈现；本次可用内存增加、减少或不变由清理前后快照计算，结果保留在独立区域，实时刷新不覆盖它。数值变化不是永久释放量或提速证明。提交量前后值和技术信息放在详情中。桌面前后快照只取内存，不等待 PDH 或枚举进程，命令行完整采集保持原样。动作失败、结果未知或恢复未确认时仍保留原因。默认记录位置为当前用户主目录下的 `.cpu-memory-cleanup/runs/`，也可通过已有 `--output-dir` 指定。目录和记录在用户发起清理后由核心准备，无法保存则阻止动作。忙时不排队，不自动重试。真实采样与清理仍未在本轮执行。
 
 程序不提权、不结束业务进程、不停服务、不改页面文件或系统设置。真实维护可能产生缺页和 I/O 代价，内部 NT 路线仍需按实际 Windows 构建验证。
 
@@ -134,7 +163,7 @@ python scripts/run-tests.py --rebuild-report .test-results/运行ID
 
 CFG-01 已修复，根入口恢复分层加载，并阻止旧根格式静默忽略子清单，验证见 [本轮运行记录 Run Record](<docs/运行记录 Run Record/2026-10-26 桌面诊断与配置修复.md>)。
 
-真实 Windows 采集、GUI 显示、特权路径和清理效果均未做本轮平台验证。历史桌面 A/B 没有证明持续净收益，原始 `logs/` 已删除，不重建或以新数据冒充。
+已用实际 Tk 与合成数据核对紧凑窗口、绿色按钮、结果摘要和详情展开，见 [本轮界面与验证记录](<docs/运行记录 Run Record/2026-10-29 紧凑内存窗口.md>)。真实 Windows 采集、特权路径、清理效果及未检查的显示配置仍未验证。历史桌面 A/B 没有证明持续净收益，原始 `logs/` 已删除，不重建或以新数据冒充。
 
 只读诊断验收安排见开发计划中的“只读诊断验收计划”，实际执行配置以 `tests/manifest.json` 为准。9 项实机检查、环境矩阵和资源预算已登记在根清单的 acceptance_plans 下，当前禁用，不会被 quick、regression 或 --all 自动执行。readonly_offline 只运行假接入准备检查，不代表实机验收通过。
 
@@ -142,6 +171,20 @@ CFG-01 已修复，根入口恢复分层加载，并阻止旧根格式静默忽�
 
 ## 入口维护与研究范围
 
-用途、当前能力、技术栈、目录、文档入口、命令或执行边界变化时，同步核对本 README 与源码、配置和实际文档。七类开发文档当前入口见上表，历史命名与日期记录保持可追溯。现有开发计划中的 Agent 方案为候选，尚未形成独立文献调研与研究计划，不以工程测试或网页演示代替研究证据。
+用途、当前能力、技术栈、目录、文档入口、命令或执行边界变化时，同步核对本 README 与源码、配置和实际文档。七类开发文档当前入口见上表，历史命名与日期记录保持可追溯。持续资源管理 Agent 方案仍为候选，尚未形成独立文献调研与研究计划，与当前一次性包/工具调用分开，不以工程测试或网页演示代替研究证据。
 
 文档职责按 AGENTS.md 维护：通用调研维护机制、方案、来源与当前判断，正文保留支撑结论所需的证据摘要、条件与限制，并引用相关记录；执行和迁移的详细经过归日期记录。架构保留当前关键设计取舍及理由，代码结构设计说明划分依据、必要约束及实现差距，计划维护后续工作与判据。按任务范围核对受影响内容，本次入口适配不代表专项正文已全面重审。
+
+## 许可证与版本分发
+本项目采用 [MIT License](LICENSE)。第三方代码如有引入，仍须分别保留其许可与来源要求；通用调研引用的外部源码未作为产品代码复制进本项目。
+
+GitHub Release 是当前分发渠道，暂不上传 PyPI。0.2.0 作为预览版本分发，真实平台采样、清理效果和特定 Agent 宿主尚未完成验收，离线通过不等于性能保证。版本入口为 [v0.2.0](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.2.0)，创建完成前以本次发布记录为准。
+
+从 Release 下载 wheel 后，在选定的 Python 3.10+ 环境安装。以下命令仅安装包和读取静态工具目录，不采样或清理：
+
+```powershell
+python -m pip install --no-index --no-deps ./cpu_memory_cleanup-0.2.0-py3-none-any.whl
+python -m cpu_memory_cleanup --tool-info
+```
+
+安装后的桌面入口为 `python -m cpu_memory_cleanup --gui`，会启动窗口并实时只读刷新，须在允许读取当前设备时执行。源码仓库的 `.pyw` 与 CMD 启动脚本不包含在 wheel 中。源码分发包用于构建该 Python 包，完整设计、测试与脚本从 GitHub 对应 tag 查看。当前没有独立 EXE 产物，不会安装 Windows 服务或自动提权。

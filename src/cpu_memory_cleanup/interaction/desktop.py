@@ -5,8 +5,6 @@ import queue
 import threading
 import time
 
-from ..contracts import ActionRequest, RunReport
-
 GREEN = "#087F4F"
 BACKGROUND = "#F3F7F4"
 
@@ -22,21 +20,28 @@ def _present(report):
     percent = ((total - available) / total * 100
                if total and available is not None and 0 <= available <= total else None)
     lines = []
+    result, result_note = "尚未清理", "轻点绿色按钮，查看本次可用内存变化。"
     if report.mode == "maintain":
         outcome = {"success": "已执行清理", "failure": "清理调用失败", "not_started": "未执行清理"}.get(
             report.action.get("call_outcome"), "清理结果未知，请核对")
+        result = outcome
         lines.append(outcome)
+        result_note = "本次状态与记录可在详情中查看。"
         if len(report.samples) >= 2:
             before = report.samples[0].metrics
+            before_available = (before.get("physical") or {}).get("available_bytes")
             for title, category, key in (("可用内存", "physical", "available_bytes"), ("提交量", "commit", "used_bytes")):
                 lines.append(f"{title}：{_gib((before.get(category) or {}).get(key))} → {_gib((metrics.get(category) or {}).get(key))}")
+            if report.action.get("call_outcome") == "success" and before_available is not None and available is not None:
+                difference = available - before_available
+                result = (f"可用内存{'增加' if difference > 0 else '减少'} {_gib(abs(difference))}"
+                          if difference else "可用内存没有变化")
+                result_note = f"{_gib(before_available)} → {_gib(available)}\n再次使用程序时，内存占用可能回升。"
         if report.action.get("privilege_restored") is not True and report.action.get("attempted"):
             lines.append("权限恢复未确认，请查看详情。")
         lines.append("数值变化不代表实际提速。")
-    else:
-        lines.append("仅更新内存状态，尚未执行清理。")
     errors = (report.samples[-1].errors if report.samples else []) + report.errors
-    details = [str(e.get("message") or e.get("reason") or e) if isinstance(e, dict) else str(e) for e in errors]
+    details = lines + [str(e.get("message") or e.get("reason") or e) if isinstance(e, dict) else str(e) for e in errors]
     if percent is None:
         details.append("物理内存读数缺失或不一致，占用保持未知。")
     if report.output_dir:
@@ -44,9 +49,9 @@ def _present(report):
     timestamp = report.samples[-1].timestamp if report.samples else None
     return {"percent": percent, "headline": "未知" if percent is None else f"{percent:.0f}%",
             "values": {"total": total, "available": available, "commit_used": commit.get("used_bytes"), "commit_limit": commit.get("limit_bytes")},
-            "available": f"可用 {_gib(available)} / 共 {_gib(total)}",
+            "available": f"已用 {_gib(None if percent is None else total - available)} / 共 {_gib(total)}",
             "commit": f"提交量 {_gib(commit.get('used_bytes'))} / 上限 {_gib(commit.get('limit_bytes'))}",
-            "context": f"最近更新：{timestamp or '未知'}", "result": "\n".join(lines),
+            "context": f"最近更新：{timestamp or '未知'}", "result": result, "result_note": result_note,
             "details": "\n".join(details) or "本次没有报告读取或记录错误。"}
 
 
@@ -67,53 +72,65 @@ class MemoryWindow:
         self._live = bool(getattr(app, "memory_display_available", False))
         self._memory_context = "最近更新：未知"
         root.title("内存清理")
-        root.geometry("460x660")
-        root.minsize(420, 600)
+        root.geometry("380x560")
+        root.minsize(360, 540)
         root.configure(bg=BACKGROUND)
-        body = tk.Frame(root, bg=BACKGROUND, padx=24, pady=18)
+        body = tk.Frame(root, bg=BACKGROUND, padx=22, pady=14)
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        body.rowconfigure(8, weight=1)
-        tk.Label(body, text="内存清理", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 18, "bold")).grid(row=0, column=0)
-        self.percent = tk.Label(body, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 62, "bold"))
-        self.percent.grid(row=1, column=0, pady=(12, 0))
-        tk.Label(body, text="物理内存占用", bg=BACKGROUND, fg="#52645B").grid(row=2, column=0)
-        self.bar = tk.Canvas(body, width=360, height=12, bg="#DEE8E1", highlightthickness=0)
-        self.bar.grid(row=3, column=0, sticky="ew", pady=12)
-        self._bar_fill = self.bar.create_rectangle(0, 0, 0, 12, fill=GREEN, width=0)
-        self.bar.bind("<Configure>", lambda event: self._draw_bar(event.width))
-        self.available = tk.Label(body, text="可用 未知 / 共 未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 13))
-        self.available.grid(row=4, column=0, pady=4)
-        self.commit = tk.Label(body, text="提交量 未知", bg=BACKGROUND, fg="#52645B", wraplength=380)
-        self.commit.grid(row=5, column=0, pady=4)
+        tk.Label(body, text="内存清理", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 16, "bold")).grid(row=0, column=0)
+        self.ring = tk.Canvas(body, width=192, height=192, bg=BACKGROUND, highlightthickness=0)
+        self.ring.grid(row=1, column=0, pady=8)
+        self._ring_track = self.ring.create_oval(12, 12, 180, 180, outline="#DFEAE3", width=10)
+        self._ring_fill = self.ring.create_arc(12, 12, 180, 180, start=90, extent=0, style="arc", outline=GREEN, width=10)
+        self.ring.bind("<Configure>", lambda event: self._draw_ring(event.width))
+        self.percent = tk.Label(self.ring, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 44, "bold"))
+        self.percent.place(relx=0.5, rely=0.43, anchor="center")
+        tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9)).place(relx=0.5, rely=0.66, anchor="center")
+        self.available = tk.Label(body, text="已用 未知 / 共 未知", bg=BACKGROUND, fg="#52645B", font=("Microsoft YaHei UI", 10))
+        self.available.grid(row=2, column=0)
         self.button = tk.Button(body, text="一键清理", command=self.maintain, bg=GREEN, fg="white",
-                                activebackground="#06643E", activeforeground="white", relief="flat",
-                                font=("Microsoft YaHei UI", 20, "bold"), cursor="hand2", takefocus=True, pady=12)
-        self.button.grid(row=6, column=0, sticky="ew", pady=14)
-        self.status = tk.Label(body, text="打开只读，点击绿色按钮才清理。", bg=BACKGROUND, fg="#355A46", wraplength=380)
-        self.status.grid(row=7, column=0, sticky="ew")
-        self.result = tk.Label(body, text="清理后在这里显示前后数值。", bg=BACKGROUND, fg="#183428", justify="left", wraplength=380)
-        self.result.grid(row=8, column=0, sticky="nw", pady=10)
-        self.context = tk.Label(body, text="最近更新：未知", bg=BACKGROUND, fg="#52645B")
-        self.context.grid(row=9, column=0)
-        controls = tk.Frame(body, bg=BACKGROUND)
-        controls.grid(row=10, column=0, pady=8)
+                                activebackground="#06643E", activeforeground="white", relief="flat", bd=0,
+                                font=("Microsoft YaHei UI", 16, "bold"), cursor="hand2", takefocus=True, pady=9)
+        self.button.grid(row=3, column=0, sticky="ew", pady=(16, 6))
+        self.status = tk.Label(body, text="随时查看内存，按需轻点清理。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=320)
+        self.status.grid(row=4, column=0, sticky="ew")
+        self.result = tk.Label(body, text="尚未清理", bg=BACKGROUND, fg=GREEN, font=("Microsoft YaHei UI", 13, "bold"), wraplength=320)
+        self.result.grid(row=5, column=0, sticky="ew", pady=(14, 0))
+        self.result_note = tk.Label(body, text="轻点绿色按钮，查看本次可用内存变化。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=320)
+        self.result_note.grid(row=6, column=0, sticky="ew", pady=4)
+        self.details_button = tk.Button(body, text="查看详情 ⌄", command=self.toggle_details, bg=BACKGROUND, fg="#52645B",
+                                        activebackground=BACKGROUND, relief="flat", bd=0, cursor="hand2")
+        self.details_button.grid(row=7, column=0, pady=4)
+        self.detail_panel = tk.Frame(body, bg=BACKGROUND)
+        self.detail_panel.columnconfigure(0, weight=1)
+        self.commit = tk.Label(self.detail_panel, text="提交量 未知", bg=BACKGROUND, fg="#52645B", wraplength=320)
+        self.commit.grid(row=0, column=0, sticky="w")
+        self.context = tk.Label(self.detail_panel, text="最近更新：未知", bg=BACKGROUND, fg="#52645B", wraplength=320)
+        self.context.grid(row=1, column=0, sticky="w", pady=4)
+        controls = tk.Frame(self.detail_panel, bg=BACKGROUND)
+        controls.grid(row=2, column=0, sticky="w", pady=4)
         self.refresh_button = tk.Button(controls, text="刷新内存", command=self.refresh)
-        self.refresh_button.pack(side="left", padx=4)
+        self.refresh_button.pack(side="left", padx=(0, 8))
         self.cancel_button = tk.Button(controls, text="取消当前请求", command=self.cancel, state="disabled")
-        self.cancel_button.pack(side="left", padx=4)
-        tk.Button(controls, text="详情", command=self.toggle_details).pack(side="left", padx=4)
-        self.details = tk.Text(body, height=4, width=40, wrap="word", state="disabled")
+        self.cancel_button.pack(side="left")
+        self.details = tk.Text(self.detail_panel, height=4, width=36, wrap="word", state="disabled", relief="flat", bg="#EAF0EC", fg="#355A46")
+        self.details.grid(row=3, column=0, sticky="ew", pady=6)
         self._details_open = False
-        tk.Label(body, text="点击执行一次系统工作集整理。不结束进程、不清 Standby。\n可能产生缺页和 I/O 代价，不保证提速。",
-                 bg=BACKGROUND, fg="#52645B", justify="left", wraplength=380).grid(row=12, column=0, sticky="w", pady=6)
+        tk.Label(self.detail_panel, text="整理部分内存页面的驻留状态，程序继续运行。\n不结束进程、不清 Standby；可能产生缺页和 I/O，\n不保证提速。提交量是系统承诺提供的内存。",
+                 bg=BACKGROUND, fg="#6C7D73", justify="left", wraplength=320, font=("Microsoft YaHei UI", 9)).grid(row=4, column=0, sticky="w")
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._controls()
         if not self._supported:
             self.status.configure(text=app.capabilities.reason or "当前系统不支持工作集整理，仅能查看内存。")
 
-    def _draw_bar(self, width):
-        self.bar.coords(self._bar_fill, 0, 0, 0 if self._percent is None else width * self._percent / 100, 12)
+    def _draw_ring(self, width):
+        height = self.ring.winfo_height()
+        size = min(width, height) - 24
+        x, y = (width - size) / 2, (height - size) / 2
+        for item in (self._ring_track, self._ring_fill):
+            self.ring.coords(item, x, y, x + size, y + size)
+        self.ring.itemconfigure(self._ring_fill, extent=0 if self._percent is None else -min(359.9, self._percent * 3.6))
 
     def _paint_memory(self, values):
         self._shown = values
@@ -121,9 +138,9 @@ class MemoryWindow:
         self._percent = ((total - available) / total * 100
                          if total and available is not None and 0 <= available <= total else None)
         self.percent.configure(text="未知" if self._percent is None else f"{self._percent:.0f}%")
-        self.available.configure(text=f"可用 {_gib(available)} / 共 {_gib(total)}")
+        self.available.configure(text=f"已用 {_gib(None if self._percent is None else total - available)} / 共 {_gib(total)}")
         self.commit.configure(text=f"提交量 {_gib(values['commit_used'])} / 上限 {_gib(values['commit_limit'])}")
-        self._draw_bar(self.bar.winfo_width())
+        self._draw_ring(self.ring.winfo_width())
 
     def _target_memory(self, view):
         if self._animation_job is not None:
@@ -159,7 +176,7 @@ class MemoryWindow:
         if self._memory_worker is None:
             def read():
                 try:
-                    self._memory_events.put((self.app.memory_snapshot(), None))
+                    self._memory_events.put((self.app.memory_status(), None))
                 except Exception as error:
                     self._memory_events.put((None, error))
             try:
@@ -173,9 +190,11 @@ class MemoryWindow:
     def toggle_details(self):
         self._details_open = not self._details_open
         if self._details_open:
-            self.details.grid(row=11, column=0, sticky="ew")
+            self.detail_panel.grid(row=8, column=0, sticky="ew", pady=(8, 0))
         else:
-            self.details.grid_remove()
+            self.detail_panel.grid_remove()
+        self.details_button.configure(text="收起详情 ⌃" if self._details_open else "查看详情 ⌄")
+        self.root.geometry("380x790" if self._details_open else "380x560")
 
     def _controls(self):
         busy = self._closing or self._worker is not None or self.app.busy
@@ -226,10 +245,12 @@ class MemoryWindow:
     def maintain(self):
         if not self._supported:
             return
-        request = ActionRequest("working-set", confirmed=True, confirmation_source="desktop:memory-clean-button")
-        if self._submit(self.app.maintain, request, self._output_dir, **({"lightweight": True} if self._live else {})):
+        if self._submit(self.app.memory_cleanup, self._output_dir, confirmed=True,
+                        confirmation_source="desktop:memory-clean-button"):
             self.button.configure(text="正在清理…")
-            self.status.configure(text="正在整理系统工作集，请等待收尾…")
+            self.status.configure(text="正在整理内存，当前读数持续更新。")
+            self.result.configure(text="正在整理内存…")
+            self.result_note.configure(text="完成后显示本次可用内存变化。")
 
     def cancel(self):
         if self._cancel_event is not None:
@@ -261,12 +282,12 @@ class MemoryWindow:
             self._memory_worker.join()
             self._memory_worker = None
             try:
-                sample, error = self._memory_events.get_nowait()
+                report, error = self._memory_events.get_nowait()
             except queue.Empty:
-                sample, error = None, RuntimeError("显示读取线程未返回结果")
+                report, error = None, RuntimeError("显示读取线程未返回结果")
             if not self._closing:
-                if error is None:
-                    self._target_memory(_present(RunReport("display", "inspect", samples=[sample])))
+                if error is None and report.completion == "success" and report.samples:
+                    self._target_memory(_present(report))
                 else:
                     self.context.configure(text=self._memory_context + " · 最近读取失败，保留旧读数。")
         if self._worker is not None and not self._worker.is_alive():
@@ -281,11 +302,14 @@ class MemoryWindow:
                 if error is not None:
                     self.status.configure(text="本次未完成，保留旧读数与更新时间。")
                     self.result.configure(text=str(error))
+                    self.result_note.configure(text="本次未完成，具体原因可在详情中查看。")
                 else:
                     view = _present(report)
                     if not self._live:
                         self._target_memory(view)
-                    self.result.configure(text=view["result"])
+                    if report.mode == "maintain":
+                        self.result.configure(text=view["result"])
+                        self.result_note.configure(text=view["result_note"])
                     self.details.configure(state="normal")
                     self.details.delete("1.0", "end")
                     self.details.insert("1.0", view["details"])

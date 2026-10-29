@@ -229,6 +229,34 @@ class Application:
                 raise RuntimeError("内存显示结果已失效")
         return sample
 
+    def memory_status(self):
+        """一次内存专用读取；与界面刷新共用轻量通道，不触发完整诊断。"""
+        report = self._report("inspect")
+        report.metadata["capabilities"] = {
+            "operating_system": self.capabilities.operating_system,
+            "reading": self.capabilities.reading,
+            "mechanisms": list(self.capabilities.mechanisms),
+            "reason": self.capabilities.reason,
+        }
+        try:
+            sample = self.memory_snapshot()
+            report.samples.append(Sample(report.run_id, 0, sample.timestamp, sample.metrics,
+                                         errors=sample.errors))
+            report.completion = "partial" if sample.errors else "success"
+        except Exception as error:
+            self._error(report, "reading", error)
+        report.phase = "finished"
+        return report
+
+    def memory_cleanup(self, output_dir, *, confirmed=False, confirmation_source="", cancel_event=None):
+        """明确请求一次工作集整理，使用内存专用前后快照。"""
+        request = ActionRequest("working-set", confirmed=confirmed, confirmation_source=confirmation_source)
+        return self.maintain(request, output_dir, cancel_event=cancel_event, lightweight=True)
+
+    def memory_result(self, path):
+        """回看原运行，不采样或重放维护。"""
+        return self.review(path)
+
     def request_cancel(self):
         with self._lock:
             if not self._active or self._finishing:

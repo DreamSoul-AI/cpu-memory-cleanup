@@ -1,0 +1,9 @@
+include LICENSE README.md pyproject.toml
+recursive-include src/cpu_memory_cleanup *.py
+prune tests
+prune scripts
+prune docs
+prune demo
+prune .github
+prune .test-results
+global-exclude __pycache__ *.py[cod]
