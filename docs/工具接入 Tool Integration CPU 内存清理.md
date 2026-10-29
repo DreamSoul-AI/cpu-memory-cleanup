@@ -1,5 +1,5 @@
 # 一、接入范围与固定版本
-面向本地Python程序和能执行本地子进程的Agent宿主。产品能力由本仓库Package实现，Knowledge只提供说明入口，不含另一份清理脚本。当前固定功能提交为 `9c7d725c453ba6d5a3defe9e4ecf22a652605ef3`，含五个工具与单进程整理，来自 [PR #11](https://github.com/DreamSoul-AI/cpu-memory-cleanup/pull/11)，尚未合并或发布新版本。已发布v0.2.0只有原三个工具，不能用该Release冒充本轮定向能力。
+面向本地Python程序和能执行本地子进程的Agent宿主。产品能力由本仓库Package实现，Knowledge只提供说明入口，不含另一份清理脚本。当前固定功能提交为 `9c7d725c453ba6d5a3defe9e4ecf22a652605ef3`，含五个工具与单进程整理，已通过 [PR #11](https://github.com/DreamSoul-AI/cpu-memory-cleanup/pull/11) 合并到master，尚未发布新版本。已发布v0.2.0只有原三个工具，不能用该Release冒充本轮定向能力。Knowledge PR #21已合并；其链接固定到合并前的指南快照，安装与调用合同不变，当前集成状态以本说明及运行记录为准。
 
 # 二、安装与静态发现
 使用调用方选定的Python 3.10+环境，产品无第三方运行依赖。固定提交安装需已有Git与满足pyproject要求的setuptools，不自动升级依赖或改用户环境。安装将访问GitHub并写入选定环境，命令仅供准备环境时使用，本轮未执行网络安装：

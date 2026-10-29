@@ -61,8 +61,8 @@ python -m cpu_memory_cleanup --tool memory_result --run-dir 保存的运行目�
 
 接入方安装与调用方式见 [工具接入说明](<docs/工具接入 Tool Integration CPU 内存清理.md>)，明确区分原发布版与本轮固定功能提交。
 
-## 开发中的定向整理
-当前开发工作区新增单进程定向整理，尚未包含在已发布的v0.2.0预览包中。现有全局绿色按钮不变，窗口详情新增按需读取目标列表和“仅整理选中进程”。列表中的名字只作显示，目标由PID与原始创建身份绑定，一个程序的其他进程不会自动加入。
+## 单进程定向整理
+单进程定向整理已通过PR #11合并到master，尚未包含在已发布的v0.2.0预览包中。现有全局绿色按钮不变，窗口详情新增按需读取目标列表和“仅整理选中进程”。列表中的名字只作显示，目标由PID与原始创建身份绑定，一个程序的其他进程不会自动加入。
 
 Package入口为 `app.memory_targets()` 与 `app.memory_process_cleanup(ProcessTarget(pid, created_at, name), output_dir, confirmed=True, confirmation_source="可信宿主的本次授权")`，ProcessTarget从 `cpu_memory_cleanup.api` 导入。前者读取一次进程列表，后者只调用一次指定进程的EmptyWorkingSet，不结束程序、不启用调试特权，不自动切换全局方式。目标工作集前后值与系统可用量是不同指标，均不证明永久释放或提速。
 
