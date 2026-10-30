@@ -80,6 +80,114 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.backend.actions, [])
         self.assertEqual(self.server.server_address[0], "127.0.0.1")
 
+    def test_formal_factory_selects_real_backend_path_without_reading_or_gui(self):
+        from cpu_memory_cleanup.api import create_web_server
+        capabilities = Capabilities("win32", "available", ("working-set", "standby"), scopes=("system", "process"))
+        with patch("cpu_memory_cleanup.api.select_backend", return_value=(self.backend, capabilities)) as select:
+            server = create_web_server(output_dir=Path(self.temp.name) / "formal" / "runs", port=0)
+            try:
+                select.assert_called_once_with()
+                self.assertIs(server.app.reader, self.backend)
+                self.assertIs(server.app.maintainer, self.backend)
+                self.assertFalse(server.preview)
+                self.assertEqual(self.reads, [])
+                self.assertEqual(self.backend.actions, [])
+                self.assertFalse(server.policy.armed)
+            finally:
+                server.server_close()
+                server.app.shutdown()
+
+    def test_web_cli_routes_to_formal_factory_without_sampling(self):
+        from cpu_memory_cleanup.__main__ import main
+        from cpu_memory_cleanup.interaction.cli import parse_args
+        with patch("cpu_memory_cleanup.api.create_web_server", return_value="injected-server") as factory, \
+             patch("cpu_memory_cleanup.interaction.web.serve", return_value=0) as serve:
+            self.assertEqual(main(["--web", "--port", "8767"], app=self.app), 0)
+            factory.assert_called_once_with(app=self.app, output_dir=None, port=8767)
+            serve.assert_called_once_with("injected-server")
+        self.assertEqual(self.reads, [])
+        with self.assertRaises(SystemExit):
+            parse_args(["--web", "--count", "1"])
+
+    def test_formal_assembly_reaches_windows_adapter_with_only_injected_dlls(self):
+        from cpu_memory_cleanup.api import create_web_server
+        from cpu_memory_cleanup.system.platforms.windows import WindowsBackend
+        from ..system.platforms.test_windows import FakeSystem
+        fake = FakeSystem()
+        backend = WindowsBackend(fake.load, now=FakeRuntime().now)
+        capabilities = Capabilities("win32", "available", ("working-set",), scopes=("system", "process"))
+        with patch("cpu_memory_cleanup.api.select_backend", return_value=(backend, capabilities)):
+            formal = create_web_server(output_dir=Path(self.temp.name)/"native"/"runs", port=0)
+            try:
+                self.assertEqual(fake.loads, [])
+                submitted = formal.submit({"kind":"status"})
+                formal.worker.join(2)
+                self.assertEqual(formal.job(submitted["id"])["report"]["completion"], "success")
+                self.assertTrue(fake.loads)
+                self.assertEqual(fake.nt_calls, [])
+                self.assertEqual(fake.adjustments, [])
+            finally:
+                formal.server_close()
+                formal.app.shutdown()
+
+    def test_preferences_reload_keeps_protection_but_rule_stays_disarmed(self):
+        store = self.app.preferences_factory(Path(self.temp.name)/"prefs.json")
+        first = LocalWebServer(self.app, self.temp.name, preview=True, preferences=store)
+        try:
+            value = dict(first.settings)
+            value["protections"] = [{"image_path": r"C:\Demo\Meeting\meeting.exe"}]
+            first.save_settings(value)
+        finally:
+            first.server_close()
+        second = LocalWebServer(self.app, self.temp.name, preview=True, preferences=store)
+        try:
+            self.assertEqual(len(second.settings["protections"]), 1)
+            self.assertFalse(second.policy.armed)
+        finally:
+            second.server_close()
+
+    def test_protection_saved_then_applied_to_selected_batch(self):
+        self.action({"kind": "targets"})
+        settings = self.server.settings.copy()
+        settings["protections"] = [{"image_path": r"C:\Demo\Meeting\meeting.exe"}]
+        self.assertEqual(self.request("POST", "/api/settings", settings)[0], 200)
+        job = self.action({"kind": "batch", "targets": ["201:100201", "101:100101"], "confirmed": True})
+        self.assertEqual([i["status"] for i in job["report"]["metadata"]["items"]], ["skipped", "success"])
+        self.assertEqual(self.backend.actions, [{"scope": "process", "pid": 101}])
+
+    def test_interval_rule_dispatches_package_batch_and_stop_prevents_repeat(self):
+        self.action({"kind": "targets"})
+        now = [100.0]
+        self.server.clock = lambda: now[0]
+        state = self.server.configure_rule({"enabled": True, "confirmed": True, "targets": ["101:100101"],
+            "rule": {"mode": "interval", "interval_s": 2, "cooldown_s": 2}})
+        self.assertTrue(state["rule"]["armed"])
+        now[0] = 102
+        self.server.service_actions()
+        self.server.worker.join(2)
+        self.assertEqual(self.backend.actions, [{"scope": "process", "pid": 101}])
+        self.server.configure_rule({"enabled": False})
+        now[0] = 110
+        self.server.service_actions()
+        self.assertEqual(len(self.backend.actions), 1)
+
+    def test_pressure_rule_observes_only_after_arm_and_needs_sustain(self):
+        self.action({"kind": "targets"})
+        now = [100.0]
+        self.server.clock = lambda: now[0]
+        self.server.service_actions()
+        self.assertEqual(self.reads, [])
+        self.backend.available = 1024**3
+        self.server.configure_rule({"enabled": True, "confirmed": True, "targets": ["101:100101"],
+            "rule": {"mode": "pressure", "available_pct": 10, "sustain_s": 2, "cooldown_s": 1}})
+        for instant in (100, 100.2, 101, 101.2, 102, 102.2):
+            now[0] = instant
+            self.server.service_actions()
+            if self.server.worker:
+                self.server.worker.join(2)
+        self.assertEqual(self.backend.actions, [{"scope": "process", "pid": 101}])
+        self.server.configure_rule({"enabled": False})
+
     def test_http_selected_batch_and_saved_result_do_not_repeat_actions(self):
         targets = self.action({"kind": "targets"})["report"]["samples"][0]["processes"]
         job = self.action({"kind": "batch", "targets": [f"{targets[0]['pid']}:{targets[0]['created_at']}"], "confirmed": True})

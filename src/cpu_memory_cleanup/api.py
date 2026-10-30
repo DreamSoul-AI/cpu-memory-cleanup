@@ -42,3 +42,16 @@ def create_application(*, offline=False, reader=None, maintainer=None,
 from .application.targets import executable_groups, select_rows, targets_from_rows
 from .application.policy import Policy, Rule
 __all__ += ["executable_groups", "select_rows", "targets_from_rows", "Policy", "Rule"]
+
+
+def create_web_server(*, app=None, output_dir=None, port=8767, preview=False):
+    """正式网页装配：默认真实后端，构造不读取指标、不维护、不打开浏览器。"""
+    from pathlib import Path
+    from .interaction.web import LocalWebServer
+    application = create_application() if app is None else app
+    directory = Path.home() / ".cpu-memory-cleanup" / "runs" if output_dir is None else Path(output_dir)
+    preferences = application.preferences_factory(directory.parent / "preferences.json")
+    return LocalWebServer(application, directory, port=port, preview=preview, preferences=preferences)
+
+
+__all__ += ["create_web_server"]

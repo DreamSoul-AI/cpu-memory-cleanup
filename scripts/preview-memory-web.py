@@ -25,7 +25,8 @@ def main():
          patch("cpu_memory_cleanup.api.select_backend", side_effect=AssertionError("假数据禁止真实平台")):
         app = create_application(reader=backend, maintainer=backend, runtime=FakeRuntime(),
             capabilities=Capabilities("synthetic", "available", ("working-set",), scopes=("system", "process")))
-        server = LocalWebServer(app, args.output_dir / "runs", port=args.port, preview=True)
+        server = LocalWebServer(app, args.output_dir / "runs", port=args.port, preview=True,
+                                preferences=app.preferences_factory(args.output_dir / "preferences.json"))
         print(server.url, flush=True)
         (args.output_dir / "server.json").write_text(json.dumps({"url": server.url, "preview": True,
             "real_sampling": False, "real_cleanup": False}), encoding="utf-8")

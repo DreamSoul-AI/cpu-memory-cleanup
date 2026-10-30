@@ -10,6 +10,11 @@ def main(argv=None, *, app=None):
     if args.tool_info:
         print(json.dumps(cli.tool_info(), ensure_ascii=True, allow_nan=False, indent=2))
         return 0
+    if args.web:
+        from .api import create_web_server
+        from .interaction.web import serve
+        return serve(create_web_server(app=app, output_dir=args.output_dir,
+                                      port=8767 if args.port is None else args.port))
     if app is None:
         offline = any((args.review, args.analyze, args.pressure, args.tree_summary, args.ab_compare,
                        args.tool == "memory_result"))

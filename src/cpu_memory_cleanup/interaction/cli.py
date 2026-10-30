@@ -103,6 +103,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="CPU 内存清理：默认只读，维护须明确指定单一机制。")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--gui", action="store_true", help="打开桌面界面；打开时只读")
+    mode.add_argument("--web", action="store_true", help="启动正式localhost网页，接入当前操作系统；打开页面不采样")
+    parser.add_argument("--port", type=int, help="--web回环端口，默认8767")
     mode.add_argument("--sample", action="store_true", help="有界只读采样")
     mode.add_argument("--release", action="store_true", help="明确确认执行一次单项维护")
     mode.add_argument("--review", type=Path, help="离线回看运行目录或 JSONL")
@@ -134,6 +136,14 @@ def parse_args(argv=None):
     parser.add_argument("--ab-live", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--release-preflight", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.web:
+        if (args.port is not None and not 0 <= args.port <= 65535) or any((
+                args.confirm, args.run_dir, args.request_file, args.pid is not None, args.created_at,
+                args.count is not None, args.interval is not None, args.jsonl, args.with_processes,
+                args.top is not None, args.release_what, args.comparison, args.json)):
+            parser.error("--web只接受--port和--output-dir，不在启动时派发读取或维护")
+    elif args.port is not None:
+        parser.error("--port只用于--web")
     if args.request_file is not None and args.tool != "memory_batch_cleanup":
         parser.error("--request-file只用于memory_batch_cleanup")
     if args.tool == "memory_batch_cleanup":
