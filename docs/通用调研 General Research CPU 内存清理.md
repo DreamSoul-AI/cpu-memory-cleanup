@@ -430,3 +430,19 @@ Microsoft [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/
 
 ### 3. 选择依据与限制
 优先定向整理是产品与范围控制的建议，不是性能实测结论，不保证比现有全局方式释放更多内存或更快。自动清理、更多缓存区域、托盘和Knowledge分发分别解决别的问题，当前后置。若后续设计发现进程身份或权限不能可靠落实，停在方案评审，不退回只改报表并声称已完成清理功能。
+
+# 十三、范围、方法与常驻的采用判断
+2026年10月31日设计补查。第十二章第四节表格的“我们目前”描述为单进程实现前的比较基线；当前已交付单进程整理，不能继续据该表认定缺失。当前差距集中于批次与保护、清理方式及规则、常驻和完整交互；按本章及当前开发计划推进。
+
+复用第十二章固定提交的WinMemoryCleaner OptimizeWorkingSet与WinMemClean核心：有排除时逐进程处理，没有排除时可能全局处理；自动模式会筛除部分易停顿区域。本项目采用显式目标批次与路径保护，不复制名称排除、静默跳过或清理阈值，也未运行竞品。
+
+| 候选 | 本轮判断 | 原因与证据边界 |
+| --- | --- | --- |
+| 工作集 | 保留默认，并扩展已确认目标批次 | 复用既有EmptyWorkingSet与全局后端，驻留变化不等于对象释放 |
+| Standby | 仅保留系统范围的明确高级手动入口 | 现有后端已实现；不能提供进程排除，也不作为自动规则动作 |
+| Modified、文件缓存、低优先级Standby、合并页 | 后置，不新增调用 | 同类固定源码存在独立分支，但本项目尚无明确使用需求和真实恢复代价证据，不用数量替代收益 |
+| 应用归组 | 同一完整程序文件路径组 | 官方QueryFullProcessImageNameW给出句柄对应映像路径；路径不能证明整个应用组或发布者，不按同名及父子关系猜测 |
+| 规则自动化 | 默认关闭，先合成信号验证 | 定时与持续压力用于触发而非收益判定；只使用受保护的目标快照，不自动全局清页 |
+| 托盘与通知 | 可选显式常驻，由同一桌面拥有 | Shell_NotifyIconW提供增删改与通知，资源随退出删除，不引入服务 |
+
+本次读取Microsoft [QueryFullProcessImageNameW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew)的路径、权限和返回值，以及[Shell_NotifyIconW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw)的图标生命周期与返回值。未调用真实接口。界面归组与调度方案是本项目设计推导，不是Microsoft推荐策略。跨应用AI研究与Linux仍不纳入当前工程。

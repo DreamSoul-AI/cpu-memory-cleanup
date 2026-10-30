@@ -25,6 +25,21 @@
 - 读取失败保留未知和错误，不补零。调用结果未知不自动重试，后置失败保留已发生事实。目录存在、离线通过和源码分析均不能代替行为验证
 - 已删除的历史 `logs/` 不自动重建。新验证使用当前计划的独立输出，旧回执保留原路径、版本和标识，不改写成新布局通过
 
+## localhost 本地网页（假数据）
+本地网页通过回环HTTP适配调用同一个Package，已支持按需读取状态、绿色全局按钮、搜索/多选进程、逐项结果、离线回看、取消及显式停止服务。它不是GitHub Pages的纯模拟页：结果来自Package及其记录流程；当前启动入口明确注入合成后端，禁止真实平台选择与WinDLL加载，不读取或清理本机。
+
+在本仓库根目录运行：
+
+```powershell
+python scripts/preview-memory-web.py --port 8766
+```
+
+打开 `http://127.0.0.1:8766/` 或 `http://localhost:8766/`。运行该脚本需要源码仓库中的测试合成装配，产品Package本身仍无第三方运行依赖。启动及打开页面均不自动读取；先点“读取状态”或“读取进程列表”，整理前另行确认范围。该命令只启动本地服务，不打开桌面窗口或抢占鼠标键盘。按Ctrl+C也可结束服务；页面“停止服务”提供正常收尾入口。关闭标签页不会停止服务。
+
+默认仅绑定127.0.0.1，会话接口检查Host、来源及令牌；动作只接受本会话发现的进程身份，回看只接受本会话已有结果，不开放任意文件路径或shell命令。默认记录位于忽略目录 `.test-results/localhost-preview/`。网页资源随wheel打包，HTTP适配 `interaction.web.LocalWebServer` 显式接收已装配的Application，导入不选择平台。本次没有提供或运行真实系统网页启动入口。
+
+已用隐藏的内置浏览器验收，不使用Windows Computer Use。代码、回归及实际浏览器证据见 [localhost接入记录](<docs/运行记录 Run Record/2026-10-31 localhost网页接入.md>)。保护名单、自动规则、托盘及预览包发布仍是后续任务，不能据本页入口认定已完成。验收服务结束后已停止，需运行上述命令重新打开。
+
 ## 网页演示
 打开 [在线交互演示](https://dreamsoul-ai.github.io/cpu-memory-cleanup/)。源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。它不读取访客设备，也不执行真实清理。Agent 的周期监测与分级干预仍是候选计划，见开发计划的候选研究方向。
 
@@ -69,6 +84,8 @@ Package入口为 `app.memory_targets()` 与 `app.memory_process_cleanup(ProcessT
 CLI对应新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … --created-at … --confirm --output-dir …`。创建身份须原样使用列表返回值，不自行用当前时间替代。进程列表可能不完整，不可读项保留错误，不能据可读列表声称全机覆盖。新进程运行记录采用schema2，旧system记录schema1仍可回看，回看不重新打开目标。
 
 工具目录新增两项，原有字段与三个工具语义保留。工具版本仍为1，新增名字是目录的附加能力，调用方按实际目录发现。记录版本、工具版本和包API版本分别管理。实际执行边界与前文一致，本轮不运行这些实时示例，仅离线验证。
+
+本地开发快照另提供 `memory_batch_cleanup`，静态目录为六项工具；已发布v0.2.0与此前固定提交的工具数量不变。批次入口是 `--tool memory_batch_cleanup --request-file 请求.json --confirm --output-dir 记录基目录`，请求JSON只接受 `targets`（完整ProcessTarget列表）和可选 `protections`（程序文件路径或PID/创建身份规则）。API对应 `app.memory_batch_cleanup(targets, output_dir, protections=…, confirmed=True, confirmation_source=…)`，物理批次索引和逐项原运行分别保存；`memory_result`识别批次并离线回看。localhost页面只开放本次明确范围，不将保护与规则原型当作已接入页面的功能。
 
 ## 文档入口
 

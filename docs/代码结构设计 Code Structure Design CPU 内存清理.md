@@ -337,3 +337,10 @@ CLI新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … -
 优先在interaction下新增本地HTTP适配与随包网页资源，处理静态资源、有限JSON请求、会话与异步任务状态；业务仍调用application，不能在HTTP处理器实现另一份范围规划或原生动作。页面资源通过打包配置进入wheel与sdist，不依赖个人目录。具体模块名与端点在WEB-01实施时固定。
 
 新增HTTP接口、原CLI和原Tk并列依赖同一公共API；假数据启动装配复用合成后端并禁止真实DLL与平台选择。HTTP受控测试镜像交互模块，浏览器旅程使用内置浏览器，不要求Windows Computer Use。原workspace与windows_tray原型保留，优先级后置；当前修改仅为目标设计，不能据此认定网页服务已经实现。
+
+## 本次WEB-01至03实际落点
+`interaction/web.py`实现显式注入Application的LocalWebServer，固定回环监听、同源与令牌校验、单业务工作单元及任务查询；`interaction/web_assets/`保存HTML、CSS与JS，pyproject package-data使资源随wheel安装。`scripts/preview-memory-web.py`只装配tests/fixtures.py的ScenarioBackend，禁止真实DLL和平台选择，不自动打开浏览器。
+
+HTTP入口为GET `/api/session`（仅会话元数据）、GET `/api/job?id=…`（只查状态）及POST `/api/action`、`/api/cancel`、`/api/shutdown`。action允许status、targets、cleanup、batch、replay，动作来源、输出基目录及Application由服务持有，不从请求接收可执行命令或任意路径。页面目标只传本会话身份键，服务按发现快照还原ProcessTarget。batch仍复用单次Package执行，记录物理访问经RecordStore注入，功能与交互不反向导入系统模块。
+
+`tests/src/cpu_memory_cleanup/interaction/test_web.py`用真实回环HTTP、假后端验证页面打开零读取、状态与动作、逐项范围、回看、取消、退出及必要来源边界，登记为regression/c2。实际浏览器使用隐藏IAB标签的DOM控制，不触碰用户输入设备；截图及观察证据归本轮运行记录。API装配处提供偏好和托盘工厂注入，仅用于保留的旧原型，未将它们列为网页里已完成的能力。
