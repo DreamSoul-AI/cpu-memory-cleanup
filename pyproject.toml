@@ -28,3 +28,6 @@ Releases = "https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["cpu_memory_cleanup", "cpu_memory_cleanup.*"]
+
+[tool.setuptools.package-data]
+"cpu_memory_cleanup.interaction" = ["web_assets/*.html", "web_assets/*.js", "web_assets/*.css"]

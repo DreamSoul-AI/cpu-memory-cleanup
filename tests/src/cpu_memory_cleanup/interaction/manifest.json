@@ -39,9 +39,15 @@
       "cases": {
         "DesktopTests.test_result_summary_uses_available_snapshot_change": {
           "subtests": [
-            {"after": 3},
-            {"after": 1},
-            {"after": 2}
+            {
+              "after": 3
+            },
+            {
+              "after": 1
+            },
+            {
+              "after": 2
+            }
           ]
         },
         "DesktopTests.test_readonly_journey_uses_core_without_maintenance": {
@@ -78,6 +84,25 @@
         "quick",
         "readonly_offline"
       ]
+    },
+    "test_web.py": {
+      "target": "src/cpu_memory_cleanup/interaction/web.py",
+      "tags": [
+        "offline",
+        "module_web"
+      ],
+      "level": "e2e",
+      "cost_class": "c2",
+      "timeout_s": 10,
+      "memory_bytes": 268435456,
+      "plans": [
+        "regression"
+      ],
+      "cost_estimate": {
+        "estimated_wall_time_ms": 500,
+        "estimated_peak_memory_bytes": null,
+        "estimate_source": "本地HTTP合成集成，含服务线程收尾"
+      }
     }
   }
 }
