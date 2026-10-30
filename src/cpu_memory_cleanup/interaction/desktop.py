@@ -71,7 +71,7 @@ def _present(report):
 
 
 class MemoryWindow:
-    def __init__(self, root, app, tk, *, output_dir, clock=None):
+    def __init__(self, root, app, tk, *, output_dir, clock=None, settings_path=None, tray_factory=None):
         self.root, self.app = root, app
         self._output_dir = Path(output_dir)
         self._events = queue.Queue()
@@ -80,6 +80,11 @@ class MemoryWindow:
         self._supported = "working-set" in app.capabilities.mechanisms
         self._percent = None
         self._clock = clock or time.monotonic
+        self.workspace = None
+        self._settings_path, self._tray_factory = settings_path, tray_factory
+        self._tray = None
+        self._tray_events = queue.Queue()
+        self._rule_snapshot = None
         self._shown = None
         self._animation_job = self._memory_job = None
         self._memory_worker = None
@@ -116,7 +121,10 @@ class MemoryWindow:
         self.result_note.grid(row=6, column=0, sticky="ew", pady=4)
         self.details_button = tk.Button(body, text="查看详情 ⌄", command=self.toggle_details, bg=BACKGROUND, fg="#52645B",
                                         activebackground=BACKGROUND, relief="flat", bd=0, cursor="hand2")
-        self.details_button.grid(row=7, column=0, pady=4)
+        self.details_button.grid(row=7, column=0, pady=4, sticky="w")
+        self.workspace_button = tk.Button(body, text="范围 · 方式 · 规则", command=self.open_workspace,
+                                         bg=BACKGROUND, fg="#087F4F", relief="flat")
+        self.workspace_button.grid(row=7, column=0, sticky="e")
         self.detail_panel = tk.Frame(body, bg=BACKGROUND)
         self.detail_panel.columnconfigure(0, weight=1)
         self.commit = tk.Label(self.detail_panel, text="提交量 未知", bg=BACKGROUND, fg="#52645B", wraplength=320)
@@ -231,6 +239,44 @@ class MemoryWindow:
         self.refresh_button.configure(state="disabled" if busy else "normal")
         self.cancel_button.configure(state="normal" if self._worker is not None and not self._closing else "disabled")
 
+    def open_workspace(self):
+        if self._closing:
+            return
+        if self.workspace is None:
+            from .workspace import Workspace
+            self.workspace = Workspace(self, settings_path=self._settings_path)
+        else:
+            self.workspace.show()
+
+    def enable_tray(self, enabled):
+        if enabled and self._tray is None:
+            if self._tray_factory is None:
+                raise RuntimeError("当前接入没有托盘能力")
+            tray = self._tray_factory(lambda: self._tray_events.put("show"))
+            tray.start()
+            self._tray = tray
+        elif not enabled and self._tray is not None:
+            self.root.deiconify()
+            self._tray.close()
+            self._tray = None
+
+    def hide_to_tray(self):
+        if self._tray is None:
+            self.status.configure(text="请先在范围窗口启用托盘；当前窗口保持打开。")
+            return
+        if self.workspace is not None:
+            self.workspace.hide()
+        self.root.withdraw()
+
+    def _snapshot_for_rules(self, report):
+        self._rule_snapshot = None
+        if report.completion != "success" or not report.samples or report.samples[-1].errors:
+            return
+        physical = report.samples[-1].metrics.get("physical") or {}
+        total, available = physical.get("total_bytes"), physical.get("available_bytes")
+        if total and available is not None and 0 <= available <= total:
+            self._rule_snapshot = (time.monotonic(), available / total * 100)
+
     def start(self):
         if self._live:
             self._poll_memory()
@@ -307,6 +353,14 @@ class MemoryWindow:
         if self._closing:
             return
         self._closing = True
+        if self.workspace is not None:
+            self.workspace.policy.stop()
+        if self._tray is not None:
+            try:
+                self._tray.close()
+                self._tray = None
+            except Exception as error:
+                self.status.configure(text=f"托盘退出未确认：{error}")
         for job in (self._animation_job, self._memory_job):
             if job is not None:
                 self.root.after_cancel(job)
@@ -323,6 +377,13 @@ class MemoryWindow:
     def pump(self):
         if self._closed:
             return
+        while not self._tray_events.empty():
+            self._tray_events.get_nowait()
+            if not self._closing:
+                self.root.deiconify()
+                self.root.lift()
+        if self.workspace is not None and not self._closing:
+            self.workspace.tick()
         if self._memory_worker is not None and not self._memory_worker.is_alive():
             self._memory_worker.join()
             self._memory_worker = None
@@ -331,6 +392,10 @@ class MemoryWindow:
             except queue.Empty:
                 report, error = None, RuntimeError("显示读取线程未返回结果")
             if not self._closing:
+                if error is None:
+                    self._snapshot_for_rules(report)
+                else:
+                    self._rule_snapshot = None
                 if error is None and report.completion == "success" and report.samples:
                     self._target_memory(_present(report))
                 else:
@@ -369,6 +434,13 @@ class MemoryWindow:
                     self.details.configure(state="disabled")
                     completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消", "unknown": "结果未知"}.get(report.completion, report.completion)
                     self.status.configure(text=("清理：" if report.mode == "maintain" else "内存刷新：") + completion)
+                    if self.workspace is not None:
+                        self.workspace.on_report(report)
+                    if self._tray is not None and report.mode in ("maintain", "batch"):
+                        try:
+                            self._tray.notify("整理：" + completion + "。数值变化不代表提速；详情见窗口。")
+                        except Exception as error:
+                            self.status.configure(text=f"整理已收尾，通知未确认：{error}")
                 self._controls()
         if self._closing and self._worker is None and self._memory_worker is None and not self.app.busy:
             self._closed = True
@@ -382,12 +454,17 @@ def run(app, options=None):
 
     root = tk.Tk()
     output = (options or {}).get("output_dir") or Path.home() / ".cpu-memory-cleanup" / "runs"
-    window = MemoryWindow(root, app, tk, output_dir=output)
+    tray_factory = getattr(app, "tray_factory", None)
+    window = MemoryWindow(root, app, tk, output_dir=output, tray_factory=tray_factory)
     try:
         window.start()
         root.mainloop()
     finally:
         window._closing = True
+        if window.workspace is not None:
+            window.workspace.policy.stop()
+        if window._tray is not None:
+            window._tray.close()
         # 不对可能已销毁的 Tk 调用 after_cancel，回调由根窗口销毁取消。
         if window._cancel_event is not None:
             window._cancel_event.set()
