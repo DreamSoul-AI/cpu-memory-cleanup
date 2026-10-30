@@ -23,6 +23,22 @@ def create_application(*, offline=False, reader=None, maintainer=None,
     elif reader is None and maintainer is None and capabilities is None:
         backend, capabilities = select_backend()
         reader = maintainer = backend
-    return Application(reader, maintainer, capabilities=capabilities,
-                       records=RecordStore() if records is None else records,
-                       runtime=Runtime() if runtime is None else runtime)
+    app = Application(reader, maintainer, capabilities=capabilities,
+                      records=RecordStore() if records is None else records,
+                      runtime=Runtime() if runtime is None else runtime)
+    def preferences_factory(path):
+        from .system.preferences import Preferences
+        from .application.settings import validate_preferences
+        return Preferences(path, validator=validate_preferences)
+    app.preferences_factory = preferences_factory
+    if app.capabilities.operating_system == "win32":
+        def tray_factory(callback):
+            from .system.platforms.windows_tray import WindowsTray
+            return WindowsTray(callback)
+        app.tray_factory = tray_factory
+    return app
+
+# 规则和范围辅助为无副作用的公开增量，原API_VERSION保持1。
+from .application.targets import executable_groups, select_rows, targets_from_rows
+from .application.policy import Policy, Rule
+__all__ += ["executable_groups", "select_rows", "targets_from_rows", "Policy", "Rule"]

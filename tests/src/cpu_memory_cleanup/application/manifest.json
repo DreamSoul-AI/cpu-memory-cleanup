@@ -495,6 +495,33 @@
           ]
         }
       }
+    },
+    "test_targets.py": {
+      "target": "src/cpu_memory_cleanup/application/targets.py",
+      "tags": [
+        "offline",
+        "module_targets"
+      ],
+      "level": "unit",
+      "cost_class": "c1"
+    },
+    "test_policy.py": {
+      "target": "src/cpu_memory_cleanup/application/policy.py",
+      "tags": [
+        "offline",
+        "module_policy"
+      ],
+      "level": "unit",
+      "cost_class": "c1"
+    },
+    "test_batch.py": {
+      "target": "src/cpu_memory_cleanup/application/batch.py",
+      "tags": [
+        "offline",
+        "module_batch"
+      ],
+      "level": "e2e",
+      "cost_class": "c1"
     }
   }
 }

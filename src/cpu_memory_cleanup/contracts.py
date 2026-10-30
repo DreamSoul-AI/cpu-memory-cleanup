@@ -14,6 +14,15 @@ MAX_LINE_BYTES = 1024 * 1024
 MAX_SAMPLES = 1000
 
 
+def json_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"重复 JSON 字段：{key}")
+        result[key] = value
+    return result
+
+
 @dataclass(frozen=True)
 class Capabilities:
     operating_system: str
@@ -105,11 +114,13 @@ class ProcessTarget:
     pid: int
     created_at: str
     name: str = ""
+    image_path: str = ""
 
     def __post_init__(self):
         if (type(self.pid) is not int or not 0 < self.pid <= 0xffffffff
                 or not isinstance(self.created_at, str) or not re.fullmatch(r"[1-9][0-9]{0,19}", self.created_at)
-                or int(self.created_at) > 0xffffffffffffffff or not isinstance(self.name, str)):
+                or int(self.created_at) > 0xffffffffffffffff or not isinstance(self.name, str)
+                or not isinstance(self.image_path, str) or len(self.image_path) > 32768):
             raise ValueError("目标需要有效PID与原始创建身份")
 
 

@@ -9,7 +9,7 @@ import sys
 from ..contracts import ActionRequest, ProcessTarget
 
 TOOL_SCHEMA_VERSION = 1
-TOOL_NAMES = ("memory_status", "memory_cleanup", "memory_result", "memory_targets", "memory_process_cleanup")
+TOOL_NAMES = ("memory_status", "memory_cleanup", "memory_result", "memory_targets", "memory_process_cleanup", "memory_batch_cleanup")
 
 
 def tool_info():
@@ -31,6 +31,13 @@ def tool_info():
          "requires_confirmation": False, "arguments": ["--run-dir", "{run_dir}"]},
     ]
     tools.extend([
+        {"name": "memory_batch_cleanup", "description": "对请求文件中的固定目标批次执行工作集整理并应用保护规则。",
+         "inputSchema": {"type": "object", "properties": {
+             "request_file": {"type": "string"}, "output_dir": {"type": "string"},
+             "confirm": {"type": "boolean", "const": True}},
+             "required": ["request_file", "output_dir", "confirm"], "additionalProperties": False},
+         "requires_confirmation": True,
+         "arguments": ["--request-file", "{request_file}", "--confirm", "--output-dir", "{output_dir}"]},
         {"name": "memory_targets", "description": "按需列出可读进程、创建身份和工作集，不整理内存。",
          "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
          "requires_confirmation": False, "arguments": []},
@@ -42,9 +49,14 @@ def tool_info():
          "requires_confirmation": True,
          "arguments": ["--pid", "{pid}", "--created-at", "{created_at}", "--confirm", "--output-dir", "{output_dir}"]},
     ])
+    tools.sort(key=lambda tool: TOOL_NAMES.index(tool["name"]))
     for tool in tools:
         tool["command"] = ["python", "-m", "cpu_memory_cleanup", "--tool", tool["name"], *tool.pop("arguments")]
     return {"tool_schema_version": TOOL_SCHEMA_VERSION, "transport": "local-cli",
+            "methods": [{"mechanism": "working-set", "scopes": ["system", "process", "batch"],
+                         "note": "system不支持排除；batch逐项应用保护"},
+                        {"mechanism": "standby", "scopes": ["system"],
+                         "note": "高级手动--release --release-what standby；不支持进程保护或规则动作"}],
             "authorization": "维护授权由可信宿主落实，--confirm 或模型提供的布尔值不自证用户许可。",
             "result": "RunReport 字段加 tool_schema_version 和 tool；完成状态与动作事实分别判断。",
             "tools": tools}
@@ -71,6 +83,22 @@ def _top(text):
     return value
 
 
+def read_batch_request(path):
+    from ..application.targets import plan_targets
+    from ..contracts import json_pairs
+    if path.stat().st_size > 1024 * 1024:
+        raise ValueError("批次请求文件过大")
+    value = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=json_pairs)
+    if not isinstance(value, dict) or set(value) - {"targets", "protections"}:
+        raise ValueError("批次文件只接受targets和protections")
+    rows = value.get("targets")
+    if not isinstance(rows, list):
+        raise ValueError("缺少目标列表")
+    targets = [ProcessTarget(**row) for row in rows]
+    _, protections = plan_targets(targets, value.get("protections", []))
+    return targets, protections
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="CPU 内存清理：默认只读，维护须明确指定单一机制。")
     mode = parser.add_mutually_exclusive_group()
@@ -87,6 +115,7 @@ def parse_args(argv=None):
     parser.add_argument("--comparison", type=Path, help="--review 的对照运行")
     parser.add_argument("--pid", type=int, help="定向整理的目标PID")
     parser.add_argument("--created-at", help="memory_targets返回的原始创建身份")
+    parser.add_argument("--request-file", type=Path, help="批次JSON：targets与protections")
     parser.add_argument("--confirm", action="store_true", help="明确确认本次 memory_cleanup；宿主仍须核对授权")
     parser.add_argument("--run-dir", type=Path, help="memory_result 使用的已有运行记录位置")
     parser.add_argument("--json", action="store_true", help="输出完整 JSON 结果")
@@ -105,6 +134,15 @@ def parse_args(argv=None):
     parser.add_argument("--ab-live", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--release-preflight", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.request_file is not None and args.tool != "memory_batch_cleanup":
+        parser.error("--request-file只用于memory_batch_cleanup")
+    if args.tool == "memory_batch_cleanup":
+        if not args.confirm or args.output_dir is None or args.request_file is None or args.run_dir is not None:
+            parser.error("批次需要--request-file、--confirm和--output-dir")
+        try:
+            args.batch_targets, args.batch_protections = read_batch_request(args.request_file)
+        except (OSError, ValueError, TypeError) as error:
+            parser.error(str(error))
     unsupported = ("ab_protocol", "ab_pattern", "ab_interval", "ab_count", "ab_what", "ab_null", "ab_live",
                    "pressure_follow", "polls", "poll_interval", "free_below_gib", "commit_above_pct", "sustain",
                    "release_preflight")
@@ -116,7 +154,7 @@ def parse_args(argv=None):
             parser.error("工具模式不接受采样、诊断或机制选择参数")
         if args.tool != "memory_process_cleanup" and (args.pid is not None or args.created_at is not None):
             parser.error("目标身份只用于memory_process_cleanup")
-        if args.tool in ("memory_cleanup", "memory_process_cleanup"):
+        if args.tool in ("memory_cleanup", "memory_process_cleanup", "memory_batch_cleanup"):
             if args.tool == "memory_process_cleanup":
                 try:
                     ProcessTarget(args.pid, args.created_at)
@@ -183,7 +221,11 @@ def run(app, args):
             print(json.dumps(tool_info(), ensure_ascii=True, allow_nan=False, indent=2))
             return 0
         path = args.review or args.analyze or args.pressure or args.tree_summary
-        if args.tool == "memory_targets":
+        if args.tool == "memory_batch_cleanup":
+            report = app.memory_batch_cleanup(args.batch_targets, args.output_dir,
+                protections=args.batch_protections, confirmed=True,
+                confirmation_source="cli:--tool memory_batch_cleanup --confirm")
+        elif args.tool == "memory_targets":
             report = app.memory_targets()
         elif args.tool == "memory_process_cleanup":
             report = app.memory_process_cleanup(ProcessTarget(args.pid, args.created_at), args.output_dir,

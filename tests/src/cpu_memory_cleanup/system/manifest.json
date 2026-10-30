@@ -47,6 +47,15 @@
         "quick",
         "readonly_offline"
       ]
+    },
+    "test_preferences.py": {
+      "target": "src/cpu_memory_cleanup/system/preferences.py",
+      "tags": [
+        "offline",
+        "module_preferences"
+      ],
+      "level": "integration",
+      "cost_class": "c1"
     }
   }
 }

@@ -150,6 +150,25 @@ class RunReader:
 
 
 class RecordStore:
+    def is_batch(self, path):
+        value = Path(path)
+        return value.is_dir() and (value / "batch.jsonl").exists()
+
+    def open_batch(self, base, run_id):
+        from .batch_records import BatchJournal
+        return BatchJournal(base, run_id)
+
+    def read_batch(self, path):
+        from .batch_records import read_index
+        return read_index(path)
+
+    def batch_child_path(self, directory, child_id):
+        base = Path(directory).resolve()
+        child = (base / child_id).resolve()
+        if child.parent != base:
+            raise ValueError("子记录越过批次目录")
+        return str(child)
+
     def open_write(self, run_id, options):
         return Journal(run_id, options)
 

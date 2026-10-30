@@ -45,6 +45,10 @@ class TargetSession:
     def verify(self):
         if self.identity() != self.target.created_at:
             raise ValueError("目标创建身份已改变，未执行整理")
+        if self.target.image_path:
+            expected = ntpath.normcase(ntpath.normpath(self.target.image_path))
+            if ntpath.normcase(ntpath.normpath(image_path(self.kernel, self.handle))) != expected:
+                raise ValueError("目标程序路径已改变，未执行整理")
 
     def read(self):
         self.verify()
@@ -87,6 +91,13 @@ def working_set(psapi, handle):
     return int(info.WorkingSetSize)
 
 
+def image_path(kernel, handle):
+    name, length = c.create_unicode_buffer(32768), w.DWORD(32768)
+    checked(bind(kernel, "QueryFullProcessImageNameW", [w.HANDLE, w.DWORD, w.LPWSTR,
+            c.POINTER(w.DWORD)], w.BOOL)(handle, 0, name, c.byref(length)))
+    return name.value
+
+
 def targets(loader):
     kernel, psapi = loader("kernel32.dll"), loader("psapi.dll")
     capacity = 1024
@@ -111,12 +122,10 @@ def targets(loader):
             errors.append(f"进程 {pid} 不可读或已退出")
             continue
         try:
-            name, length = c.create_unicode_buffer(32768), w.DWORD(32768)
-            checked(bind(kernel, "QueryFullProcessImageNameW", [w.HANDLE, w.DWORD, w.LPWSTR,
-                    c.POINTER(w.DWORD)], w.BOOL)(handle, 0, name, c.byref(length)))
-            target = ProcessTarget(int(pid), identity(kernel, handle), ntpath.basename(name.value))
+            path = image_path(kernel, handle)
+            target = ProcessTarget(int(pid), identity(kernel, handle), ntpath.basename(path), path)
             rows.append({"pid": target.pid, "created_at": target.created_at, "name": target.name,
-                         "working_set_bytes": working_set(psapi, handle)})
+                         "image_path": path, "working_set_bytes": working_set(psapi, handle)})
         except (OSError, ValueError) as error:
             errors.append(f"进程 {pid}: {error}")
         finally:

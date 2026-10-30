@@ -212,6 +212,9 @@ class Application:
         self._lock = threading.Lock()
         self._cancel = threading.Event()
         self._active = False
+        self._batch_active = False
+        self._batch_thread = None
+        self._batch_cancel = threading.Event()
         self._finishing = False
         self._dispatched = False
         self._unsafe = False
@@ -221,7 +224,7 @@ class Application:
     @property
     def busy(self):
         with self._lock:
-            return self._active
+            return self._active or self._batch_active
 
     @property
     def memory_display_available(self):
@@ -298,10 +301,20 @@ class Application:
 
     def memory_result(self, path):
         """回看原运行，不采样或重放维护。"""
+        if self.records is not None and callable(getattr(self.records, "is_batch", None)) and self.records.is_batch(path):
+            from .batch import review
+            return review(self, path)
         return self.review(path)
+
+    def memory_batch_cleanup(self, targets, output_dir, **options):
+        """明确确认的固定目标批次，保护和逐项记录由功能层统一解释。"""
+        from .batch import execute
+        return execute(self, targets, output_dir, **options)
 
     def request_cancel(self):
         with self._lock:
+            if self._batch_active:
+                self._batch_cancel.set()
             if not self._active or self._finishing:
                 return False
             self._cancel.set()
@@ -310,6 +323,7 @@ class Application:
     def shutdown(self):
         with self._lock:
             self._closed = True
+            self._batch_cancel.set()
             if not self._finishing:
                 self._cancel.set()
 
@@ -318,7 +332,9 @@ class Application:
             if cancel_event is not None and not isinstance(cancel_event, threading.Event):
                 self._error(report, "admission", ValueError("取消信号必须是线程事件"))
                 return False
-            if self._closed or self._active or (report.mode != "review" and self._unsafe):
+            if (self._closed or self._active
+                    or (self._batch_active and self._batch_thread != threading.get_ident())
+                    or (report.mode != "review" and self._unsafe)):
                 self._error(report, "admission", ValueError("当前忙碌或安全上下文未恢复，拒绝新请求"))
                 return False
             self._active = True
@@ -513,7 +529,8 @@ class Application:
             report.metadata["header"]["mechanism"] = request.mechanism
             if request.scope == "process":
                 report.metadata["header"].update(schema_version=2, scope="process", target={
-                    "pid": request.target.pid, "created_at": request.target.created_at, "name": request.target.name})
+                    "pid": request.target.pid, "created_at": request.target.created_at, "name": request.target.name,
+                    **({"image_path": request.target.image_path} if request.target.image_path else {})})
             report.metadata["header"]["observation_scope"] = "memory-only" if lightweight else "full"
             journal = self._journal(report, options)
             journal.append("samples", report.metadata["header"])
