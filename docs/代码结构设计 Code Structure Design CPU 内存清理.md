@@ -334,18 +334,20 @@ CLI新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … -
 测试按上述源码路径映射，就近新增必要清单项，原假DLL装配保留。假数据GUI入口放在scripts内，显式注入合成后端并禁止真实WinDLL和平台选择，不作为普通启动的默认模式。网页合成状态独立于产品核心，语义对齐但不包装成真实功能调用。
 
 # 十二、本地网页入口的目标映射
-优先在interaction下新增本地HTTP适配与随包网页资源，处理静态资源、有限JSON请求、会话与异步任务状态；业务仍调用application，不能在HTTP处理器实现另一份范围规划或原生动作。页面资源通过打包配置进入wheel与sdist，不依赖个人目录。具体模块名与端点在WEB-01实施时固定。
+优先在interaction下新增本地HTTP适配与随包网页资源，处理静态资源、有限JSON请求、会话与异步任务状态；业务仍调用application，不能在HTTP处理器实现另一份范围规划或原生动作。页面资源通过打包配置进入wheel与sdist，不依赖个人目录。模块名和端点已按本章下述实际落点固定。
 
-新增HTTP接口、原CLI和原Tk并列依赖同一公共API；假数据启动装配复用合成后端并禁止真实DLL与平台选择。HTTP受控测试镜像交互模块，浏览器旅程使用内置浏览器，不要求Windows Computer Use。原workspace与windows_tray原型保留，优先级后置；当前修改仅为目标设计，不能据此认定网页服务已经实现。
+新增HTTP接口、原CLI和原Tk并列依赖同一公共API；假数据启动装配复用合成后端并禁止真实DLL与平台选择。HTTP受控测试镜像交互模块，浏览器旅程使用内置浏览器，不要求Windows Computer Use。原workspace与windows_tray原型保留，优先级后置；该段为职责映射，实际实现与受控证据见下述落点和本轮运行记录；真实平台验收未执行。
 
 ## 本次WEB-01至03实际落点
 `interaction/web.py`实现显式注入Application的LocalWebServer，固定回环监听、同源与令牌校验、单业务工作单元及任务查询；`interaction/web_assets/`保存HTML、CSS与JS，pyproject package-data使资源随wheel安装。`scripts/preview-memory-web.py`只装配tests/fixtures.py的ScenarioBackend，禁止真实DLL和平台选择，不自动打开浏览器。
 
-HTTP入口为GET `/api/session`（仅会话元数据）、GET `/api/job?id=…`（只查状态）及POST `/api/action`、`/api/cancel`、`/api/shutdown`。action允许status、targets、cleanup、batch、replay，动作来源、输出基目录及Application由服务持有，不从请求接收可执行命令或任意路径。页面目标只传本会话身份键，服务按发现快照还原ProcessTarget。batch仍复用单次Package执行，记录物理访问经RecordStore注入，功能与交互不反向导入系统模块。
+HTTP入口为GET `/api/session`（仅会话元数据）、GET `/api/job?id=…`（只查状态）、GET `/api/state`（设置与规则状态，不读系统），POST `/api/settings`、`/api/rule`及POST `/api/action`、`/api/cancel`、`/api/shutdown`。action允许status、targets、cleanup、batch、replay，动作来源、输出基目录及Application由服务持有，不从请求接收可执行命令或任意路径。页面目标只传本会话身份键，服务按发现快照还原ProcessTarget。batch仍复用单次Package执行，记录物理访问经RecordStore注入，功能与交互不反向导入系统模块。
 
-`tests/src/cpu_memory_cleanup/interaction/test_web.py`用真实回环HTTP、假后端验证页面打开零读取、状态与动作、逐项范围、回看、取消、退出及必要来源边界，登记为regression/c2。实际浏览器使用隐藏IAB标签的DOM控制，不触碰用户输入设备；截图及观察证据归本轮运行记录。API装配处提供偏好和托盘工厂注入，仅用于保留的旧原型，未将它们列为网页里已完成的能力。
+`tests/src/cpu_memory_cleanup/interaction/test_web.py`用真实回环HTTP、假后端验证页面打开零读取、状态与动作、逐项范围、回看、取消、退出及必要来源边界，登记为regression/c2。实际浏览器使用隐藏IAB标签的DOM控制，不触碰用户输入设备；截图及观察证据归本轮运行记录。API装配提供偏好工厂注入，网页已使用偏好存储；托盘工厂仍只用于后置的旧原型。
 
 ## REAL-01及后续接入落点
 公开装配在api增加create_web_server，默认创建真实Application，但导入及构造不读系统；__main__新增--web及--port，统一转入HTTP运行生命周期。LocalWebServer接受注入的偏好存储、时钟和Application；scope/保护/规则配置由已有application.targets、policy与settings解释，HTTP层只作任务串行调度和JSON转换。新增能力通过静态模式元数据及受控正式入口测试核对，不启动真实服务验证权限。
 
 网页资源继续位于web_assets，增加路径分组、保护、方式、规则与服务状态控件，公开静态Demo独立合成，不复制真实执行器。批次结果与偏好文件沿用各自版本；包版本准备为0.3.0，公共API、工具及记录版本按实际兼容性分别管理。
+
+当前实现及其取舍见 [开发记录](<开发记录 Development Record/2026-10-31 正式网页与范围规则.md>)，完整回归、安装包与浏览器证据见 [运行记录](<运行记录 Run Record/2026-10-31 正式网页与范围规则.md>)。规则批次结果与内部压力观察任务分别跟踪，后续状态读取不能覆盖最近动作结果。
