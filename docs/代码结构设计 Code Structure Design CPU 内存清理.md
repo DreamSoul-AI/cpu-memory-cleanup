@@ -344,3 +344,8 @@ CLI新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … -
 HTTP入口为GET `/api/session`（仅会话元数据）、GET `/api/job?id=…`（只查状态）及POST `/api/action`、`/api/cancel`、`/api/shutdown`。action允许status、targets、cleanup、batch、replay，动作来源、输出基目录及Application由服务持有，不从请求接收可执行命令或任意路径。页面目标只传本会话身份键，服务按发现快照还原ProcessTarget。batch仍复用单次Package执行，记录物理访问经RecordStore注入，功能与交互不反向导入系统模块。
 
 `tests/src/cpu_memory_cleanup/interaction/test_web.py`用真实回环HTTP、假后端验证页面打开零读取、状态与动作、逐项范围、回看、取消、退出及必要来源边界，登记为regression/c2。实际浏览器使用隐藏IAB标签的DOM控制，不触碰用户输入设备；截图及观察证据归本轮运行记录。API装配处提供偏好和托盘工厂注入，仅用于保留的旧原型，未将它们列为网页里已完成的能力。
+
+## REAL-01及后续接入落点
+公开装配在api增加create_web_server，默认创建真实Application，但导入及构造不读系统；__main__新增--web及--port，统一转入HTTP运行生命周期。LocalWebServer接受注入的偏好存储、时钟和Application；scope/保护/规则配置由已有application.targets、policy与settings解释，HTTP层只作任务串行调度和JSON转换。新增能力通过静态模式元数据及受控正式入口测试核对，不启动真实服务验证权限。
+
+网页资源继续位于web_assets，增加路径分组、保护、方式、规则与服务状态控件，公开静态Demo独立合成，不复制真实执行器。批次结果与偏好文件沿用各自版本；包版本准备为0.3.0，公共API、工具及记录版本按实际兼容性分别管理。
