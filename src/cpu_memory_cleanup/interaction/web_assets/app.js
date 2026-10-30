@@ -95,6 +95,7 @@ function present(job){
   if(job.kind==="status"){if(report.completion!=="success")error(JSON.stringify(report.errors.concat(report.samples.at(-1)?.errors||[])));return;}
   el("result-items").replaceChildren();
   const action=report.action||{};
+  if(report.errors?.length) error(report.errors.map(item=>item.message||item.type||"未知错误").join("；"));
   const scope=report.metadata?.header?.scope;
   if(scope==="process" && report.metadata?.header?.target?.image_path) el("job-status").title=report.metadata.header.target.image_path;
   const actionText={success:"调用成功",failure:"调用失败",not_started:"未派发",unknown:"调用结果未知"}[action.call_outcome]||"逐项结果见下方";

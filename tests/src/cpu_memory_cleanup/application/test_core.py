@@ -70,6 +70,18 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.completion, "success")
         self.assertEqual(self.backend.calls, 0)
 
+    def test_record_directory_denied_is_explained_before_system_access(self):
+        with patch.object(self.app.records, "open_write", side_effect=PermissionError("private path")), \
+             patch.object(self.backend, "open_operation") as operation:
+            report = self.maintain()
+        self.assertEqual(report.completion, "failed")
+        self.assertEqual(report.action["call_outcome"], "not_started")
+        self.assertIsNone(report.output_dir)
+        self.assertIn("输出目录没有写入权限", report.errors[0]["message"])
+        self.assertNotIn("private path", str(report.errors))
+        operation.assert_not_called()
+        self.assertEqual((self.backend.opens, self.backend.calls, self.backend.reads), (0, 0, 0))
+
     def test_memory_display_reads_while_cleanup_busy_without_new_business_flow(self):
         sample = Sample("display", 0, None, {"physical": {"available_bytes": 40, "total_bytes": 100}})
         with patch.object(self.backend, "read_memory", return_value=sample, create=True) as read:

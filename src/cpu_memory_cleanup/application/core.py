@@ -383,7 +383,10 @@ class Application:
     def _journal(self, report, options):
         if self.records is None:
             raise ValueError("缺少记录访问能力")
-        journal = self.records.open_write(report.run_id, options)
+        try:
+            journal = self.records.open_write(report.run_id, options)
+        except PermissionError as error:
+            raise ValueError("无法创建运行记录：输出目录没有写入权限。请指定可写的 --output-dir 后再操作。") from error
         report.output_dir = journal.output_dir
         return journal
 
