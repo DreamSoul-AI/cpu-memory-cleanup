@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="CPU 内存清理交互演示：用合成数据理解工作集整理与内存占用变化。">
   <title>内存清理 · 交互演示</title>
-  <link rel="stylesheet" href="styles.css?v=20261027-2">
+  <link rel="stylesheet" href="styles.css?v=20261031-1">
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -31,6 +31,14 @@
         <div class="numbers"><span>可用内存</span><strong><span id="available">3.84</span> / 16.00 GiB</strong></div>
         <div class="numbers secondary"><span>提交量</span><span>18.20 / 32.00 GiB</span></div>
         <button id="clean" class="clean" type="button"><span aria-hidden="true">✦</span> 一键清理<span class="button-note">模拟工作集整理</span></button>
+        <details class="scope-demo"><summary>试试定向整理与保护名单</summary>
+          <p>下面全部为合成进程。全局按钮不支持排除；定向按钮只处理勾选且未保护的对象。</p>
+          <label><input id="protect-meeting" type="checkbox" checked> 保护会议程序</label>
+          <div class="demo-process"><label><input id="select-browser" type="checkbox"> 浏览器 · PID 101</label><strong id="ws-browser">900 MiB</strong></div>
+          <div class="demo-process"><label><input id="select-meeting" type="checkbox"> 会议 · PID 201</label><strong id="ws-meeting">420 MiB</strong></div>
+          <div class="demo-process"><label><input id="select-editor" type="checkbox"> 编辑器 · PID 301</label><strong id="ws-editor">540 MiB</strong></div>
+          <button id="target-clean" type="button">模拟整理选中进程</button><p id="target-message" role="status">请选择对象；工作集差额不累加为真实释放量。</p>
+        </details>
         <div class="result" role="status" aria-live="polite" aria-atomic="true"><strong id="status">准备就绪</strong><p id="message">点击按钮，查看一次预设的整理过程。</p></div>
         <div class="controls"><button id="revisit" type="button" disabled>模拟再次使用</button><button id="reset" type="button">重置演示</button></div>
         <p class="footnote">占用下降 ≠ 数据删除 ≠ 实际提速</p>

@@ -186,7 +186,29 @@ class WebTests(unittest.TestCase):
             if self.server.worker:
                 self.server.worker.join(2)
         self.assertEqual(self.backend.actions, [{"scope": "process", "pid": 101}])
+        result_id = self.server.state()["rule"]["last_job"]
+        self.assertEqual(self.server.job(result_id)["kind"], "batch")
+        now[0] = 103
+        self.server.service_actions()
+        self.server.worker.join(2)
+        self.assertEqual(self.server.state()["rule"]["last_job"], result_id)
         self.server.configure_rule({"enabled": False})
+
+    def test_stop_between_rule_decision_and_submission_blocks_dispatch(self):
+        self.action({"kind": "targets"})
+        now = [100.0]
+        self.server.clock = lambda: now[0]
+        self.server.configure_rule({"enabled": True, "confirmed": True, "targets": ["101:100101"],
+            "rule": {"mode": "interval", "interval_s": 1, "cooldown_s": 1}})
+        original = self.server.submit
+        def stop_then_submit(value, **options):
+            self.server.configure_rule({"enabled": False})
+            return original(value, **options)
+        self.server.submit = stop_then_submit
+        now[0] = 102
+        self.server.service_actions()
+        self.assertFalse(self.server.policy.armed)
+        self.assertEqual(self.backend.actions, [])
 
     def test_http_selected_batch_and_saved_result_do_not_repeat_actions(self):
         targets = self.action({"kind": "targets"})["report"]["samples"][0]["processes"]

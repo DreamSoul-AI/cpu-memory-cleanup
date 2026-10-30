@@ -44,6 +44,7 @@ class LocalWebServer(ThreadingHTTPServer):
         self.rule_targets = ()
         self.rule_protections = []
         self.rule_job = None
+        self.rule_result_job = None
         self.rule_error = ""
         self.rule_poll_at = 0
         self.rule_seen = None
@@ -54,7 +55,7 @@ class LocalWebServer(ThreadingHTTPServer):
     def url(self):
         return f"http://127.0.0.1:{self.server_port}/"
 
-    def submit(self, value, *, automatic=False):
+    def submit(self, value, *, automatic=False, rule_policy=None):
         if not isinstance(value, dict):
             raise ValueError("请求必须是对象")
         kind = value.get("kind")
@@ -71,6 +72,8 @@ class LocalWebServer(ThreadingHTTPServer):
         with self.lock:
             if self.stopping or (self.worker is not None and self.worker.is_alive()):
                 raise RuntimeError("当前有任务正在收尾，请稍后重试")
+            if automatic and (not self.policy.armed or rule_policy is not self.policy):
+                raise RuntimeError("规则已停用或替换，拒绝旧触发")
             if kind == "batch":
                 keys = value.get("targets")
                 if (not isinstance(keys, list) or not 1 <= len(keys) <= 4096
@@ -170,7 +173,7 @@ class LocalWebServer(ThreadingHTTPServer):
     def state(self):
         with self.lock:
             return {"settings": dict(self.settings), "rule": {"armed": self.policy.armed,
-                    "target_count": len(self.rule_targets), "last_job": self.rule_job,
+                    "target_count": len(self.rule_targets), "last_job": self.rule_result_job or self.rule_job,
                     "error": self.rule_error}, "busy": self.worker is not None and self.worker.is_alive()}
 
     def save_settings(self, value):
@@ -209,6 +212,7 @@ class LocalWebServer(ThreadingHTTPServer):
             self.settings, self.policy = settings, policy
             self.rule_targets, self.rule_protections = targets, [dict(r) for r in self.settings["protections"]]
             self.rule_error, self.rule_job, self.rule_seen = "", None, None
+            self.rule_result_job = None
         return self.state()
 
     def service_actions(self):
@@ -241,13 +245,15 @@ class LocalWebServer(ThreadingHTTPServer):
                 due = self.policy.due(now)
             read_due = self.policy.rule.mode == "pressure" and now - self.rule_poll_at >= 1
             keys = [f"{t.pid}:{t.created_at}" for t in self.rule_targets]
+            rule_policy = self.policy
         try:
             if due:
-                job = self.submit({"kind": "batch", "targets": keys, "confirmed": True}, automatic=True)
+                job = self.submit({"kind": "batch", "targets": keys, "confirmed": True}, automatic=True, rule_policy=rule_policy)
                 with self.lock:
                     self.rule_job = job["id"]
+                    self.rule_result_job = job["id"]
             elif read_due:
-                job = self.submit({"kind": "status"}, automatic=True)
+                job = self.submit({"kind": "status"}, automatic=True, rule_policy=rule_policy)
                 with self.lock:
                     self.rule_poll_at, self.rule_job = now, job["id"]
         except RuntimeError:

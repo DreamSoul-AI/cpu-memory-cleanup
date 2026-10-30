@@ -52,3 +52,14 @@ test('reduced motion completes without intermediate numeric animation', () => {
   const p = preview(true); p.elements.clean.click(); p.tick(0);
   assert.equal(p.elements.percent.textContent, 48); assert.equal(p.pending.size, 0);
 });
+
+test('target simulation skips protection and does not touch unselected process', () => {
+  const p=preview();p.elements['select-browser'].checked=true;p.elements['select-meeting'].checked=true;
+  p.elements['target-clean'].click();
+  assert.equal(p.elements['ws-browser'].textContent,'540 MiB');
+  assert.equal(p.elements['ws-meeting'].textContent,'420 MiB');
+  assert.equal(p.elements['ws-editor'].textContent,'540 MiB');
+  assert.match(p.elements['target-message'].textContent,/受保护/);
+  p.elements.reset.click();assert.equal(p.elements['ws-browser'].textContent,'900 MiB');
+  assert.equal(p.elements['select-browser'].checked,false);
+});

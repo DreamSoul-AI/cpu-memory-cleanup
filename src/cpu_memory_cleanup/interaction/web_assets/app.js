@@ -152,7 +152,7 @@ function applyState(state){
   el("protections").replaceChildren();
   settings.protections.forEach((rule,index)=>{const li=document.createElement("li"),remove=document.createElement("button"),label=document.createElement("span");label.textContent=rule.image_path||`实例 PID ${rule.pid} / ${rule.created_at}`;remove.className="quiet";remove.textContent="移除";remove.setAttribute("aria-label",`移除保护 ${label.textContent}`);remove.addEventListener("click",async()=>{try{applyState(await api("/api/settings",{...settings,protections:settings.protections.filter((_,i)=>i!==index)}));renderRows();}catch(exc){error(exc.message);}});li.append(label,remove);el("protections").append(li);});
   if(!settings.protections.length){const li=document.createElement("li");li.textContent="暂无保护规则";el("protections").append(li);}
-  if(state.rule.last_job && state.rule.last_job!==seenRuleJob){seenRuleJob=state.rule.last_job;api(`/api/job?id=${encodeURIComponent(seenRuleJob)}`).then(job=>{if(job.state==="finished"&&job.kind==="batch")present(job);}).catch(exc=>error(exc.message));}
+  if(state.rule.last_job && state.rule.last_job!==seenRuleJob){api(`/api/job?id=${encodeURIComponent(state.rule.last_job)}`).then(job=>{if(job.state==="finished"){seenRuleJob=job.id;if(job.kind==="batch")present(job);}else if(job.state==="error"){seenRuleJob=job.id;error(job.error);}}).catch(exc=>error(exc.message));}
   clearTimeout(ruleTimer);if(state.rule.armed&&!stopped)ruleTimer=setTimeout(async()=>{try{applyState(await api("/api/state"));controls();}catch(exc){error("服务连接失效；刷新页面前请确认原服务状态。 "+exc.message);}},1000);
   controls();
 }
