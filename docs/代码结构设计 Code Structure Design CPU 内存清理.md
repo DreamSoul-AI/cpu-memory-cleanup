@@ -325,3 +325,15 @@ CLI新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … -
 目标工作集下降不作为测试通过条件，测试验证返回值、动作次数、对象和记录含义，真实效果另验。实施完成后运行受影响定向检查及完整离线回归，并核对安装包。新测试原始执行证据由日期运行记录维护，不以设计内容冒充验证。
 
 本轮目标相关跨层旅程集中在test_windows_process.py，以共享禁止真实DLL的假系统装配，分别验证原生、包、CLI和假界面路径，按level标注integration/e2e。该文件包含具名跨层入口映射，不复制完整假系统；既有CLI和桌面镜像测试继续验证原有入口。
+
+# 十一、范围与规则扩展映射
+在现有三层目录下增加就近模块，不另造执行栈。`application/targets.py`维护目标查询、可执行路径分组、保护匹配与批次范围；`application/batch.py`编排既有单次维护并解释批次回看；`application/policy.py`是可注入时钟的规则状态机；`system/preferences.py`原子保存必要设置，`system/batch_records.py`保存有界批次索引。`interaction/workspace.py`承载次级范围、方式与规则界面，`system/platforms/windows_tray.py`隔离可选托盘接口。原desktop保留轻量主窗和原单次入口，CLI新增批次JSON请求入口，公开API复用功能层。
+
+`ProcessTarget`追加可选image_path，旧三参数及schema1/2语义保留。批次索引使用独立batch_schema_version=1，子记录仍采用既有process/schema2，批次不是把system记录换名。记录回看先识别批次索引，验证引用只在自身目录内。公共结果继续使用RunReport，批次metadata.items按目标列出状态与子运行，不提供误导的累加释放量。
+
+测试按上述源码路径映射，就近新增必要清单项，原假DLL装配保留。假数据GUI入口放在scripts内，显式注入合成后端并禁止真实WinDLL和平台选择，不作为普通启动的默认模式。网页合成状态独立于产品核心，语义对齐但不包装成真实功能调用。
+
+# 十二、本地网页入口的目标映射
+优先在interaction下新增本地HTTP适配与随包网页资源，处理静态资源、有限JSON请求、会话与异步任务状态；业务仍调用application，不能在HTTP处理器实现另一份范围规划或原生动作。页面资源通过打包配置进入wheel与sdist，不依赖个人目录。具体模块名与端点在WEB-01实施时固定。
+
+新增HTTP接口、原CLI和原Tk并列依赖同一公共API；假数据启动装配复用合成后端并禁止真实DLL与平台选择。HTTP受控测试镜像交互模块，浏览器旅程使用内置浏览器，不要求Windows Computer Use。原workspace与windows_tray原型保留，优先级后置；当前修改仅为目标设计，不能据此认定网页服务已经实现。
