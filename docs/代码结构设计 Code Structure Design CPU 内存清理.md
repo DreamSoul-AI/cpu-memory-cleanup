@@ -327,7 +327,7 @@ CLI新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … -
 本轮目标相关跨层旅程集中在test_windows_process.py，以共享禁止真实DLL的假系统装配，分别验证原生、包、CLI和假界面路径，按level标注integration/e2e。该文件包含具名跨层入口映射，不复制完整假系统；既有CLI和桌面镜像测试继续验证原有入口。
 
 # 十一、范围与规则扩展映射
-在现有三层目录下增加就近模块，不另造执行栈。`application/targets.py`维护目标查询、可执行路径分组、保护匹配与批次范围；`application/batch.py`编排既有单次维护并解释批次回看；`application/policy.py`是可注入时钟的规则状态机；`system/preferences.py`原子保存必要设置，`system/batch_records.py`保存有界批次索引。`interaction/workspace.py`承载次级范围、方式与规则界面，`system/platforms/windows_tray.py`隔离可选托盘接口。原desktop保留轻量主窗和原单次入口，CLI新增批次JSON请求入口，公开API复用功能层。
+在现有三层目录下增加就近模块，不另造执行栈。`application/targets.py`维护目标查询、可执行路径分组、保护匹配与批次范围；`application/batch.py`编排既有单次维护并解释批次回看；`application/policy.py`是可注入时钟的规则状态机；`system/preferences.py`原子保存必要设置，`system/batch_records.py`保存有界批次索引。`interaction/workspace.py`承载次级范围、方式与规则界面，`system/platforms/windows_tray.py`隔离可选托盘接口。desktop保留轻量主窗和单次全局入口，单目标与多目标统一在workspace选择，CLI新增批次JSON请求入口，公开API复用功能层。
 
 `ProcessTarget`追加可选image_path，旧三参数及schema1/2语义保留。批次索引使用独立batch_schema_version=1，子记录仍采用既有process/schema2，批次不是把system记录换名。记录回看先识别批次索引，验证引用只在自身目录内。公共结果继续使用RunReport，批次metadata.items按目标列出状态与子运行，不提供误导的累加释放量。
 
@@ -361,3 +361,24 @@ create_web_server及CLI的默认端口改为0，由操作系统分配可用端�
 LocalWebServer的POST /api/display仅接受当前会话及空JSON，调用已有Application.memory_status，不进入jobs维护工作单元；显示读取锁避免多个显示请求同时读同一接入。服务停止后拒绝，Package继续负责安全上下文检查。该通道不枚举目标、不写运行目录、不派发维护。
 
 web_assets/app.js在页面可见时每秒串行请求显示，以requestAnimationFrame在0.4秒内将已观测的数值平滑过渡，尊重减少动画设置；暂停/恢复及页面生命周期停止定时器。默认主按钮直接调用已有confirmed请求并同步防重入，Standby及批次保留确认。test_web.py验证清理中仍读数、显示不增加动作/任务及停止后的阻断。
+
+# 十三、两端共用呈现与详情映射
+承接 [架构设计第十二章](<架构设计 Architecture Design CPU 内存清理.md#十二网页与桌面共同体验结构>) 的两级交互与结果解释职责，模块仍属于interaction，不增加功能层或系统层。
+
+```text
+src/cpu_memory_cleanup/interaction/
+├── desktop.py           主窗口、实时显示、单次按钮、线程与退出
+├── workspace.py         一个次级窗口：进程范围 / 整理设置 / 运行详情
+├── presentation.py      解释已有RunReport，生成两端共用的动作摘要
+├── web.py               HTTP调度，原始报告与呈现摘要分别传输
+└── web_assets/
+    ├── index.html       紧凑主区、外置确认区、默认折叠详情
+    ├── app.js           状态绑定、动画、按需操作与固定结果
+    └── styles.css       主次层级、实际圆环和忙碌样式
+```
+
+presentation.summary不修改RunReport；摘要保留范围、记录时间、整段流程耗时和带方向前后变化，时间未知不补造，也不称为原生调用耗时。web.py在任务结束时另附presentation，report继续原样返回；desktop.py消费同一摘要。实时读取只更新内存控件，workspace.py刷新原始报告并复用主窗工作线程，关闭仅隐藏、再次打开复用，不重复设置执行栈。
+
+桌面不再保留主窗内的重复目标列表与第二个详情入口。单目标通过进程范围选择一项使用既有批次能力，Package原有单目标API与CLI合同仍保留。窗口初始尺寸根据控件字体适配，最近结果预留固定行数，处理完成不反复调整主窗尺寸。
+
+验证镜像新增test_presentation.py与test_workspace.py，test_desktop.py验证同一详情实例、25%/75%圆环及显示/结果分离。web_assets/app.test.cjs使用Node内置能力直接执行产品JS，独立于Python清单；命令从README定位。安装检查核对新模块与三份网页资源完整进入wheel和sdist，桌面CMD/pyw仍是源码仓库入口。
