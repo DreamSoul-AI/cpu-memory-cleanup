@@ -44,7 +44,7 @@ from .application.policy import Policy, Rule
 __all__ += ["executable_groups", "select_rows", "targets_from_rows", "Policy", "Rule"]
 
 
-def create_web_server(*, app=None, output_dir=None, port=8767, preview=False):
+def create_web_server(*, app=None, output_dir=None, port=0, preview=False):
     """正式网页装配：默认真实后端，构造不读取指标、不维护、不打开浏览器。"""
     from pathlib import Path
     from .interaction.web import LocalWebServer

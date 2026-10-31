@@ -15,6 +15,31 @@ from cpu_memory_cleanup.contracts import Capabilities, RunReport
 
 
 class MainTests(unittest.TestCase):
+    def test_web_defaults_to_system_assigned_port_without_reading(self):
+        app = Mock()
+        with patch.object(api, "create_web_server", return_value="server") as factory, \
+             patch("cpu_memory_cleanup.interaction.web.serve", return_value=0) as serve:
+            self.assertEqual(entry.main(["--web"], app=app), 0)
+        factory.assert_called_once_with(app=app, output_dir=None, port=0)
+        serve.assert_called_once_with("server")
+        app.memory_status.assert_not_called()
+        app.memory_cleanup.assert_not_called()
+
+    def test_web_explicit_reserved_port_reports_failure_without_retry_or_action(self):
+        app = Mock()
+        output = io.StringIO()
+        error = PermissionError(13, "private system detail")
+        with patch.object(api, "create_web_server", side_effect=error) as factory, \
+             patch("cpu_memory_cleanup.interaction.web.serve") as serve, \
+             contextlib.redirect_stderr(output):
+            self.assertEqual(entry.main(["--web", "--port", "8767"], app=app), 1)
+        factory.assert_called_once_with(app=app, output_dir=None, port=8767)
+        serve.assert_not_called()
+        self.assertIn("--port 0", output.getvalue())
+        self.assertNotIn("private system detail", output.getvalue())
+        app.memory_status.assert_not_called()
+        app.memory_cleanup.assert_not_called()
+
     def test_default_assembly_uses_one_shared_inert_backend(self):
         backend = object()
         app = Mock()

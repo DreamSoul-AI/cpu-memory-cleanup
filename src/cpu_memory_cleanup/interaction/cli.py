@@ -104,7 +104,7 @@ def parse_args(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--gui", action="store_true", help="打开桌面界面；打开时只读")
     mode.add_argument("--web", action="store_true", help="启动正式localhost网页，接入当前操作系统；打开页面不采样")
-    parser.add_argument("--port", type=int, help="--web回环端口，默认8767")
+    parser.add_argument("--port", type=int, help="--web回环端口，默认0（系统分配可用端口）")
     mode.add_argument("--sample", action="store_true", help="有界只读采样")
     mode.add_argument("--release", action="store_true", help="明确确认执行一次单项维护")
     mode.add_argument("--review", type=Path, help="离线回看运行目录或 JSONL")

@@ -543,7 +543,12 @@ class Application:
             report.metadata["preflight"] = preflight
             if not isinstance(preflight, dict) or any(preflight.get(k) is not True for k in
                                                      ("supported", "privilege_available", "lock_acquired")) or preflight.get("scope") != request.scope:
-                raise ValueError("维护准入能力缺失或未知")
+                checks = {"supported": "系统支持", "privilege_available": "所需权限", "lock_acquired": "维护互斥"}
+                missing = [label for key, label in checks.items()
+                           if not isinstance(preflight, dict) or preflight.get(key) is not True]
+                if not isinstance(preflight, dict) or preflight.get("scope") != request.scope:
+                    missing.append("动作范围")
+                raise ValueError("维护未派发：前置检查未通过（" + "、".join(missing) + "）。详情见原始报告。")
             session = self.reader.open_memory_observation() if lightweight else self.reader.open_observation(with_processes=False, top=10)
             report.phase = "before"
             target_reader = operation.read_target if request.scope == "process" else None

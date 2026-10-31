@@ -448,3 +448,6 @@ Microsoft [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/
 本次读取Microsoft [QueryFullProcessImageNameW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew)的路径、权限和返回值，以及[Shell_NotifyIconW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw)的图标生命周期与返回值。未调用真实接口。界面归组与调度方案是本项目设计推导，不是Microsoft推荐策略。跨应用AI研究与Linux仍不纳入当前工程。
 
 工程采用情况见 [本轮开发记录](<开发记录 Development Record/2026-10-31 正式网页与范围规则.md>)，实际受控执行见 [本轮运行记录](<运行记录 Run Record/2026-10-31 正式网页与范围规则.md>)。未运行竞品、真实系统采样或清理，不能比较实际性能。
+
+## 本机机制验证的证据边界
+2026年10月31日，经用户授权从正式网页执行一次系统工作集整理，原生返回0、权限恢复；同一运行的系统可用量从17,542,221,824增至24,391,077,888 bytes（约16.34→22.72 GiB）。这支持当前机器上正式调用链能够执行和保存原始事实，不能把并发变化全部归因为清理收益，也不证明永久释放、再次访问成本或360内部实现。只执行一次，不作为性能实验，见 [真实验收记录](<运行记录 Run Record/2026-10-31 真实网页验收与启动修正.md>)。

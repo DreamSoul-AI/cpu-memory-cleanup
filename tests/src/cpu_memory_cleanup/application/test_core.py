@@ -221,6 +221,17 @@ class CoreTests(unittest.TestCase):
         report = self.maintain()
         self.assertEqual(report.completion, "failed")
         self.assertEqual(self.backend.calls, 0)
+        self.assertIn("系统支持、所需权限", report.errors[0]["message"])
+
+    def test_missing_privilege_is_named_in_failure_and_saved_terminal(self):
+        with patch.object(self.backend, "preflight", return_value={"supported": True,
+                "privilege_available": False, "lock_acquired": True, "scope": "system"}):
+            report = self.maintain()
+        self.assertEqual(report.action["call_outcome"], "not_started")
+        self.assertEqual((self.backend.opens, self.backend.calls, self.backend.reads), (0, 0, 0))
+        self.assertIn("所需权限", report.errors[0]["message"])
+        terminal = json.loads((Path(report.output_dir) / "samples.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+        self.assertEqual(terminal["errors"], report.errors)
 
     def test_one_maintenance_has_one_native_call(self):
         report = self.maintain()
