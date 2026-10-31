@@ -356,3 +356,8 @@ HTTP入口为GET `/api/session`（仅会话元数据）、GET `/api/job?id=…`�
 create_web_server及CLI的默认端口改为0，由操作系统分配可用端口，保留--port显式固定端口兼容。__main__捕获服务构造OSError，给出端口和目录检查提示，不重试清理或修改系统设置。application.core按未满足的系统支持、权限、互斥及范围解释准入失败，安全摘要写入原有错误及终态；HTTP不另造权限判断。
 
 本机真实全局工作集链路及回看已有一次通过证据，其他范围不由此推定通过，见 [真实验收记录](<运行记录 Run Record/2026-10-31 真实网页验收与启动修正.md>)。
+
+## 网页轻量显示映射
+LocalWebServer的POST /api/display仅接受当前会话及空JSON，调用已有Application.memory_status，不进入jobs维护工作单元；显示读取锁避免多个显示请求同时读同一接入。服务停止后拒绝，Package继续负责安全上下文检查。该通道不枚举目标、不写运行目录、不派发维护。
+
+web_assets/app.js在页面可见时每秒串行请求显示，以requestAnimationFrame在0.4秒内将已观测的数值平滑过渡，尊重减少动画设置；暂停/恢复及页面生命周期停止定时器。默认主按钮直接调用已有confirmed请求并同步防重入，Standby及批次保留确认。test_web.py验证清理中仍读数、显示不增加动作/任务及停止后的阻断。

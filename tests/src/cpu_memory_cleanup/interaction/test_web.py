@@ -231,6 +231,42 @@ class WebTests(unittest.TestCase):
         self.request("GET", "/api/job?id=" + job["id"])
         self.assertEqual(self.backend.actions, [{"scope": "system", "pid": None}])
 
+    def test_live_display_keeps_reading_during_cleanup_without_dispatching_more_actions(self):
+        entered, release = threading.Event(), threading.Event()
+        original = self.app.memory_cleanup
+        def delayed(*args, **kwargs):
+            entered.set()
+            if not release.wait(2):
+                raise RuntimeError("合成测试释放超时")
+            return original(*args, **kwargs)
+        self.app.memory_cleanup = delayed
+        try:
+            status, job = self.request("POST", "/api/action", {"kind":"cleanup", "confirmed":True})
+            self.assertEqual(status, 202)
+            self.assertTrue(entered.wait(1))
+            for _ in range(2):
+                status, display = self.request("POST", "/api/display", {})
+                self.assertEqual(status, 200)
+                self.assertEqual(display["completion"], "success")
+            self.assertEqual(len(self.reads), 2)
+            self.assertEqual(self.backend.actions, [])
+            self.assertEqual(list(self.server.jobs), [job["id"]])
+        finally:
+            release.set()
+            self.server.worker.join(2)
+        result = self.server.job(job["id"])["report"]
+        self.assertEqual(result["completion"], "success")
+        self.request("POST", "/api/display", {})
+        self.assertEqual(self.server.job(job["id"])["report"], result)
+        self.assertEqual(self.backend.actions, [{"scope":"system", "pid":None}])
+
+    def test_live_display_requires_session_and_rejects_after_stop(self):
+        self.assertEqual(self.request("POST", "/api/display", {}, token=False)[0], 403)
+        self.assertEqual(self.reads, [])
+        self.server.stopping = True
+        self.assertEqual(self.request("POST", "/api/display", {})[0], 409)
+        self.assertEqual(self.reads, [])
+
     def test_cross_origin_no_session_unconfirmed_and_arbitrary_path_are_rejected(self):
         self.assertEqual(self.request("POST", "/api/action", {"kind": "cleanup", "confirmed": True}, token=False)[0], 403)
         self.assertEqual(self.request("POST", "/api/action", {"kind": "status"}, headers={"Origin": "https://example.com"})[0], 403)

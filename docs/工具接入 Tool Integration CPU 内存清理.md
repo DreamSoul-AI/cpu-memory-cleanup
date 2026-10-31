@@ -60,6 +60,6 @@ INT-01的本轮交付是固定版本说明、真实调用合同与Knowledge导�
 # 六、本地批次与正式网页候选
 批次请求JSON为`{"targets":[{"pid":101,"created_at":"原始创建身份","name":"显示名","image_path":"完整程序文件路径"}],"protections":[]}`，其中targets必须来自本次发现，不使用示例值发真实动作。API同名memory_batch_cleanup接受ProcessTarget序列，保护规则支持image_path或pid/created_at。记录是独立批次索引加逐项原记录，memory_result只离线回看，不重放。
 
-正式网页使用`python -m cpu_memory_cleanup --web`，或同进程`create_web_server`装配同一Package，HTTP不经过CLI子进程，也不复制维护实现。创建服务不采样，启动后也不会默认启用规则；真实请求仍受宿主/用户执行边界约束。服务仅绑定回环地址，默认端口0由系统分配并输出实际URL，显式固定端口失败不自动替换；默认记录与偏好位置见README。假数据入口与真实模式独立，不将假数据通关作为真实平台证据。
+正式网页使用`python -m cpu_memory_cleanup --web`，或同进程`create_web_server`装配同一Package，HTTP不经过CLI子进程，也不复制维护实现。创建服务不采样；可见网页每秒调用轻量显示接口，工作集主按钮直接提交一次明确动作，高级/批次仍确认。实时显示不等于自动整理，启动后不会默认启用规则；真实请求仍受宿主/用户执行边界约束。服务仅绑定回环地址，默认端口0由系统分配并输出实际URL，显式固定端口失败不自动替换；默认记录与偏好位置见README。假数据入口与真实模式独立，不将假数据通关作为真实平台证据。
 
 API_VERSION=1、tool_schema_version=1仍兼容旧工具；系统/进程记录schema和batch_schema_version分别管理。静态目录当前候选含六项，宿主按实际目录发现，不假设旧Release已包含所有能力。本轮未改Knowledge仓库的固定旧指南，未安装到用户环境，也未发布新包。

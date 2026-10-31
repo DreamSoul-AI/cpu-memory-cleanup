@@ -34,6 +34,7 @@ class LocalWebServer(ThreadingHTTPServer):
         self.token = secrets.token_urlsafe(32)
         self.jobs, self.targets = OrderedDict(), {}
         self.lock = threading.Lock()
+        self.display_lock = threading.Lock()
         self.worker = None
         self.cancel_event = None
         self.stopping = False
@@ -175,6 +176,14 @@ class LocalWebServer(ThreadingHTTPServer):
             return {"settings": dict(self.settings), "rule": {"armed": self.policy.armed,
                     "target_count": len(self.rule_targets), "last_job": self.rule_result_job or self.rule_job,
                     "error": self.rule_error}, "busy": self.worker is not None and self.worker.is_alive()}
+
+    def display(self):
+        """轻量显示与维护共享Package，显示不占业务任务、不改写动作结果。"""
+        with self.display_lock:
+            with self.lock:
+                if self.stopping:
+                    raise RuntimeError("本地服务正在停止")
+            return self.app.memory_status().to_dict()
 
     def save_settings(self, value):
         with self.lock:
@@ -348,6 +357,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise ValueError("请求需要对象")
             if self.path == "/api/action":
                 self.respond(202, self.server.submit(value))
+            elif self.path == "/api/display" and value == {}:
+                self.respond(200, self.server.display())
             elif self.path == "/api/settings":
                 self.respond(200, self.server.save_settings(value))
             elif self.path == "/api/rule":
@@ -368,7 +379,7 @@ class Handler(BaseHTTPRequestHandler):
 def serve(server):
     """正式与测试装配共用生命周期；不自动打开页面或派发读取。"""
     print(server.url, flush=True)
-    print("假数据预览" if server.preview else "真实系统模式：尚未读取，点击才派发", flush=True)
+    print("假数据预览" if server.preview else "真实系统模式：页面可见时实时读取，工作集按钮点击即整理", flush=True)
     try:
         server.serve_forever(poll_interval=0.2)
     except KeyboardInterrupt:
