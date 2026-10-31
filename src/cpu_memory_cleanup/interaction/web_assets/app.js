@@ -1,6 +1,7 @@
 "use strict";
 const el = (id) => document.getElementById(id);
 let cleaning = false;
+let effect = null, effectFrame = null, latestMemory = null;
 let liveEnabled = true, displayTimer = null, displayInFlight = false, animation = null, shownMemory = null;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let token = "", busy = false, currentJob = null, lastSaved = null, pendingAction = null;
@@ -85,17 +86,64 @@ function paintMemory(value){
   const {total,available,commitUsed,commitLimit}=value;
   const valid=total>0 && available!=null && available>=0 && available<=total;
   const pct=valid?(total-available)/total*100:null;
-  el("percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
+  if(!effect)paintGauge(pct,"物理内存占用");
   el("fill").style.width=`${pct||0}%`;
-  el("gauge").style.setProperty("--usage",`${pct==null?0:pct*3.6}deg`);
+
   if(pct!=null)el("meter").setAttribute("aria-valuenow",String(Math.round(pct)));else el("meter").removeAttribute("aria-valuenow");
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
   el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
+}
+function paintGauge(percent,label){
+  el("percent").textContent=percent==null?"未知":`${Math.round(percent)}%`;
+  el("gauge").style.setProperty("--usage",`${(percent||0)*3.6}deg`);
+  el("gauge-label").textContent=label;
+}
+const occupancy = value => value?.total>0 && value.available!=null && value.available>=0 && value.available<=value.total ? (value.total-value.available)/value.total*100 : null;
+function settleEffect(){
+  if(effectFrame!==null)cancelAnimationFrame(effectFrame);
+  effectFrame=null;
+  const resolve=effect?.resolve;effect=null;
+  if(latestMemory)paintMemory(latestMemory);else paintGauge(null,"物理内存占用");
+  if(resolve)resolve();
+}
+function effectTick(now){
+  effectFrame=null;if(!effect)return;
+  const e=effect;
+  if(e.phase==="emptying"){
+    const p=Math.min(1,(now-e.started)/450);
+    e.value=e.from*(1-p)*(1-p);
+    if(p===1){e.phase="waiting";e.started=now;e.value=0;}
+  }else if(e.phase==="waiting" && e.ready && now-e.started>=200){
+    e.phase="returning";e.started=now;e.target=occupancy(latestMemory);
+  }else if(e.phase==="returning"){
+    const p=Math.min(1,(now-e.started)/700),weight=1-(1-p)**3;
+    e.value=(e.target||0)*weight;
+    if(p===1){settleEffect();return;}
+  }
+  paintGauge(e.value,e.phase==="waiting"?"整理中 · 动效等待":e.phase==="returning"?"回到实际读数 · 动效":"整理中 · 动效归零");
+  effectFrame=requestAnimationFrame(effectTick);
+}
+function startEffect(){
+  if(animation!==null)cancelAnimationFrame(animation);animation=null;
+  effect={phase:"emptying",started:performance.now(),from:occupancy(shownMemory)||0,value:occupancy(shownMemory)||0,ready:false,resolve:null};
+  if(reducedMotion.matches||document.hidden){effect.phase="waiting";effect.value=0;}
+  else effectFrame=requestAnimationFrame(effectTick);
+  paintGauge(effect.value,"整理中 · 动效归零");
+}
+function finishEffect(report){
+  if(!effect)return Promise.resolve();
+  if(report)memory(report);
+  return new Promise(resolve=>{
+    effect.resolve=resolve;effect.ready=true;
+    if(reducedMotion.matches||document.hidden)settleEffect();
+  });
 }
 function memory(report){
   const sample=report.samples?.at(-1);if(!sample)return;
   const physical=sample.metrics.physical,commit=sample.metrics.commit;if(!physical)return;
   const target={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
+  latestMemory=target;
+  if(effect){paintMemory(target);return;}
   if(animation!==null)cancelAnimationFrame(animation);
   animation=null;
   if(!shownMemory||reducedMotion.matches||target.available==null){paintMemory(target);return;}
@@ -126,8 +174,8 @@ async function refreshDisplay(){
 function pauseDisplay(){
   clearTimeout(displayTimer);if(animation!==null)cancelAnimationFrame(animation);animation=null;
 }
-document.addEventListener("visibilitychange",()=>{if(document.hidden)pauseDisplay();else refreshDisplay();});
-window.addEventListener("pagehide",()=>{liveEnabled=false;pauseDisplay();clearTimeout(ruleTimer);});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){pauseDisplay();if(effect?.ready)settleEffect();}else{if(effect && effectFrame===null && !reducedMotion.matches)effectFrame=requestAnimationFrame(effectTick);refreshDisplay();}});
+window.addEventListener("pagehide",()=>{liveEnabled=false;pauseDisplay();settleEffect();clearTimeout(ruleTimer);});
 function present(job){
   const report=job.report;if(job.kind!=="replay")memory(report);
   if(job.kind==="targets"){
@@ -153,12 +201,14 @@ function present(job){
 }
 async function run(action){
   if(busy||stopped)return;error("");busy=true;cleaning=action.kind==="cleanup"||action.kind==="batch";controls();renderRows();
+  const animated=action.kind==="cleanup" && action.mechanism==="working-set";
+  if(animated)startEffect();
   el("job-status").textContent="正在提交本次请求…";
   try{
     const accepted=await api("/api/action",action);currentJob=accepted.id;
     el("job-status").textContent=action.kind==="cleanup" && action.mechanism==="working-set" ? "正在整理并观察3秒短期变化 · 只调用一次" : "处理中 · 等待 Package 收尾";
-    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
-  }catch(exc){error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
+    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);if(animated){if(job.report.completion==="success")await finishEffect(job.report);else settleEffect();}present(job);el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
+  }catch(exc){if(animated)settleEffect();error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
   finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();}
 }
 function confirmAction(action,text){pendingAction=action;el("confirmation-text").textContent=text;el("confirmation").hidden=false;el("confirm-yes").focus();}

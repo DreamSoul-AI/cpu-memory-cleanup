@@ -26,11 +26,12 @@
       },
       "cases": {
         "CatalogTests.test_readonly_acceptance_remains_planned_outside_executable_plans": {
-          "cost_class": "c1",
-          "timeout_s": 1,
+          "cost_class": "c2",
+          "timeout_s": 3,
           "memory_bytes": 268435456,
           "cost_estimate": {
-            "estimated_wall_time_ms": 100
+            "estimated_wall_time_ms": 1200,
+            "estimate_source": "521项清单展开检查连续在原1秒预算附近超时，2026-10-31回执约1019至1025毫秒，按实际成本登记"
           },
           "plans": [
             "regression",

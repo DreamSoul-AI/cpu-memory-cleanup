@@ -80,6 +80,8 @@ class MemoryWindow:
         self._closing = self._closed = False
         self._supported = "working-set" in app.capabilities.mechanisms
         self._percent = None
+        self._effect = self._effect_job = None
+        self._latest_values = None
         self._clock = clock or time.monotonic
         self.workspace = None
         self._settings_path, self._tray_factory = settings_path, tray_factory
@@ -125,7 +127,8 @@ class MemoryWindow:
         self.ring.bind("<Configure>", lambda event: self._draw_ring(event.width))
         self.percent = tk.Label(self.ring, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", -px(54), "bold"))
         self.percent.place(relx=0.5, rely=0.43, anchor="center")
-        tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", -px(13))).place(relx=0.5, rely=0.68, anchor="center")
+        self.gauge_label = tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", -px(13)))
+        self.gauge_label.place(relx=0.5, rely=0.68, anchor="center")
         self.available = tk.Label(body, text="已用 未知 / 共 未知", bg=BACKGROUND, fg="#52645B", font=("Microsoft YaHei UI", 10))
         self.available.grid(row=2, column=0, pady=(0, 10))
         self.button = tk.Button(body, text="一键整理工作集", command=self.maintain, bg=GREEN, fg="white",
@@ -174,7 +177,8 @@ class MemoryWindow:
         size = int(min(width, height))
         if size <= 2 * self._ring_inset:
             return
-        frame = (size, round(self._percent or 0., 1))
+        display = self._effect["value"] if self._effect is not None else self._percent
+        frame = (size, round(display or 0., 1))
         if frame != self._ring_frame:
             if self._ring_raster is None or self._ring_raster.size != size:
                 self._ring_raster = RingRaster(size, self._ring_inset, self._ring_width, BACKGROUND, "#DFEAE3", GREEN)
@@ -188,7 +192,8 @@ class MemoryWindow:
         total, available = values["total"], values["available"]
         self._percent = ((total - available) / total * 100
                          if total and available is not None and 0 <= available <= total else None)
-        self.percent.configure(text="未知" if self._percent is None else f"{self._percent:.0f}%")
+        if self._effect is None:
+            self.percent.configure(text="未知" if self._percent is None else f"{self._percent:.0f}%")
         self.available.configure(text=f"已用 {_gib(None if self._percent is None else total - available)} / 共 {_gib(total)}")
         self._commit_text = f"提交量 {_gib(values['commit_used'])} / 上限 {_gib(values['commit_limit'])}"
         self._draw_ring(self.ring.winfo_width())
@@ -198,8 +203,12 @@ class MemoryWindow:
             self.root.after_cancel(self._animation_job)
             self._animation_job = None
         target = view["values"]
+        self._latest_values = target
         self._memory_context = view["context"]
         self.context.configure(text=self._memory_context + " · 平滑显示")
+        if self._effect is not None:
+            self._paint_memory(target)
+            return
         if self._shown is None or view["percent"] is None:
             self._paint_memory(target)
             return
@@ -254,7 +263,7 @@ class MemoryWindow:
             self.refresh()
 
     def _controls(self):
-        busy = self._closing or self._worker is not None or self.app.busy
+        busy = self._closing or self._worker is not None or self.app.busy or self._effect is not None
         self.button.configure(state="normal" if self._supported and not busy else "disabled")
         self.refresh_button.configure(state="disabled" if self._closing else "normal")
         self.cancel_button.configure(state="normal" if self._worker is not None and not self._closing else "disabled")
@@ -305,7 +314,7 @@ class MemoryWindow:
         self.root.after(50, self.pump)
 
     def _submit(self, function, *args, **options):
-        if self._closing or self._worker is not None or self.app.busy:
+        if self._closing or self._worker is not None or self.app.busy or self._effect is not None:
             return False
         self._cancel_event = threading.Event()
         cancel_event = self._cancel_event
@@ -342,6 +351,7 @@ class MemoryWindow:
             return
         if self._submit(self.app.memory_cleanup, self._output_dir, confirmed=True,
                         confirmation_source="desktop:memory-clean-button", observation_seconds=3):
+            self._start_effect()
             self.button.configure(text="正在整理…")
             self.status.configure(text="正在整理并观察3秒短期变化，当前读数持续更新。")
             self.result.configure(text="正在整理内存…")
@@ -365,10 +375,10 @@ class MemoryWindow:
                 self._tray = None
             except Exception as error:
                 self.status.configure(text=f"托盘退出未确认：{error}")
-        for job in (self._animation_job, self._memory_job):
+        for job in (self._animation_job, self._memory_job, self._effect_job):
             if job is not None:
                 self.root.after_cancel(job)
-        self._animation_job = self._memory_job = None
+        self._animation_job = self._memory_job = self._effect_job = self._effect = None
         if self._cancel_event is not None:
             self._cancel_event.set()
         self.app.shutdown()
@@ -377,6 +387,80 @@ class MemoryWindow:
         if self._worker is None and self._memory_worker is None and not self.app.busy:
             self._closed = True
             self.root.destroy()
+
+    def _start_effect(self):
+        if self._animation_job is not None:
+            self.root.after_cancel(self._animation_job)
+            self._animation_job = None
+        self._effect = {"phase": "emptying", "started": self._clock(), "from": self._percent or 0.,
+                        "value": self._percent or 0., "pending": None}
+        self._effect_job = self.root.after(16, self._effect_tick)
+        self.gauge_label.configure(text="整理动效 · 非实时占用")
+
+    def _effect_tick(self):
+        self._effect_job = None
+        if self._closing or self._effect is None:
+            return
+        e, now = self._effect, self._clock()
+        if e["phase"] == "emptying":
+            progress = min(1., (now-e["started"])/.45)
+            e["value"] = e["from"]*(1-progress)**2
+            if progress == 1:
+                e.update(phase="waiting", started=now, value=0.)
+        elif e["phase"] == "waiting" and e["pending"] is not None and now-e["started"] >= .2:
+            values = self._latest_values or self._shown or {}
+            total, available = values.get("total"), values.get("available")
+            target = (total-available)/total*100 if total and available is not None and 0 <= available <= total else 0.
+            e.update(phase="returning", started=now, target=target)
+        elif e["phase"] == "returning":
+            progress = min(1., (now-e["started"])/.7)
+            e["value"] = e["target"]*(1-(1-progress)**3)
+            if progress == 1:
+                report, error = e["pending"]
+                self._effect = None
+                self.gauge_label.configure(text="物理内存占用")
+                if self._latest_values is not None:
+                    self._paint_memory(self._latest_values)
+                else:
+                    self.percent.configure(text="未知")
+                self._apply_report(report, error)
+                return
+        self.percent.configure(text=f"{e['value']:.0f}%")
+        self.gauge_label.configure(text="整理动效 · " + {"emptying":"归零中", "waiting":"等待中", "returning":"回到实测值"}[e["phase"]])
+        self._draw_ring(self.ring.winfo_width())
+        self._effect_job = self.root.after(16, self._effect_tick)
+
+    def _apply_report(self, report, error):
+        self.button.configure(text="一键整理工作集")
+        if error is not None:
+            self.status.configure(text="本次未完成，保留旧读数与更新时间。")
+            self.result.configure(text="本次未完成")
+            self.result_note.configure(text=str(error))
+            self._report_details = str(error)
+            self.result_context.configure(text="结果未知 · 不自动重试")
+        else:
+            view = _present(report)
+            if not self._live and report.samples and report.mode not in ("review", "batch-review"):
+                self._target_memory(view)
+            if report.mode in ("maintain", "batch", "review", "batch-review"):
+                self._latest_report = report
+                feedback = summary(report)
+                self.result.configure(text=feedback["title"])
+                self.result_note.configure(text=feedback["note"])
+                self.result_context.configure(text=feedback["context"])
+                self._report_details = view["details"]
+            completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消", "unknown": "结果未知"}.get(report.completion, report.completion)
+            self.status.configure(text=("清理：" if report.mode == "maintain" else "内存刷新：") + completion)
+            if report.completion == "success" and (report.metadata.get("header") or {}).get("post_observation_seconds"):
+                self.status.configure(text="本次调用与短期观察已结束，实时读数继续更新。")
+            if self.workspace is not None:
+                self.workspace.on_report(report)
+            if self._tray is not None and report.mode in ("maintain", "batch"):
+                try:
+                    self._tray.notify("整理：" + completion + "。数值变化不代表提速；详情见窗口。")
+                except Exception as error:
+                    self.status.configure(text=f"整理已收尾，通知未确认：{error}")
+        self._controls()
 
     def pump(self):
         if self._closed:
@@ -412,36 +496,21 @@ class MemoryWindow:
                     report, error = self._events.get_nowait()
                 except queue.Empty:
                     report, error = None, RuntimeError("工作线程未返回结果")
-                self.button.configure(text="一键整理工作集")
-                if error is not None:
-                    self.status.configure(text="本次未完成，保留旧读数与更新时间。")
-                    self.result.configure(text="本次未完成")
-                    self.result_note.configure(text=str(error))
-                    self._report_details = str(error)
-                    self.result_context.configure(text="结果未知 · 不自动重试")
+                if self._effect is not None and (error is not None or report.completion != "success"):
+                    if self._effect_job is not None:
+                        self.root.after_cancel(self._effect_job)
+                    self._effect = self._effect_job = None
+                    self.gauge_label.configure(text="物理内存占用")
+                    if self._latest_values is not None:
+                        self._paint_memory(self._latest_values)
+                if self._effect is not None:
+                    if error is None and report.samples:
+                        view = _present(report)
+                        if view["percent"] is not None:
+                            self._latest_values = view["values"]
+                    self._effect["pending"] = (report, error)
                 else:
-                    view = _present(report)
-                    if not self._live and report.samples and report.mode not in ("review", "batch-review"):
-                        self._target_memory(view)
-                    if report.mode in ("maintain", "batch", "review", "batch-review"):
-                        self._latest_report = report
-                        feedback = summary(report)
-                        self.result.configure(text=feedback["title"])
-                        self.result_note.configure(text=feedback["note"])
-                        self.result_context.configure(text=feedback["context"])
-                        self._report_details = view["details"]
-                    completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消", "unknown": "结果未知"}.get(report.completion, report.completion)
-                    self.status.configure(text=("清理：" if report.mode == "maintain" else "内存刷新：") + completion)
-                    if report.completion == "success" and (report.metadata.get("header") or {}).get("post_observation_seconds"):
-                        self.status.configure(text="本次调用与短期观察已结束，实时读数继续更新。")
-                    if self.workspace is not None:
-                        self.workspace.on_report(report)
-                    if self._tray is not None and report.mode in ("maintain", "batch"):
-                        try:
-                            self._tray.notify("整理：" + completion + "。数值变化不代表提速；详情见窗口。")
-                        except Exception as error:
-                            self.status.configure(text=f"整理已收尾，通知未确认：{error}")
-                self._controls()
+                    self._apply_report(report, error)
         if self._closing and self._worker is None and self._memory_worker is None and not self.app.busy:
             self._closed = True
             self.root.destroy()

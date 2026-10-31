@@ -236,11 +236,16 @@ class DesktopTests(unittest.TestCase):
         self.thread_patch.start()
         self.addCleanup(self.thread_patch.stop)
         self.root, self.app = Root(), FakeApplication()
-        self.window = desktop.MemoryWindow(self.root, self.app, FakeTk, output_dir="chosen")
+        self.clock = [0.]
+        self.window = desktop.MemoryWindow(self.root, self.app, FakeTk, output_dir="chosen", clock=lambda: self.clock[0])
 
     def finish_worker(self):
         self.window._worker.finish()
         self.window.pump()
+        for _ in range(4):
+            if self.window._effect is None:break
+            self.clock[0] += 1
+            self.root.jobs.pop(self.window._effect_job)()
 
     def test_opening_reads_memory_without_cleaning(self):
         self.assertEqual(self.window.button.cget("text"), "一键整理工作集")
@@ -357,6 +362,51 @@ class DesktopTests(unittest.TestCase):
             factory.return_value.show.assert_called_once_with()
         self.assertEqual(self.root.size, size)
         self.assertEqual(self.app.calls, [])
+
+    def test_cleanup_motion_waits_for_backend_and_keeps_real_samples_separate(self):
+        window = self.live_window()
+        window.maintain()
+        self.clock[0] = .45
+        self.root.jobs.pop(window._effect_job)()
+        self.assertEqual(window.percent.cget("text"), "0%")
+        self.assertEqual(window._percent, 75)
+        self.clock[0] = 5
+        self.root.jobs.pop(window._effect_job)()
+        self.assertEqual(window._effect["phase"], "waiting")
+        window.maintain()
+        self.assertEqual(len(self.app.cleanup_calls), 0)
+        window._worker.finish();window.pump()
+        self.assertEqual(len(self.app.cleanup_calls), 1)
+        self.assertEqual(window.button.cget("state"), "disabled")
+        self.root.jobs.pop(window._effect_job)()
+        self.assertEqual(window._effect["phase"], "returning")
+        self.clock[0] += .8
+        self.root.jobs.pop(window._effect_job)()
+        self.assertIsNone(window._effect)
+        self.assertEqual(window.percent.cget("text"), "75%")
+        self.assertEqual(window.gauge_label.cget("text"), "物理内存占用")
+        self.assertEqual(len(self.app.cleanup_calls), 1)
+        self.assertEqual(window.button.cget("state"), "normal")
+
+    def test_fast_cleanup_result_waits_for_visual_return_before_becoming_visible(self):
+        window = self.live_window()
+        window.maintain()
+        window._worker.finish();window.pump()
+        self.assertEqual(window._effect["phase"], "emptying")
+        self.assertIsNone(window._latest_report)
+        self.assertEqual(window.button.cget("state"), "disabled")
+        self.clock[0] = .45
+        self.root.jobs.pop(window._effect_job)()
+        self.assertEqual(window.percent.cget("text"), "0%")
+        self.clock[0] = .7
+        self.root.jobs.pop(window._effect_job)()
+        self.assertEqual(window._effect["phase"], "returning")
+        self.assertIsNone(window._latest_report)
+        self.clock[0] = 1.5
+        self.root.jobs.pop(window._effect_job)()
+        self.assertIsNone(window._effect)
+        self.assertIsNotNone(window._latest_report)
+        self.assertEqual(len(self.app.cleanup_calls), 1)
 
     def test_ring_tracks_known_percentages(self):
         for available, expected in ((75, 25), (25, 75)):
@@ -492,15 +542,16 @@ class DesktopTests(unittest.TestCase):
         worker = window._worker
         self.current_sample.metrics["physical"]["available_bytes"] = 6 * 1024 ** 3
         self.next_memory()
-        self.advance_animation(0.2)
+        self.clock[0] = .45
+        self.root.jobs.pop(window._effect_job)()
         self.assertTrue(worker.is_alive())
-        self.assertEqual(window.percent.cget("text"), "50%")
-        self.assertEqual(window._ring_frame[1], 50)
-        self.assertIn("4.000 GiB", window.available.cget("text"))
+        self.assertEqual(window.percent.cget("text"), "0%")
+        self.assertEqual(window._ring_frame[1], 0)
+        self.assertIn("动效", window.gauge_label.cget("text"))
+        self.assertEqual(window._percent, 25)
+        self.assertIn("2.000 GiB", window.available.cget("text"))
         self.assertEqual(self.app.calls, [])
         self.assertIn("正在整理", window.status.cget("text"))
-        self.advance_animation(0.4)
-        self.assertEqual(window.percent.cget("text"), "25%")
         self.finish_worker()
         self.assertEqual([c[0] for c in self.app.calls], ["maintain"])
         self.assertTrue(self.app.lightweight)
@@ -520,7 +571,7 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("2.00 → 3.00 GiB", note)
         self.current_sample.metrics["physical"]["available_bytes"] = 1024 ** 3
         self.next_memory()
-        self.advance_animation(0.4)
+        self.advance_animation(self.clock[0] + 0.4)
         self.assertEqual(window.percent.cget("text"), "88%")
         self.assertEqual(window.result.cget("text"), result)
         self.assertEqual(window.result_note.cget("text"), note)
