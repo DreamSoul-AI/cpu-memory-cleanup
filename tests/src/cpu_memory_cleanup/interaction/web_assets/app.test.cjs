@@ -70,7 +70,10 @@ test('live updates leave recent action feedback and original report intact',()=>
 
 test('effect empties, waits for backend, and returns while raw occupancy stays real',async()=>{
   const p=page();p.run(`memory(${snapshot(60)});startEffect()`);
-  p.tick(450);
+  p.tick(1500);
+  assert.equal(p.elements.percent.textContent,'20%');
+  assert.equal(p.run('effect.phase'),'emptying');
+  p.tick(3000);
   assert.equal(p.elements.percent.textContent,'0%');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'40');
   assert.match(p.elements['gauge-label'].textContent,/动效等待/);
@@ -78,7 +81,7 @@ test('effect empties, waits for backend, and returns while raw occupancy stays r
   assert.equal(p.elements.percent.textContent,'0%');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'30');
   assert.equal(p.run('effect.phase'),'waiting');
-  const done=p.run('finishEffect(null)');p.tick(5100);p.tick(5800);await done;
+  const done=p.run('finishEffect(null)');p.tick(5100);p.tick(6300);await done;
   assert.equal(p.elements.percent.textContent,'30%');
   assert.equal(p.elements['gauge-label'].textContent,'物理内存占用');
   assert.equal(p.run('effect'),null);
@@ -99,9 +102,9 @@ test('early completion cannot bypass emptying and repeated clicks dispatch once'
   assert.equal(p.run('effect.ready'),true);
   assert.equal(p.elements['global-clean'].disabled,true);
   assert.notEqual(p.elements['recent-title']?.textContent,'真实结果');
-  p.tick(450);assert.equal(p.elements.percent.textContent,'0%');
-  p.tick(650);assert.equal(p.run('effect.phase'),'returning');
-  p.tick(1350);await pending;
+  p.tick(3000);assert.equal(p.elements.percent.textContent,'0%');
+  p.tick(3200);assert.equal(p.run('effect.phase'),'returning');
+  p.tick(4400);await pending;
   assert.equal(p.run('actionCount'),1);
   assert.equal(p.elements['recent-title'].textContent,'真实结果');
   assert.equal(p.run('savedReport.samples[0].metrics.physical.available_bytes'),70);

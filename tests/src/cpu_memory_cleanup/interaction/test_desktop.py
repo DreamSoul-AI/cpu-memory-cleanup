@@ -242,7 +242,7 @@ class DesktopTests(unittest.TestCase):
     def finish_worker(self):
         self.window._worker.finish()
         self.window.pump()
-        for _ in range(4):
+        for _ in range(6):
             if self.window._effect is None:break
             self.clock[0] += 1
             self.root.jobs.pop(self.window._effect_job)()
@@ -366,7 +366,11 @@ class DesktopTests(unittest.TestCase):
     def test_cleanup_motion_waits_for_backend_and_keeps_real_samples_separate(self):
         window = self.live_window()
         window.maintain()
-        self.clock[0] = .45
+        self.clock[0] = 1.5
+        self.root.jobs.pop(window._effect_job)()
+        self.assertEqual(window.percent.cget("text"), "38%")
+        self.assertEqual(window._effect["phase"], "emptying")
+        self.clock[0] = 3.0
         self.root.jobs.pop(window._effect_job)()
         self.assertEqual(window.percent.cget("text"), "0%")
         self.assertEqual(window._percent, 75)
@@ -380,7 +384,7 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(window.button.cget("state"), "disabled")
         self.root.jobs.pop(window._effect_job)()
         self.assertEqual(window._effect["phase"], "returning")
-        self.clock[0] += .8
+        self.clock[0] += 1.3
         self.root.jobs.pop(window._effect_job)()
         self.assertIsNone(window._effect)
         self.assertEqual(window.percent.cget("text"), "75%")
@@ -395,14 +399,14 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(window._effect["phase"], "emptying")
         self.assertIsNone(window._latest_report)
         self.assertEqual(window.button.cget("state"), "disabled")
-        self.clock[0] = .45
+        self.clock[0] = 3.0
         self.root.jobs.pop(window._effect_job)()
         self.assertEqual(window.percent.cget("text"), "0%")
-        self.clock[0] = .7
+        self.clock[0] = 3.25
         self.root.jobs.pop(window._effect_job)()
         self.assertEqual(window._effect["phase"], "returning")
         self.assertIsNone(window._latest_report)
-        self.clock[0] = 1.5
+        self.clock[0] = 4.6
         self.root.jobs.pop(window._effect_job)()
         self.assertIsNone(window._effect)
         self.assertIsNotNone(window._latest_report)
@@ -542,7 +546,7 @@ class DesktopTests(unittest.TestCase):
         worker = window._worker
         self.current_sample.metrics["physical"]["available_bytes"] = 6 * 1024 ** 3
         self.next_memory()
-        self.clock[0] = .45
+        self.clock[0] = 3.0
         self.root.jobs.pop(window._effect_job)()
         self.assertTrue(worker.is_alive())
         self.assertEqual(window.percent.cget("text"), "0%")

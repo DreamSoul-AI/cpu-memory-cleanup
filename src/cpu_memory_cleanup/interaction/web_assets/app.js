@@ -110,13 +110,13 @@ function effectTick(now){
   effectFrame=null;if(!effect)return;
   const e=effect;
   if(e.phase==="emptying"){
-    const p=Math.min(1,(now-e.started)/450);
-    e.value=e.from*(1-p)*(1-p);
+    const p=Math.min(1,(now-e.started)/3000);
+    e.value=e.from*(1-p*p*(3-2*p));
     if(p===1){e.phase="waiting";e.started=now;e.value=0;}
   }else if(e.phase==="waiting" && e.ready && now-e.started>=200){
     e.phase="returning";e.started=now;e.target=occupancy(latestMemory);
   }else if(e.phase==="returning"){
-    const p=Math.min(1,(now-e.started)/700),weight=1-(1-p)**3;
+    const p=Math.min(1,(now-e.started)/1200),weight=1-(1-p)**3;
     e.value=(e.target||0)*weight;
     if(p===1){settleEffect();return;}
   }

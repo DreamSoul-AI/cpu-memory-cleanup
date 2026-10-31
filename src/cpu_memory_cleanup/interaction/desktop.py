@@ -403,8 +403,8 @@ class MemoryWindow:
             return
         e, now = self._effect, self._clock()
         if e["phase"] == "emptying":
-            progress = min(1., (now-e["started"])/.45)
-            e["value"] = e["from"]*(1-progress)**2
+            progress = min(1., (now-e["started"])/3.0)
+            e["value"] = e["from"]*(1-progress*progress*(3-2*progress))
             if progress == 1:
                 e.update(phase="waiting", started=now, value=0.)
         elif e["phase"] == "waiting" and e["pending"] is not None and now-e["started"] >= .2:
@@ -413,7 +413,7 @@ class MemoryWindow:
             target = (total-available)/total*100 if total and available is not None and 0 <= available <= total else 0.
             e.update(phase="returning", started=now, target=target)
         elif e["phase"] == "returning":
-            progress = min(1., (now-e["started"])/.7)
+            progress = min(1., (now-e["started"])/1.2)
             e["value"] = e["target"]*(1-(1-progress)**3)
             if progress == 1:
                 report, error = e["pending"]

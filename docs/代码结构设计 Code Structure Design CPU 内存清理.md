@@ -393,6 +393,8 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 ## 过程动效的当前映射
 沿用现有模块，不增加第二个清理执行器。desktop.py的_effect与_effect_job维护归零、等待、回弹和待呈现报告，_latest_values保存有效真实读数，_percent仍是实际占用；圆环绘制只在过程内读取独立动效值。后台报告由pump登记，_apply_report在收束后复用原结果呈现，关闭取消定时器并按原流程收尾。
 
-web_assets/app.js用effect、effectFrame及latestMemory分开同样职责，finishEffect只等待本地动效，不重复请求清理。归零450毫秒、空环至少200毫秒、回弹700毫秒是当前视觉参数，不属于系统动作进度合同。横条的aria-valuenow和容量保持真实值，圆环标签标明动效。减少动画偏好或隐藏页面时允许跳过视觉收束，但仍等待后台实际终态。
+web_assets/app.js用effect、effectFrame及latestMemory分开同样职责，finishEffect只等待本地动效，不重复请求清理。归零3000毫秒、空环至少200毫秒、回弹1200毫秒是当前视觉参数，不属于系统动作进度合同。横条的aria-valuenow和容量保持真实值，圆环标签标明动效。减少动画偏好或隐藏页面时允许跳过视觉收束，但仍等待后台实际终态。
 
 tests中新增后台提前返回仍先归零、保持等待不重复派发、动效0与实际占用并存、回弹后才显示报告，以及减少动画路径。纯动效不增加系统权限或写入运行样本，Package参数和记录版本不变。
+
+归零采用三秒平缓衰减，进度p在0至1之间，显示比例为1−p²(3−2p)，两端一致。曲线中点仍显示起始值的一半，前后速度平顺，不再使用0.45秒且前半段急降的曲线。此p仅是动效时间，不是清理完成比例。
