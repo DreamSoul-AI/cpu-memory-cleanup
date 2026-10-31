@@ -470,3 +470,70 @@ Microsoft [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/
 优先三个小范围任务：一是修正可见状态绑定并验证；二是主界面收紧为紧凑使用、详情按需展开；三是把最近结果放在主按钮附近，以实际时间、范围及带方向变化说明这次发生了什么。三者仍复用现有Package、动作与记录，不改变清理机制。
 
 更多清理区域、热键、托盘、开机启动和更激进的自动化暂不作为优先增量；同类存在这些功能不等于当前产品需要。WinMemoryCleaner对差额取绝对值的做法继续不采用，变化方向、非永久释放及未验证提速的边界保留。上述三项及桌面入口整合已按开发计划实施，原生可见窗口验收单列待验证。机制结论不因界面优化扩展为性能收益；工程过程归日期开发记录。
+
+# 十五、归零再回升：显示动效与内存机制的区分
+## （一）问题、范围与结论
+2026年10月31日，针对加速球从约40下降至0、等待后回到当前占用值的描述，复核360公开说明、此前固定提交的同类清理源码及本仓库19bfdea。此处同时分析“真实驻留变化”和“独立过程动效”两种解释，未运行360、同类程序或本机清理，也未修改产品界面。用户描述作为待解释现象，未取得具体360版本、显示模式、逐帧视频和同步系统原始读数，不能将其补写为本轮实测。
+
+当前可支持的判断：
+- **前端动效解释在实现上成立**：显示位置可独立从旧位置降到0，后台只调用一次清理，调用收尾后再回到最新有效读数。中途的0是过程表现，不要求物理内存真的为0，也不证明换用了更强清理API。这是工程推导，不是取得了360动画源码
+- **同类工具已经分开动作反馈与实际占用**：WinMemoryCleaner将真实内存条、从0开始的步骤进度及忙碌图标分别维护。所读路径没有显示将实际内存使用率主动置零再回弹的正常流程，不能把其进度0当内存0，也不能据此证明整个仓库任何位置都没有其它动画
+- **本项目的全局工作集路线并非独有弱化方案**：Mem Reduct、WinMemClean、System Informer和WinMemoryCleaner无排除名单分支都可见同一类内存列表命令。组合区域、排除范围、系统版本和权限仍有区别，同类路径不能证明与360内部实现一致
+- **尚不能定案360采用哪种解释**：官方资料说明其部分版本有智能数值与内存数值两种模式，但未披露这里描述的归零动画、时间曲线或完整清理算法。搜索没有找到可直接核验该动画的360官方源码或时序说明。不能把“未找到”写成“不存在”，也不能反过来断言它一定只是动画
+
+## （二）同类源码的具体证据
+复用此前固定提交，不按仓库最新版本泛化。WinMemoryCleaner为a19f25719c9b9a58a0acea99cb8adb4737d2d318，WinMemClean为36729828ed032b6fd6dc08b0c0788a125f9bd28d，Mem Reduct为04402de8b6a8ff9d1c5517c675d87c346655323c，System Informer为2e1349b065e5cf187db390697062fc95c846de33。
+
+| **对象与位置** | **实际读到的行为** | **对归零现象的意义** |
+| --- | --- | --- |
+| [WinMemoryCleaner MainWindow.xaml 647行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/View/Window/MainWindow.xaml#L647)及865行 | 内存条绑定Computer.Memory.Physical.Used.Percentage，另一条进度绑定OptimizationProgressValue，最大值为步骤总数 | 两条百分比用途不同，不能因步骤进度从0开始就认定系统占用归零 |
+| [MainViewModel OptimizeAsync 1817行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L1817)及Optimize 1749行 | 派发前将步骤进度置0，后台执行选定区域，之后重新取内存并在finally结束忙碌状态 | 完成依据后台任务收尾，不等待内存自然回到原水平 |
+| [ComputerService Optimize 147行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L147)及MainViewModel 1738行 | 每个区域开始时上报步骤编号，进度百分比由步骤编号/总数计算 | 这是区域步骤反馈，不是原生清页字节进度或驻留量变化曲线 |
+| [NotificationService 565行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/NotificationService.cs#L565)及522行 | 忙碌图标用200毫秒计时器每次旋转90度。数值图标绘制读取memory.Physical.Used.Percentage，见327行 | 动效时间轴可以独立于系统指标，这个已见实例是图标旋转，不是360归零动画 |
+| [ComputerService OptimizeWorkingSet 710行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710)和[Constants 166行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Core/Constants.cs#L166) | 有进程排除时逐项EmptyWorkingSet，无排除时NtSetSystemInformation的信息类80及MemoryEmptyWorkingSets=2 | 无排除分支与本项目全局主按钮机制同类，视觉差别不能直接推出调用不同 |
+| [Mem Reduct main.c 388行](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L388)及471行 | 前置读数、选定区域调用、后置读数。Working Set分支使用MemoryEmptyWorkingSets；结果差额无减少时截为0 | 此处0是本次差额，不是整机占用为0，没有读到本路径等待占用回升趋稳后才完成 |
+| [WinMemClean lib.rs 361行](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L361)及450行 | before快照、依次执行所选区域、after快照，WorkingSet使用EmptyWorkingSets枚举2，nt.rs的信息类为80 | 核心报告保留前后值，不提供把内存曲线压到0的保证 |
+| [System Informer memlists.c 196行](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L196)及244行 | 统一调用内存列表命令，工作集动作传MemoryEmptyWorkingSets，按状态码返回结果 | 说明同一动作路径的另一实现，不证明其UI或360具有相同动画；其提权服务回退不在本项目采用范围 |
+
+WinMemoryCleaner的内存对象也有初始化0值，Memory getter错误处理与初始值不能当作设计好的清理动画证据。本章只分析已读的取值、优化、绑定、进度及通知路径，不将字符串检索到的每个0都解释为同一种行为。具体阅读范围和校验回执见 [源码复核记录](<运行记录 Run Record/2026-10-31 归零回升动效源码复核.md>)。
+
+## （三）360公开资料与仍然缺失的证据
+360在2018年的[12.0智能数值说明](https://bbs.360.cn/thread-15621325-1-1.html)中解释，智能值组合内存、CPU、I/O及网络指标，且可切回内存数值。当前[清理加速产品页](https://weishi.360.cn/clear/)也介绍智能数值及多类加速功能，但没有给出本问题的逐帧轨迹或算法。历史功能说明不能直接指定用户当前安装的版本、模式和归零原因。
+
+因此保留三种候选解释：①界面主动播放过程动效，②显示值是综合指标、进度或其它口径，③真实可分页工作集被裁剪后重新装入，且显示/采样没有捕获完整轨迹。这些解释可能同时存在。操作系统工作集包含可分页驻留，进程再次访问缺失页面时可经缺页处理重新加入；这能解释某些回升，但不支持整机所有物理内存都能被工具清到0。[Microsoft工作集定义](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)
+
+后续若要对360本体定案，应固定版本和显示模式，关联屏幕轨迹与同时间轴的系统指标。没有这组证据时，回弹“看起来像真实内存”或“看起来像动效”都不足以确定实现。本轮不启动该实验，也不安装、反编译或操作360。
+
+## （四）与本项目当前机制对照
+| **维度** | **本项目19bfdea** | **判断** |
+| --- | --- | --- |
+| 系统动作 | Windows接入的系统范围working-set以信息类80、命令2至多调用一次，并核对权限恢复 | 与上述同类的全局工作集分支同类，不等于与全部区域组合或360相同 |
+| 实际读数 | GetPerformanceInfo返回PhysicalTotal及PhysicalAvailable，界面计算总量减可用量后的比例 | 这是整机物理量口径，不是360综合分值。Available包含Standby、Free及Zero，页面内容不一定消失。[字段定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information) |
+| 普通显示 | 桌面约0.5秒、可见网页约1秒刷新，均将前后读数在约0.4秒内平滑插值 | 若真实读取只得到40和20，就只会显示40到20，中间帧由插值产生。不会自动经过0，也可能漏过短于采样间隔的低谷 |
+| 当前清理流程 | 主按钮要求3秒后续观察，保存前置、即时后置及三个后续样本，仍只调用一次 | 这是新增的采样窗口，不是归零/回弹动效，不证明360也观察3秒或等待稳定 |
+| 当前结果 | 取同一运行前后样本的净差额，动画值不入报告 | 净变化和动画到达0没有数值上的必然关系。不能以动画最低点计算真实释放量 |
+| 当前完成 | 观察窗口完成后返回报告，界面展示观察结束；普通0.4秒插值可能仍在播放 | 动作收尾、采样完成、动画播放结束是不同事件，当前尚无独立的“清理归零—回弹”交互状态机 |
+
+我此前将“必须等内存回升趋稳才完成”作为对该现象的解释，证据不足。它不能从用户描述或这些同类源码推出，不应据此直接增加持续监测、稳定阈值或更激进的清理。3秒观察也只能表示当前实现选定的窗口，不能反向证明该设计是360机制要求。
+
+## （五）可采用的动效方案，尚未实施
+用户描述可以转化为一个独立的呈现方案，保留真实指标与动作事实：
+
+```mermaid
+flowchart TD
+    CLICK["单击主按钮"] --> BACKEND["后台只派发一次清理"]
+    CLICK --> EMPTY["前端从当前位置降到空环"]
+    EMPTY --> WAIT["空环等待，标明整理中"]
+    BACKEND --> FACT["返回动作事实和有效读数"]
+    WAIT --> JOIN{"后台已收尾且收束动效可开始？"}
+    FACT --> JOIN
+    JOIN --> RETURN["从空环回到选定的最新有效读数"]
+    RETURN --> DONE["动画收束，显示真实结果，恢复实时刷新"]
+    FACT -."记录与结果独立保存".-> RECORD["原始快照与动作事实，不接收动画值"]
+```
+
+例如旧占用40%、后台读到32%时，呈现可走“40→0→32”，系统真实记录仍是40和32。此例只是状态与数值说明，不是360实测曲线，也不要求把真实内存清到0。网页requestAnimationFrame可按时间戳推进绘制，动画完成事件可独立等待，桌面已有定时绘制能力，不需要为此更换清理API。[动画帧机制](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)、[动画完成事件](https://developer.mozilla.org/en-US/docs/Web/API/Animation/finished)
+
+归零阶段应明确标为“整理中”，可让圆环/水位归零而暂不把中心数字标成“物理占用0%”。真实容量及报告继续保留其含义。后台提前完成时可以等待短的视觉收束，但后台未返回不能仅因动效播放完就显示成功。回弹的终点可以固定为开始回弹时取得的有效快照，动画收束后再恢复实时刷新，不必无限追逐变化中的系统占用直到所谓“完全回升”。失败则按实际结果退出忙碌状态，不播放成功结论。
+
+是否采用该方案、阶段时长和视觉曲线应作为下一次交互设计决定。本轮只完成调研，不改界面、Package、采样参数或默认清理范围。相比直接替换清理方法，现有证据优先支持把过程动效与实测指标的职责分清，再决定是否实施该体验。
