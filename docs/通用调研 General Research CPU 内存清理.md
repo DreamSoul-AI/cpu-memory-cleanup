@@ -410,7 +410,7 @@ Knowledge 本地 README 与通知工具指南只证明该仓库能承载独立�
 | --- | --- | --- | --- |
 | 清理范围 | 两个项目都在存在排除名单时改为枚举进程、逐个整理工作集；没有排除项则可走全局路线 | memory_cleanup保留全局；Package、CLI与正式网页支持明确身份批次和路径/实例保护 | 已采用用户选择的固定目标，逐项验证和记录；不持续全机遍历或自动选择高占用对象 |
 | 清理区域 | WinMemClean的MemoryArea覆盖工作集、Standby、文件缓存等，调用由nt.rs分开；WinMemoryCleaner同样按区域执行 | 系统接入已有working-set和standby；网页将后者置于高级手动系统范围 | 不把已有Standby当成未实现的新功能，不将更多区域或一键全部清理作为优先目标 |
-| 自动化 | WinMemClean有冷却、压力与低优先级Standby条件；WinMemoryCleaner有定时和低内存触发 | 网页打开不采样；可独立确认启用默认关闭的定时或持续压力规则 | 采用可配置持续窗口、冷却、固定保护快照与显式停止，不照搬竞品阈值；当前只有合成验证 |
+| 自动化 | WinMemClean有冷却、压力与低优先级Standby条件；WinMemoryCleaner有定时和低内存触发 | 可见网页持续轻量显示；独立确认才启用默认关闭的定时或持续压力整理规则 | 采用可配置持续窗口、冷却、固定保护快照与显式停止，不照搬竞品阈值；当前只有合成验证 |
 | 使用体验 | ViewModel以忙碌状态阻止重入，清理后更新内存和通知；排除列表用于表达用户不想处理哪些对象 | 已有绿色按钮、范围选择、逐项结果、保护设置与规则状态 | 当前主入口为localhost网页，旧桌面兼容保留，不引入CPU诊断前置步骤 |
 | 结果解释 | before/after与区域结果集中返回，界面据此通知 | 已有RunReport和动作记录，部分差额在桌面计算，轻量流程仍输出通用诊断 | 结果统一作为定向功能配套，不再独占下一轮主线 |
 
@@ -451,3 +451,22 @@ Microsoft [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/
 
 ## 本机机制验证的证据边界
 2026年10月31日，经用户授权从正式网页执行一次系统工作集整理，原生返回0、权限恢复；同一运行的系统可用量从17,542,221,824增至24,391,077,888 bytes（约16.34→22.72 GiB）。这支持当前机器上正式调用链能够执行和保存原始事实，不能把并发变化全部归因为清理收益，也不证明永久释放、再次访问成本或360内部实现。只执行一次，不作为性能实验，见 [真实验收记录](<运行记录 Run Record/2026-10-31 真实网页验收与启动修正.md>)。
+
+# 十四、当前网页体验的源码复核与优化建议
+2026年10月31日，针对实时显示和单击工作集已实现后的下一轮取舍，复读既有固定提交缓存，核对SHA256与原sources.json一致。在线固定链接此次返回Cache miss，未据此声称复核远端最新版本；本节来源是此前固定提交源码，不是竞品运行体验或性能测试。未运行竞品、主机采样或清理。
+
+## （一）复核来源与当前判断
+| **源码证据** | **读到的机制** | **本项目采用判断** |
+| --- | --- | --- |
+| [WinMemoryCleaner MainViewModel CompactMode](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L350) | 紧凑模式独立保存；CanOptimize核对动作选择及是否执行中，见274行 | 主界面优先状态、主按钮、最近一次结果；进程、保护和规则按需展开。是本项目界面建议，不复制其窗口实现 |
+| [同一文件 MonitorComputer](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L1698)及Optimize 1749行 | 监测循环约5秒读取且忙时跳过；动作有忙碌标记，完成后更新内存与命令状态 | 不照搬其间隔或忙时停止显示。本项目继续独立轻量显示，补齐数字、圆环、按钮及结果的一致状态 |
+| [WinMemClean OptimizationReport](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L142)与optimize_with_options 361行 | 核心返回before、after及逐区域结果，外层消费 | 将当前实时占用与最近动作的固定结果分开：主反馈用普通语言概括时间、范围与前后变化，原始报告继续折叠 |
+| [WinMemoryCleaner动作耗时](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L147) | 按区域Stopwatch计时，成功及错误分别记录 | 有真实计时依据时显示本次处理用时，不把快照时间差冒充原生API独占耗时，不为结果卡额外清理 |
+
+## （二）发现的具体实现差距
+当前app.js把--usage变量及working类写在id=meter的横条元素上，而styles.css的conic-gradient和working动画作用于独立.gauge圆环。两者在HTML中互为兄弟，变量不会从横条继承到圆环，导致数值/横条可更新而圆环填充及处理中光晕没有正确绑定。该结论来自源码对应关系，尚未在本轮浏览器重新复现。登记WEB-02，先修可见一致性再增加其他交互；不能将此前HTTP测试通过等同于圆环视觉已正确。
+
+## （三）建议顺序与不采用项
+优先三个小范围任务：一是修正可见状态绑定并验证；二是主界面收紧为紧凑使用、详情按需展开；三是把最近结果放在主按钮附近，以实际时间、范围及带方向变化说明这次发生了什么。三者仍复用现有Package、动作与记录，不改变清理机制。
+
+更多清理区域、热键、托盘、开机启动和更激进的自动化暂不作为优先增量；同类存在这些功能不等于当前产品需要。WinMemoryCleaner对差额取绝对值的做法继续不采用，变化方向、非永久释放及未验证提速的边界保留。具体候选进入开发计划，尚未因登记而实施。
