@@ -389,3 +389,10 @@ presentation.summary不修改RunReport；摘要保留范围、记录时间、整
 圆环绘制由ring.RingRaster生成标准PPM图像，desktop用Tk PhotoImage显示；内外缘和进度末端以像素覆盖混色，几何计算按尺寸缓存，相同0.1%呈现值不重复上传图像。test_ring.py验证方向、边缘中间色及未知/满环，不增加第三方图形依赖或后台线程。
 
 Application.memory_cleanup与maintain增加可选observation_seconds（整数0至5，默认0保持兼容）；仅轻量系统工作集允许此观察。主窗口和HTTP工作集动作传3。core在原生调用返回后保留即时快照，再等待并保存三个后续样本，header记post_observation_seconds、post_observation_interval_s及实际期望数量；沿用原记录格式、同一运行与资源收尾。presentation对成功的观察报告使用“观察结束”，不声称稳定。批次、Standby及旧API/CLI不自动扩大观察范围。
+
+## 过程动效的当前映射
+沿用现有模块，不增加第二个清理执行器。desktop.py的_effect与_effect_job维护归零、等待、回弹和待呈现报告，_latest_values保存有效真实读数，_percent仍是实际占用；圆环绘制只在过程内读取独立动效值。后台报告由pump登记，_apply_report在收束后复用原结果呈现，关闭取消定时器并按原流程收尾。
+
+web_assets/app.js用effect、effectFrame及latestMemory分开同样职责，finishEffect只等待本地动效，不重复请求清理。归零450毫秒、空环至少200毫秒、回弹700毫秒是当前视觉参数，不属于系统动作进度合同。横条的aria-valuenow和容量保持真实值，圆环标签标明动效。减少动画偏好或隐藏页面时允许跳过视觉收束，但仍等待后台实际终态。
+
+tests中新增后台提前返回仍先归零、保持等待不重复派发、动效0与实际占用并存、回弹后才显示报告，以及减少动画路径。纯动效不增加系统权限或写入运行样本，Package参数和记录版本不变。
