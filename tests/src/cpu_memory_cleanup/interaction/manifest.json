@@ -103,6 +103,28 @@
         "estimated_peak_memory_bytes": null,
         "estimate_source": "本地HTTP合成集成，含服务线程收尾"
       }
+    },
+    "test_presentation.py": {
+      "target": "src/cpu_memory_cleanup/interaction/presentation.py",
+      "tags": [
+        "offline",
+        "module_presentation"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_workspace.py": {
+      "target": "src/cpu_memory_cleanup/interaction/workspace.py",
+      "tags": [
+        "offline",
+        "module_workspace"
+      ],
+      "level": "integration",
+      "plans": [
+        "regression"
+      ]
     }
   }
 }

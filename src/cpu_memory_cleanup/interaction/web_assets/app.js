@@ -27,7 +27,7 @@ function controls() {
   el("read-status").textContent = liveEnabled ? "暂停实时显示" : "恢复实时显示";
   el("global-clean").textContent = busy && cleaning ? "正在整理…" : el("method").value === "standby" ? "高级：整理系统 Standby" : "✦ 一键整理工作集";
   el("global-clean").setAttribute("aria-busy",String(busy && cleaning));
-  el("meter").classList.toggle("working",busy && cleaning);
+  el("gauge").classList.toggle("working",busy && cleaning);
   el("read-targets").disabled ||= !readingSupported;
   el("global-clean").disabled ||= !supportedMethods.includes(el("method").value);
   for(const id of ["selected-clean","protect-selected","arm-rule"]) el(id).disabled = busy || stopped || !selected.size || !token;
@@ -87,7 +87,7 @@ function paintMemory(value){
   const pct=valid?(total-available)/total*100:null;
   el("percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
   el("fill").style.width=`${pct||0}%`;
-  el("meter").style.setProperty("--usage",`${pct==null?0:pct*3.6}deg`);
+  el("gauge").style.setProperty("--usage",`${pct==null?0:pct*3.6}deg`);
   if(pct!=null)el("meter").setAttribute("aria-valuenow",String(Math.round(pct)));else el("meter").removeAttribute("aria-valuenow");
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
   el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
@@ -136,6 +136,8 @@ function present(job){
     return;
   }
   if(job.kind==="status"){if(report.completion!=="success")error(JSON.stringify(report.errors.concat(report.samples.at(-1)?.errors||[])));return;}
+  const feedback=job.presentation;
+  if(feedback){el("recent-title").textContent=feedback.title;el("recent-note").textContent=feedback.note;el("recent-context").textContent=feedback.context;}
   el("result-items").replaceChildren();
   const action=report.action||{};
   if(report.errors?.length) error(report.errors.map(item=>item.message||item.type||"未知错误").join("；"));

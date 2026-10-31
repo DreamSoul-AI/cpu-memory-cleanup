@@ -99,28 +99,27 @@ class ProcessTests(unittest.TestCase):
 
     def test_fake_window_selects_target_without_changing_global_button(self):
         from cpu_memory_cleanup.interaction import desktop
-        from ...interaction.test_desktop import FakeTk, Widget, Root, DeferredThread
-        class Listbox(Widget):
-            def curselection(self):
-                return (0,)
-        class Tk(FakeTk):
-            pass
-        Tk.Listbox = Listbox
+        from cpu_memory_cleanup.interaction.workspace import Workspace
+        from cpu_memory_cleanup.application.targets import targets_from_rows
+        from ...interaction.test_desktop import FakeTk, Root, DeferredThread
+        from unittest.mock import Mock
         with tempfile.TemporaryDirectory() as directory, patch.object(desktop.threading, "Thread", DeferredThread):
-            window = desktop.MemoryWindow(Root(), self.app, Tk, output_dir=directory)
+            window = desktop.MemoryWindow(Root(), self.app, FakeTk, output_dir=directory)
+            report = self.app.memory_targets()
             self.assertEqual(self.actions, [])
-            window.load_targets()
-            window._worker.finish()
-            window.pump()
-            self.assertEqual(window._targets[0].pid, 11)
-            self.assertEqual(self.actions, [])
-            window.maintain_target()
+            workspace = Workspace.__new__(Workspace)
+            workspace.owner, workspace.app = window, self.app
+            workspace.settings = {"protections": []}
+            workspace.window = None
+            workspace.messagebox = Mock()
+            workspace.messagebox.askyesno.return_value = True
+            workspace.submit_batch(targets_from_rows(report.samples[0].processes[:1]))
             window._worker.finish()
             window.pump()
             self.assertEqual(self.actions, [11])
-            self.assertEqual(window.button.cget("text"), "一键清理")
-            self.assertIn("目标工作集", window.result.cget("text"))
-            self.assertIn("PID 11", window.result_note.cget("text"))
+            self.assertEqual(window.button.cget("text"), "一键整理工作集")
+            self.assertIn("逐项整理", window.result.cget("text"))
+            self.assertEqual(window._latest_report.metadata["items"][0]["target"]["pid"], 11)
 
     def test_discovery_close_failure_blocks_later_maintenance(self):
         original = self.fake.close_handle

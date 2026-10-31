@@ -14,6 +14,7 @@ from ..application.targets import target_key, targets_from_rows
 from ..application.targets import plan_targets, validate_rules
 from ..application.settings import validate_preferences
 from ..application.policy import Policy, Rule
+from .presentation import summary
 from ..contracts import ActionRequest
 from ..contracts import json_pairs
 
@@ -121,7 +122,7 @@ class LocalWebServer(ThreadingHTTPServer):
                         if kind == "targets":
                             rows = report.samples[0].processes if report.samples else []
                             self.targets = {f"{t.pid}:{t.created_at}": t for t in targets_from_rows(rows)}
-                        self.jobs[job_id].update(state="finished", report=result)
+                        self.jobs[job_id].update(state="finished", report=result, presentation=summary(report))
                         if automatic and report.completion != "success":
                             self.policy.stop()
                             self.rule_error = "规则动作未完整成功，已停用；不会自动重试"

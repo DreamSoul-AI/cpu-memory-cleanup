@@ -5,7 +5,7 @@ import queue
 import threading
 import time
 
-from ..contracts import ProcessTarget
+from .presentation import summary
 
 GREEN = "#087F4F"
 BACKGROUND = "#F3F7F4"
@@ -91,71 +91,74 @@ class MemoryWindow:
         self._memory_events = queue.Queue()
         self._live = bool(getattr(app, "memory_display_available", False))
         self._memory_context = "最近更新：未知"
+        self._latest_report = None
+        self._report_details = "尚无运行记录"
+        self._paused = False
         root.title("内存清理")
-        root.geometry("380x560")
-        root.minsize(360, 540)
+        root.geometry("400x600")
+        root.minsize(370, 580)
         root.configure(bg=BACKGROUND)
-        body = tk.Frame(root, bg=BACKGROUND, padx=22, pady=14)
+        body = tk.Frame(root, bg=BACKGROUND, padx=26, pady=14)
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
-        tk.Label(body, text="内存清理", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 16, "bold")).grid(row=0, column=0)
-        self.ring = tk.Canvas(body, width=192, height=192, bg=BACKGROUND, highlightthickness=0)
-        self.ring.grid(row=1, column=0, pady=8)
-        self._ring_track = self.ring.create_oval(12, 12, 180, 180, outline="#DFEAE3", width=10)
-        self._ring_fill = self.ring.create_arc(12, 12, 180, 180, start=90, extent=0, style="arc", outline=GREEN, width=10)
+        heading = tk.Frame(body, bg=BACKGROUND)
+        heading.grid(row=0, column=0, sticky="ew")
+        heading.columnconfigure(0, weight=1)
+        tk.Label(heading, text="内存清理", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 16, "bold")).grid(row=0, column=0, sticky="w")
+        self.refresh_button = tk.Button(heading, text="暂停显示", command=self.toggle_live,
+            bg="#E5EFE8", fg="#426451", activebackground="#D9E9DF", relief="flat", bd=0,
+            font=("Microsoft YaHei UI", 9), padx=10, pady=6, cursor="hand2")
+        self.refresh_button.grid(row=0, column=1, sticky="e")
+        self.ring = tk.Canvas(body, width=156, height=156, bg=BACKGROUND, highlightthickness=0)
+        self.ring.grid(row=1, column=0, pady=(18, 12))
+        self._ring_track = self.ring.create_oval(12, 12, 144, 144, outline="#DFEAE3", width=10)
+        self._ring_fill = self.ring.create_arc(12, 12, 144, 144, start=90, extent=0, style="arc", outline=GREEN, width=10)
         self.ring.bind("<Configure>", lambda event: self._draw_ring(event.width))
-        self.percent = tk.Label(self.ring, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 44, "bold"))
+        self.percent = tk.Label(self.ring, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 40, "bold"))
         self.percent.place(relx=0.5, rely=0.43, anchor="center")
-        tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9)).place(relx=0.5, rely=0.66, anchor="center")
+        tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9)).place(relx=0.5, rely=0.68, anchor="center")
         self.available = tk.Label(body, text="已用 未知 / 共 未知", bg=BACKGROUND, fg="#52645B", font=("Microsoft YaHei UI", 10))
-        self.available.grid(row=2, column=0)
-        self.button = tk.Button(body, text="一键清理", command=self.maintain, bg=GREEN, fg="white",
-                                activebackground="#06643E", activeforeground="white", relief="flat", bd=0,
-                                font=("Microsoft YaHei UI", 16, "bold"), cursor="hand2", takefocus=True, pady=9)
-        self.button.grid(row=3, column=0, sticky="ew", pady=(16, 6))
-        self.status = tk.Label(body, text="随时查看内存，按需轻点清理。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=320)
-        self.status.grid(row=4, column=0, sticky="ew")
-        self.result = tk.Label(body, text="尚未清理", bg=BACKGROUND, fg=GREEN, font=("Microsoft YaHei UI", 13, "bold"), wraplength=320)
-        self.result.grid(row=5, column=0, sticky="ew", pady=(14, 0))
-        self.result_note = tk.Label(body, text="轻点绿色按钮，查看本次可用内存变化。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=320)
-        self.result_note.grid(row=6, column=0, sticky="ew", pady=4)
-        self.details_button = tk.Button(body, text="查看详情 ⌄", command=self.toggle_details, bg=BACKGROUND, fg="#52645B",
-                                        activebackground=BACKGROUND, relief="flat", bd=0, cursor="hand2")
-        self.details_button.grid(row=7, column=0, pady=4, sticky="w")
-        self.workspace_button = tk.Button(body, text="范围 · 方式 · 规则", command=self.open_workspace,
-                                         bg=BACKGROUND, fg="#087F4F", relief="flat")
-        self.workspace_button.grid(row=7, column=0, sticky="e")
-        self.detail_panel = tk.Frame(body, bg=BACKGROUND)
-        self.detail_panel.columnconfigure(0, weight=1)
-        self.commit = tk.Label(self.detail_panel, text="提交量 未知", bg=BACKGROUND, fg="#52645B", wraplength=320)
-        self.commit.grid(row=0, column=0, sticky="w")
-        self.context = tk.Label(self.detail_panel, text="最近更新：未知", bg=BACKGROUND, fg="#52645B", wraplength=320)
-        self.context.grid(row=1, column=0, sticky="w", pady=4)
-        controls = tk.Frame(self.detail_panel, bg=BACKGROUND)
-        controls.grid(row=2, column=0, sticky="w", pady=4)
-        self.refresh_button = tk.Button(controls, text="刷新内存", command=self.refresh)
-        self.refresh_button.pack(side="left", padx=(0, 8))
-        self.cancel_button = tk.Button(controls, text="取消当前请求", command=self.cancel, state="disabled")
-        self.cancel_button.pack(side="left")
-        self.details = tk.Text(self.detail_panel, height=4, width=36, wrap="word", state="disabled", relief="flat", bg="#EAF0EC", fg="#355A46")
-        self.details.grid(row=3, column=0, sticky="ew", pady=6)
-        self._targets = []
-        self.target_list = self.target_button = self.targets_button = None
-        if "process" in app.capabilities.scopes:
-            tk.Label(self.detail_panel, text="定向整理：只处理选中的一个进程", bg=BACKGROUND).grid(row=5, column=0, sticky="w")
-            self.targets_button = tk.Button(self.detail_panel, text="读取/刷新进程列表", command=self.load_targets)
-            self.targets_button.grid(row=6, column=0, sticky="ew")
-            self.target_list = tk.Listbox(self.detail_panel, height=4, exportselection=False)
-            self.target_list.grid(row=7, column=0, sticky="ew")
-            self.target_button = tk.Button(self.detail_panel, text="仅整理选中进程", command=self.maintain_target)
-            self.target_button.grid(row=8, column=0, sticky="ew")
-        self._details_open = False
-        tk.Label(self.detail_panel, text="整理部分内存页面的驻留状态，程序继续运行。\n不结束进程、不清 Standby；可能产生缺页和 I/O，\n不保证提速。提交量是系统承诺提供的内存。",
-                 bg=BACKGROUND, fg="#6C7D73", justify="left", wraplength=320, font=("Microsoft YaHei UI", 9)).grid(row=4, column=0, sticky="w")
+        self.available.grid(row=2, column=0, pady=(0, 10))
+        self.button = tk.Button(body, text="一键整理工作集", command=self.maintain, bg=GREEN, fg="white",
+            activebackground="#06643E", activeforeground="white", disabledforeground="#CDE6D7", relief="flat", bd=0,
+            font=("Microsoft YaHei UI", 15, "bold"), cursor="hand2", takefocus=True, pady=9)
+        self.button.grid(row=3, column=0, sticky="ew", pady=(8, 8))
+        self.button.bind("<Enter>", lambda event: self.button.configure(bg="#066F45") if self._worker is None else None)
+        self.button.bind("<Leave>", lambda event: self.button.configure(bg=GREEN))
+        self.status = tk.Label(body, text="实时查看，按需整理。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=340)
+        self.status.grid(row=4, column=0, sticky="ew", pady=(0, 14))
+        feedback = tk.Frame(body, bg="white", padx=16, pady=14)
+        feedback.grid(row=5, column=0, sticky="ew")
+        feedback.columnconfigure(0, weight=1)
+        tk.Label(feedback, text="最近一次整理", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 9)).grid(row=0, column=0, sticky="w")
+        self.result = tk.Label(feedback, text="尚未整理", bg="white", fg=GREEN, font=("Microsoft YaHei UI", 12, "bold"), anchor="w", justify="left", wraplength=300, height=2)
+        self.result.grid(row=1, column=0, sticky="ew", pady=(7, 5))
+        self.result_note = tk.Label(feedback, text="轻点绿色按钮，查看本次内存变化。", bg="white", fg="#6C7D73", font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=300, height=2)
+        self.result_note.grid(row=2, column=0, sticky="ew")
+        self.result_context = tk.Label(feedback, text="结果与实时读数分别保留", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 8), anchor="w", wraplength=300, height=2)
+        self.result_context.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+        controls = tk.Frame(body, bg=BACKGROUND)
+        controls.grid(row=6, column=0, sticky="ew", pady=(15, 0))
+        controls.columnconfigure(0, weight=1)
+        self.details_button = tk.Button(controls, text="详情与设置  ›", command=self.open_workspace,
+            bg=BACKGROUND, fg=GREEN, activebackground="#E5EFE8", relief="flat", bd=0,
+            font=("Microsoft YaHei UI", 10), cursor="hand2", pady=6)
+        self.details_button.grid(row=0, column=0, sticky="w")
+        self.cancel_button = tk.Button(controls, text="停止后续动作", command=self.cancel, state="disabled",
+            bg=BACKGROUND, fg="#52645B", relief="flat", bd=0, font=("Microsoft YaHei UI", 9))
+        self.cancel_button.grid(row=0, column=1, sticky="e")
+        self._commit_text = "提交量 未知"
+        self.context = tk.Label(body, text="最近更新：未知", bg=BACKGROUND, fg="#72877A", font=("Microsoft YaHei UI", 8), wraplength=340)
+        self.context.grid(row=7, column=0, sticky="w", pady=(8, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._controls()
         if not self._supported:
             self.status.configure(text=app.capabilities.reason or "当前系统不支持工作集整理，仅能查看内存。")
+        # 只在初次布局时按真实字体尺寸适配，状态更新不反复改变窗口尺寸。
+        root.update_idletasks()
+        width, height = max(400, root.winfo_reqwidth()), max(600, root.winfo_reqheight() + 12)
+        root.minsize(width, height)
+        root.geometry(f"{width}x{height}")
 
     def _draw_ring(self, width):
         height = self.ring.winfo_height()
@@ -172,7 +175,7 @@ class MemoryWindow:
                          if total and available is not None and 0 <= available <= total else None)
         self.percent.configure(text="未知" if self._percent is None else f"{self._percent:.0f}%")
         self.available.configure(text=f"已用 {_gib(None if self._percent is None else total - available)} / 共 {_gib(total)}")
-        self.commit.configure(text=f"提交量 {_gib(values['commit_used'])} / 上限 {_gib(values['commit_limit'])}")
+        self._commit_text = f"提交量 {_gib(values['commit_used'])} / 上限 {_gib(values['commit_limit'])}"
         self._draw_ring(self.ring.winfo_width())
 
     def _target_memory(self, view):
@@ -204,6 +207,8 @@ class MemoryWindow:
 
     def _poll_memory(self):
         self._memory_job = None
+        if self._paused or self._closing:
+            return
         if self._closing or self._closed:
             return
         if self._memory_worker is None:
@@ -220,23 +225,23 @@ class MemoryWindow:
                 self.context.configure(text=self._memory_context + " · 显示读取线程未启动，保留上次读数。")
         self._memory_job = self.root.after(500, self._poll_memory)
 
-    def toggle_details(self):
-        self._details_open = not self._details_open
-        if self._details_open:
-            self.detail_panel.grid(row=8, column=0, sticky="ew", pady=(8, 0))
+    def toggle_live(self):
+        self._paused = not self._paused
+        self.refresh_button.configure(text="恢复显示" if self._paused else "暂停显示")
+        if self._paused:
+            for job in (self._animation_job, self._memory_job):
+                if job is not None:
+                    self.root.after_cancel(job)
+            self._animation_job = self._memory_job = None
+            self.status.configure(text="实时显示已暂停，保留上次读数。")
         else:
-            self.detail_panel.grid_remove()
-        self.details_button.configure(text="收起详情 ⌃" if self._details_open else "查看详情 ⌄")
-        self.root.geometry(("380x980" if self.target_list is not None else "380x790") if self._details_open else "380x560")
+            self.status.configure(text="实时显示已恢复。")
+            self.refresh()
 
     def _controls(self):
         busy = self._closing or self._worker is not None or self.app.busy
         self.button.configure(state="normal" if self._supported and not busy else "disabled")
-        if self.target_button is not None:
-            self.target_button.configure(state="disabled" if busy or not self._targets else "normal")
-            self.targets_button.configure(state="disabled" if busy else "normal")
-            self.target_list.configure(state="disabled" if busy else "normal")
-        self.refresh_button.configure(state="disabled" if busy else "normal")
+        self.refresh_button.configure(state="disabled" if self._closing else "normal")
         self.cancel_button.configure(state="normal" if self._worker is not None and not self._closing else "disabled")
 
     def open_workspace(self):
@@ -317,28 +322,12 @@ class MemoryWindow:
         if self._submit(self.app.inspect, {"count": 1, "interval": 1, "with_processes": False}):
             self.status.configure(text="正在读取内存状态，不执行清理…")
 
-    def load_targets(self):
-        if self._submit(self.app.memory_targets):
-            self.status.configure(text="正在按需读取进程列表，不执行整理…")
-
-    def maintain_target(self):
-        selected = self.target_list.curselection() if self.target_list is not None else ()
-        if not selected or selected[0] >= len(self._targets):
-            self.status.configure(text="请先读取列表并选择一个进程。")
-            return
-        target = self._targets[selected[0]]
-        if self._submit(self.app.memory_process_cleanup, target, self._output_dir, confirmed=True,
-                        confirmation_source="desktop:selected-process-button"):
-            self.status.configure(text=f"正在仅整理 {target.name}（PID {target.pid}）…")
-            self.result.configure(text="正在整理选中进程…")
-            self.result_note.configure(text="不关闭程序，不处理其他进程。")
-
     def maintain(self):
         if not self._supported:
             return
         if self._submit(self.app.memory_cleanup, self._output_dir, confirmed=True,
                         confirmation_source="desktop:memory-clean-button"):
-            self.button.configure(text="正在清理…")
+            self.button.configure(text="正在整理…")
             self.status.configure(text="正在整理内存，当前读数持续更新。")
             self.result.configure(text="正在整理内存…")
             self.result_note.configure(text="完成后显示本次可用内存变化。")
@@ -396,9 +385,9 @@ class MemoryWindow:
                     self._snapshot_for_rules(report)
                 else:
                     self._rule_snapshot = None
-                if error is None and report.completion == "success" and report.samples:
+                if not self._paused and error is None and report.completion == "success" and report.samples:
                     self._target_memory(_present(report))
-                else:
+                elif not self._paused:
                     self.context.configure(text=self._memory_context + " · 最近读取失败，保留旧读数。")
         if self._worker is not None and not self._worker.is_alive():
             self._worker.join()
@@ -408,30 +397,24 @@ class MemoryWindow:
                     report, error = self._events.get_nowait()
                 except queue.Empty:
                     report, error = None, RuntimeError("工作线程未返回结果")
-                self.button.configure(text="一键清理")
+                self.button.configure(text="一键整理工作集")
                 if error is not None:
                     self.status.configure(text="本次未完成，保留旧读数与更新时间。")
-                    self.result.configure(text=str(error))
-                    self.result_note.configure(text="本次未完成，具体原因可在详情中查看。")
+                    self.result.configure(text="本次未完成")
+                    self.result_note.configure(text=str(error))
+                    self._report_details = str(error)
+                    self.result_context.configure(text="结果未知 · 不自动重试")
                 else:
                     view = _present(report)
-                    if report.mode == "targets" and self.target_list is not None:
-                        self._targets = []
-                        self.target_list.configure(state="normal")
-                        self.target_list.delete(0, "end")
-                        for row in report.samples[0].processes if report.samples else []:
-                            target = ProcessTarget(row["pid"], row["created_at"], row.get("name", ""))
-                            self._targets.append(target)
-                            self.target_list.insert("end", f"{target.name} | PID {target.pid} | {_gib(row.get('working_set_bytes'))}")
-                    elif not self._live:
+                    if not self._live and report.samples and report.mode not in ("review", "batch-review"):
                         self._target_memory(view)
-                    if report.mode == "maintain":
-                        self.result.configure(text=view["result"])
-                        self.result_note.configure(text=view["result_note"])
-                    self.details.configure(state="normal")
-                    self.details.delete("1.0", "end")
-                    self.details.insert("1.0", view["details"])
-                    self.details.configure(state="disabled")
+                    if report.mode in ("maintain", "batch", "review", "batch-review"):
+                        self._latest_report = report
+                        feedback = summary(report)
+                        self.result.configure(text=feedback["title"])
+                        self.result_note.configure(text=feedback["note"])
+                        self.result_context.configure(text=feedback["context"])
+                        self._report_details = view["details"]
                     completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消", "unknown": "结果未知"}.get(report.completion, report.completion)
                     self.status.configure(text=("清理：" if report.mode == "maintain" else "内存刷新：") + completion)
                     if self.workspace is not None:

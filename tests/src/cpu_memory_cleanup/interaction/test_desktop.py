@@ -155,6 +155,15 @@ class Root:
     def configure(self, **kwargs):
         pass
 
+    def update_idletasks(self):
+        pass
+
+    def winfo_reqwidth(self):
+        return 400
+
+    def winfo_reqheight(self):
+        return 600
+
     def protocol(self, name, function):
         self.close_callback = function
 
@@ -225,7 +234,7 @@ class DesktopTests(unittest.TestCase):
         self.window.pump()
 
     def test_opening_reads_memory_without_cleaning(self):
-        self.assertEqual(self.window.button.cget("text"), "一键清理")
+        self.assertEqual(self.window.button.cget("text"), "一键整理工作集")
         self.assertEqual(self.window.button.cget("bg"), desktop.GREEN)
         self.assertTrue(self.window.button.cget("takefocus"))
         self.window.start()
@@ -237,7 +246,7 @@ class DesktopTests(unittest.TestCase):
     def test_clean_button_dispatches_working_set_without_diagnosis_prerequisite(self):
         self.window.maintain()
         self.window.maintain()
-        self.assertEqual(self.window.button.cget("text"), "正在清理…")
+        self.assertEqual(self.window.button.cget("text"), "正在整理…")
         self.assertEqual(self.app.calls, [])
         self.finish_worker()
         self.assertEqual(len(self.app.calls), 1)
@@ -248,7 +257,7 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(request.confirmed)
         self.assertEqual(request.confirmation_source, "desktop:memory-clean-button")
         self.assertEqual(directory.name, "chosen")
-        self.assertEqual(self.window.button.cget("text"), "一键清理")
+        self.assertEqual(self.window.button.cget("text"), "一键整理工作集")
 
     def test_busy_cleanup_is_not_queued(self):
         self.window.start()
@@ -289,7 +298,7 @@ class DesktopTests(unittest.TestCase):
             self.finish_worker()
         self.assertEqual(self.window.percent.cget("text"), "75%")
         self.assertIn("6.000 GiB", self.window.available.cget("text"))
-        self.assertIn("0.000 GiB", self.window.commit.cget("text"))
+        self.assertIn("0.000 GiB", self.window._commit_text)
         self.assertIn("2026-10-26", self.window.context.cget("text"))
         self.assertEqual(self.window.ring.items[self.window._ring_fill]["extent"], -270)
 
@@ -324,20 +333,26 @@ class DesktopTests(unittest.TestCase):
                 self.assertNotIn("释放了", view["result"])
                 self.assertIn("2.000 GiB →", view["details"])
 
-    def test_compact_window_starts_with_details_collapsed(self):
-        self.assertFalse(self.window._details_open)
-        self.assertNotIn("grid", self.window.detail_panel.options)
+    def test_compact_window_reuses_one_details_workspace_without_resizing_or_reading(self):
         width, height = (int(value) for value in self.root.size.split("x"))
         self.assertLess(width, 460)
-        self.assertLess(height, 660)
-        self.assertEqual(self.window.button.cget("text"), "一键清理")
+        self.assertLess(height, 900)
+        self.assertEqual(self.window.details_button.cget("text"), "详情与设置  ›")
+        self.assertFalse(hasattr(self.window, "workspace_button"))
         self.assertEqual(self.window.ring.items[self.window._ring_fill]["extent"], 0)
-        self.window.toggle_details()
-        self.assertTrue(self.window._details_open)
-        self.assertTrue(self.window.detail_panel.options["visible"])
-        self.window.toggle_details()
-        self.assertFalse(self.window._details_open)
-        self.assertFalse(self.window.detail_panel.options["visible"])
+        size = self.root.size
+        with patch("cpu_memory_cleanup.interaction.workspace.Workspace") as factory:
+            self.window.open_workspace()
+            self.window.open_workspace()
+            factory.assert_called_once_with(self.window, settings_path=None)
+            factory.return_value.show.assert_called_once_with()
+        self.assertEqual(self.root.size, size)
+        self.assertEqual(self.app.calls, [])
+
+    def test_ring_tracks_known_percentages(self):
+        for available, expected in ((75, -90), (25, -270)):
+            self.window._paint_memory({"total":100, "available":available, "commit_used":None, "commit_limit":None})
+            self.assertEqual(self.window.ring.items["arc"]["extent"], expected)
 
     def test_unsupported_working_set_never_falls_back_to_standby(self):
         self.app.capabilities = Capabilities("fake", "available", ("standby",))
@@ -480,17 +495,17 @@ class DesktopTests(unittest.TestCase):
         with patch.object(self.app, "maintain", return_value=report):
             window.maintain()
             self.finish_worker()
-        result, details = window.result.cget("text"), window.details.cget("text")
+        result, details = window.result.cget("text"), window._report_details
         note = window.result_note.cget("text")
         self.assertIn("可用内存增加", result)
-        self.assertIn("2.000 GiB → 3.000 GiB", note)
+        self.assertIn("2.00 → 3.00 GiB", note)
         self.current_sample.metrics["physical"]["available_bytes"] = 1024 ** 3
         self.next_memory()
         self.advance_animation(0.4)
         self.assertEqual(window.percent.cget("text"), "88%")
         self.assertEqual(window.result.cget("text"), result)
         self.assertEqual(window.result_note.cget("text"), note)
-        self.assertEqual(window.details.cget("text"), details)
+        self.assertEqual(window._report_details, details)
 
     def test_smooth_retarget_starts_from_current_display_and_unknown_does_not_animate_to_zero(self):
         window = self.live_window()
