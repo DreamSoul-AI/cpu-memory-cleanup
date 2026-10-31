@@ -1,15 +1,24 @@
 "use strict";
 const el = (id) => document.getElementById(id);
 let cleaning = false;
-const decoration = typeof CleanupEffect === "function" ? new CleanupEffect(el("decoration-fill"),el("decoration-note")) : null;
+const occupancy=value=>value?.total>0&&value.available!=null&&value.available>=0&&value.available<=value.total?(value.total-value.available)/value.total*100:null;
+function paintGauge(value,label){
+  el("percent").textContent=value==null?"未知":`${Math.round(value)}%`;
+  el("gauge").style.setProperty("--usage",`${(value||0)*3.6}deg`);
+  el("gauge-label").textContent=label;
+}
+const decoration=typeof CleanupEffect==="function"?new CleanupEffect((value,phase)=>{
+  if(phase==="idle")paintGauge(occupancy(latestMemory),"物理内存占用");
+  else paintGauge(value,{emptying:"整理动效 · 匀速归零",waiting:"整理动效 · 等待本次调用完成",returning:"整理动效 · 回到实测值"}[phase]);
+}):null;
+let latestMemory=null;
 function notifyDecoration(kind){
-  try {
+  try{
     if(!decoration)return;
-    const value=shownMemory?.total>0?(shownMemory.total-shownMemory.available)/shownMemory.total*100:0;
-    if(kind==="start" && el("decoration-enabled").checked && !reducedMotion.matches && !document.hidden)decoration.start(value);
-    else if(kind==="finish")decoration.finish(value);
+    if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start(occupancy(latestMemory));
+    else if(kind==="finish")decoration.finish(occupancy(latestMemory));
     else if(kind==="stop")decoration.stop();
-  }catch(_){/* 装饰失败不影响任务、读数和报告。 */}
+  }catch(_){paintGauge(occupancy(latestMemory),"物理内存占用");}
 }
 let liveEnabled = true, displayTimer = null, displayInFlight = false, animation = null, shownMemory = null;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -95,9 +104,10 @@ function paintMemory(value){
   const {total,available,commitUsed,commitLimit}=value;
   const valid=total>0 && available!=null && available>=0 && available<=total;
   const pct=valid?(total-available)/total*100:null;
-  el("percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
+  if(!decoration?.phase)paintGauge(pct,"物理内存占用");
+  el("actual-percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
   el("fill").style.width=`${pct||0}%`;
-  el("gauge").style.setProperty("--usage",`${pct==null?0:pct*3.6}deg`);
+
   if(pct!=null)el("meter").setAttribute("aria-valuenow",String(Math.round(pct)));else el("meter").removeAttribute("aria-valuenow");
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
   el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
@@ -106,6 +116,7 @@ function memory(report){
   const sample=report.samples?.at(-1);if(!sample)return;
   const physical=sample.metrics.physical,commit=sample.metrics.commit;if(!physical)return;
   const target={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
+  latestMemory=target;decoration?.track(occupancy(target));
   if(animation!==null)cancelAnimationFrame(animation);
   animation=null;
   if(!shownMemory||reducedMotion.matches||target.available==null){paintMemory(target);return;}
@@ -129,7 +140,7 @@ async function refreshDisplay(){
     if(report.completion!=="success")throw new Error(report.errors?.map(e=>e.message).join("；")||"内存读数不完整");
     memory(report);
     const stamp=report.samples.at(-1)?.timestamp;
-    el("live-status").textContent=`实时显示 · ${stamp?new Date(stamp).toLocaleTimeString():"刚刚更新"} · 平滑过渡`;
+    el("live-status").textContent=`后台持续读取 · ${stamp?new Date(stamp).toLocaleTimeString():"刚刚更新"}`;
   }catch(exc){el("live-status").textContent=`显示暂未更新，保留上次读数 · ${exc.message}`;}
   finally{displayInFlight=false;if(liveEnabled&&!document.hidden&&!stopped)displayTimer=setTimeout(refreshDisplay,1000);}
 }
@@ -168,10 +179,10 @@ async function run(action){
   el("job-status").textContent="正在提交本次请求…";
   try{
     const accepted=await api("/api/action",action);currentJob=accepted.id;
-    el("job-status").textContent=action.kind==="cleanup" && action.mechanism==="working-set" ? "正在整理并观察3秒短期变化 · 只调用一次" : "处理中 · 等待 Package 收尾";
-    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
-  }catch(exc){error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
-  finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();if(action.kind==="cleanup" && action.mechanism==="working-set")notifyDecoration("finish");}
+    el("job-status").textContent=action.kind==="cleanup" && action.mechanism==="working-set" ? "正在执行本次工作集整理 · 后台持续读取" : "处理中 · 等待 Package 收尾";
+    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(job.report.completion==="success"?"finish":"stop");el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
+  }catch(exc){notifyDecoration("stop");error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
+  finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();}
 }
 function confirmAction(action,text){pendingAction=action;el("confirmation-text").textContent=text;el("confirmation").hidden=false;el("confirm-yes").focus();}
 el("read-status").addEventListener("click",()=>{liveEnabled=!liveEnabled;if(liveEnabled)refreshDisplay();else{pauseDisplay();el("live-status").textContent="实时显示已暂停 · 保留上次读数";}controls();});

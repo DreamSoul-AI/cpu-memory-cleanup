@@ -1,4 +1,4 @@
-更新日期：2026年10月30日。英文名称：Code Structure Design。状态：三层模块目录、职责分离与包公共入口已实施，包、CLI 与前端接入已通过对应离线与隔离安装验收。本文约束 `src/cpu_memory_cleanup/` 内部结构，依据 [架构设计 Architecture Design](<架构设计 Architecture Design CPU 内存清理.md>) 的用户交互、功能、系统三层完成源码映射。开发历史见 [开发记录 Development Record](<开发记录 Development Record/README.md>)，当前实现与限制见第六、九章，机制证据见 [通用调研 General Research](<通用调研 General Research CPU 内存清理.md>)。内存小窗口的实现位置见第八章，验证范围须关联最新记录。
+更新日期：2026年11月1日。英文名称：Code Structure Design。状态：三层模块目录、职责分离与包公共入口已实施，包、CLI 与前端接入已通过对应离线与隔离安装验收。本文约束 `src/cpu_memory_cleanup/` 内部结构，依据 [架构设计 Architecture Design](<架构设计 Architecture Design CPU 内存清理.md>) 的用户交互、功能、系统三层完成源码映射。开发历史见 [开发记录 Development Record](<开发记录 Development Record/README.md>)，当前实现与限制见第六、九章，机制证据见 [通用调研 General Research](<通用调研 General Research CPU 内存清理.md>)。内存小窗口的实现位置见第八章，验证范围须关联最新记录。
 
 # 一、设计范围与约束强度
 硬约束是产品源码包内部的模块目录、文件职责、公开入口、状态归属和依赖方向。目标以 `interaction/`、`application/`、`system/` 三个实际包组织三层职责，每个包封装相关实现，通过明确入口协作。根包承载包标识、公共创建入口、启动选择和层间共享合同，包公共入口及装配归属见第九章。
@@ -145,7 +145,7 @@ flowchart TB
 
 # 六、实施状态与验证边界
 ## （一）实际完成范围
-产品已按三层分包，系统能力选择、记录与运行支撑独立于功能流程，公共工厂负责统一装配。当前源码包含17个 Python 文件，其中5个为包标识。测试按实际源码目录镜像，运行与预算入口仍见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。
+产品已按三层分包，系统能力选择、记录与运行支撑独立于功能流程，公共工厂负责统一装配。源码按下述职责模块及后续专项映射组织，实际文件以仓库为准。测试按实际源码目录镜像，运行与预算入口仍见 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。
 
 | **职责** | **当前位置与公共入口** | **状态归属** |
 | --- | --- | --- |
@@ -388,37 +388,22 @@ presentation.summary不修改RunReport；摘要保留范围、记录时间、整
 
 圆环绘制由ring.RingRaster生成标准PPM图像，desktop用Tk PhotoImage显示；内外缘和进度末端以像素覆盖混色，几何计算按尺寸缓存，相同0.1%呈现值不重复上传图像。test_ring.py验证方向、边缘中间色及未知/满环，不增加第三方图形依赖或后台线程。
 
-Application.memory_cleanup与maintain增加可选observation_seconds（整数0至5，默认0保持兼容）；仅轻量系统工作集允许此观察。主窗口和HTTP工作集动作传3。core在原生调用返回后保留即时快照，再等待并保存三个后续样本，header记post_observation_seconds、post_observation_interval_s及实际期望数量；沿用原记录格式、同一运行与资源收尾。presentation对成功的观察报告使用“观察结束”，不声称稳定。批次、Standby及旧API/CLI不自动扩大观察范围。
+Application.memory_cleanup与maintain增加可选observation_seconds（整数0至5，默认0保持兼容）；仅轻量系统工作集允许此观察。桌面主窗口传3；网页当前采用默认0，映射见第十五章。core在原生调用返回后保留即时快照，再等待并保存三个后续样本，header记post_observation_seconds、post_observation_interval_s及实际期望数量；沿用原记录格式、同一运行与资源收尾。presentation对成功的观察报告使用“观察结束”，不声称稳定。批次、Standby及旧API/CLI不自动扩大观察范围。
 
 # 十四、功能恢复与动效隔离的目标结构
-承接 [架构中的职责修正](<架构设计 Architecture Design CPU 内存清理.md#实时状态任务结果与动效的职责修正>)。保留现有src三层目录，不因这次交互问题更换框架或拆出新服务。
+功能流程继续由application/core.py管理一次动作、快照、记录和收尾；具体系统派发继续位于system/platforms/windows.py，不因网页改动复制或更换维护机制。
 
-## （一）实际逻辑位置与回退范围
-| **职责** | **文件及入口** | **当前处理** |
-| --- | --- | --- |
-| 一次业务维护、观察与报告 | application/core.py的memory_cleanup、maintain | 不改动，继续唯一管理动作及原记录 |
-| Windows实际派发 | system/platforms/windows.py的_Operation.perform_once | 不改动，不从前端模拟原生成功 |
-| 网页会话和动作调度 | interaction/web.py的LocalWebServer任务处理 | 不改动，继续调用同一Package；显示请求与维护任务分开 |
-| 桌面实际数据显示 | interaction/desktop.py的_target_memory、_paint_memory、_animate | 恢复cb47a70读数路径，普通缓动仅发生在有效读数之间 |
-| 桌面业务结果发布 | interaction/desktop.py的pump | 后台报告到达后直接解释及展示，不经动效待呈现队列 |
-| 网页实际数据显示 | interaction/web_assets/app.js的refreshDisplay、memory、paintMemory | 恢复cb47a70路径，不以effect状态替换主指标 |
-| 网页业务结果发布 | interaction/web_assets/app.js的run、present | 不再await finishEffect后才呈现原报告 |
-| 摘要解释 | interaction/presentation.py | 只消费原报告，不读取过程动效状态 |
-| 抗锯齿圆环像素 | interaction/ring.py | 保留渲染改善，只接收实际读数对应比例，不承担维护完成判定 |
+桌面保留interaction/desktop.py的实际主圆环、直接报告发布和interaction/cleanup_effect.py的独立反馈条，三秒后续观察参数不变。本次不修改桌面文件或启动原生窗口。恢复及此前两端反馈条实施经过见 [开发记录](<开发记录 Development Record/2026-11-01 功能恢复与独立装饰.md>)。
 
-这次回退涉及desktop.py、app.js、index.html及对应交互测试，选择恢复文件内容，不重置整个仓库或删除历史提交。工作集系统命令、API、三秒有界观察、保护与规则、桌面尺寸及抗锯齿保留。已校准的清单检查预算也保留。
+网页现行映射统一在第十五章，不再保留“网页主圆环只能显示实际值”的旧目标。共用限制是：真实数据与报告独立于动效状态，业务调用者不等待动效，动效对象不能取得维护能力。
 
-## （二）独立装饰的后续结构约束
-装饰只位于interaction内部，已实现桌面cleanup_effect.py和网页web_assets/cleanup-effect.js，各自仅保存视觉阶段与时钟。桌面由desktop的独立定时器绘制按钮下反馈条，网页只允许新增固定静态路径，不增加动作端点。两者不持有Application或结果发布回调。
+# 十五、网页主圆环与真实读数分工
+承接 [架构第十三章](<架构设计 Architecture Design CPU 内存清理.md#十三网页交互的需求与状态合同>)，本章统一网页的现行源码映射，桌面及共用功能模块沿第十四章保持。
 
-装饰接口仅接收只读阶段通知和选定的有效数据副本，内部保存自己的时钟、绘制目标及显示值。它不能持有Application、维护方法、任务Promise的完成控制、真实指标写入器或报告发布回调。业务调用方不能等待装饰结束才能兑现任务结果。
+- web_assets/index.html：主圆环有模式说明，另设实际百分比与读取时间，保留容量、实际横条和结果
+- web_assets/app.js：持续请求/api/display，缓存原始有效值。实际区域总是更新，主圆环按模式分派渲染。收到业务报告先present，再通知动效成功/失败，不await动画，不按finally盲目通知成功
+- web_assets/cleanup-effect.js：纯呈现对象，仅接收绘制回调、最新比例通知及业务成功通知。start/tick管理三秒线性归零，finish只标记成功，回弹开始锁定最近有效目标，失败/关闭只清理自身。不能持有API或报告发布回调
+- interaction/web.py：主工作集仍调用现有memory_cleanup，但不再传旧网页固定后续观察参数observation_seconds=3，使用原公共默认即时前后快照和安全收尾。持续读取继续由独立显示端点执行。Package、工具及桌面参数不变
+- 测试镜像：JS可控时钟验证线性中点、两种完成次序、实际区域与动画数值分离；HTTP验证单次调用、结果与显示通道；内置浏览器使用禁止真实DLL的变化数据及延迟合成任务验收
 
-主指标控件只有实际读数渲染路径可以写入。装饰使用单独区域或独立装饰环，不能再复用主percent、实际gauge、真实容量或结果标题作为过程显示。具体位置已定为主按钮下方的独立反馈条，支持关闭；主指标控件没有复用。
-
-## （三）当前实现与验证范围
-功能恢复先以fd2a49b本地提交，之后实现两个装饰模块及适配。主指标只有读数路径写入，pump/run直接发布结果，之后仅单向通知装饰，业务不等待装饰结束。完整回归523项通过，后补的网页静态资源和装饰时钟检查另有定向记录。安装资源匹配与假数据旅程见本轮运行记录，未做真实收益或可见原生窗口验收。
-
-测试按源码镜像新增test_cleanup_effect.py；JS在同一VM加载独立脚本，验证开关等价及装饰故障不影响业务。原有定向链路验证继续检查单次派发和实际读数。
-
-本轮实施落点：按钮下方使用独立的过程反馈条，明确不代表内存指标，支持关闭。主圆环、主数字、容量及固定结果不复用该区域。装饰接收开始/终态通知，自行完成三秒归零、等待及1.2秒收束；后台终态照常立即公布，不等待反馈条。
-桌面纯呈现状态放在interaction/cleanup_effect.py，由desktop.py的独立定时器绘制反馈条；网页状态放在web_assets/cleanup-effect.js，app.js只通知该对象，不等待其完成。两个对象均不接收Application或结果发布回调。
+不新增层、框架或后台协调器，不启动原生桌面。字段名称以实现为准，真实快照始终保留在原Report，动画字段只存在浏览器内存中。

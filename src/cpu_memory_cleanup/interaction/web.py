@@ -106,7 +106,7 @@ class LocalWebServer(ThreadingHTTPServer):
                     elif kind == "cleanup":
                         if mechanism == "working-set":
                             report = self.app.memory_cleanup(self.output_dir, confirmed=True,
-                                confirmation_source="localhost:explicit-global-button", cancel_event=event, observation_seconds=3)
+                                confirmation_source="localhost:explicit-global-button", cancel_event=event)
                         else:
                             report = self.app.maintain(ActionRequest(mechanism, confirmed=True,
                                 confirmation_source="localhost:explicit-advanced-button"),

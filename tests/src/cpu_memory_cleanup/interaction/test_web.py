@@ -229,6 +229,8 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.backend.actions, [])
         job = self.action({"kind": "cleanup", "confirmed": True})
         self.assertEqual(job["report"]["completion"], "success", job)
+        self.assertEqual(len(job["report"]["samples"]), 2)
+        self.assertNotIn("post_observation_seconds", job["report"]["metadata"]["header"])
         self.request("GET", "/api/job?id=" + job["id"])
         self.assertEqual(self.backend.actions, [{"scope": "system", "pid": None}])
 

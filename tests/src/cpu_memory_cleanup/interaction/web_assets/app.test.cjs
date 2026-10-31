@@ -37,7 +37,7 @@ test('25/75 occupancy updates actual ring, number and accessible bar together',(
     assert.equal(p.elements.meter.style['--usage'],undefined);
   }
 });
-test('working indicator belongs to actual ring and disables repeated main clicks',()=>{
+test('business busy indicator disables repeated main clicks',()=>{
   const p=page();p.run('token="test";supportedMethods=["working-set"];busy=true;cleaning=true;el("method").value="working-set";controls()');
   assert.ok(p.elements.gauge.classes.has('working'));
   assert.ok(!p.elements.meter?.classes.has('working'));
@@ -69,7 +69,7 @@ test('live updates leave recent action feedback and original report intact',()=>
   assert.equal(p.elements.report.textContent,report);
 });
 
-test('live occupancy continues updating during cleanup and never becomes an effect value',()=>{
+test('without effect, live occupancy continues updating during cleanup',()=>{
   const p=page();p.run('busy=true;cleaning=true');
   p.run(`memory(${snapshot(60)})`);
   p.run(`memory(${snapshot(70)})`);p.tick(400);
@@ -95,8 +95,9 @@ test('decoration enabled or disabled leaves action, report and live values equiv
     assert.equal(p.elements['recent-title'].textContent,'实际结果');
     assert.equal(p.run('decoration.phase'),enabled?'emptying':null);
     p.run(`memory(${snapshot(70)})`);p.tick(400);
-    assert.equal(p.elements.percent.textContent,'30%');
-    assert.equal(p.elements.gauge.style['--usage'],'108deg');
+    assert.equal(p.elements['actual-percent'].textContent,'30%');
+    if(!enabled)assert.equal(p.elements.percent.textContent,'30%');
+    else assert.match(p.elements['gauge-label'].textContent,/动效/);
     results.push(p.run('JSON.stringify([actionCount,original])'));
   }
   assert.equal(results[0],results[1]);
@@ -112,12 +113,42 @@ test('decoration failure cannot fail the business request',async()=>{
 });
 
 
-test('isolated decoration clock empties, waits and settles without a business callback',()=>{
- const p=page();p.run('decoration.start(40)');
- p.tick(1500);assert.equal(p.elements['decoration-fill'].style.width,'20%');
- p.tick(3000);assert.equal(p.run('decoration.phase'),'waiting');
+test('linear circle waits for actual completion and freezes its latest rebound target',()=>{
+ const p=page();p.run(`memory(${snapshot(60)});decoration.start(40)`);
+ p.tick(1500);assert.equal(p.elements.percent.textContent,'20%');
+ p.run(`memory(${snapshot(70)})`);p.tick(3000);
+ assert.equal(p.elements.percent.textContent,'0%');
+ assert.equal(p.elements['actual-percent'].textContent,'30%');
+ assert.equal(p.run('decoration.phase'),'waiting');
  p.tick(10000);assert.equal(p.run('decoration.phase'),'waiting');
- p.run('decoration.finish(30)');p.tick(11000);p.tick(12200);
+ p.run('decoration.finish(30)');p.run(`memory(${snapshot(65)})`);p.tick(11000);
+ assert.equal(p.run('decoration.target'),35);
+ p.run(`memory(${snapshot(50)})`);p.tick(11600);
+ assert.equal(p.run('decoration.target'),35);
+ p.tick(12200);assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.elements['actual-percent'].textContent,'50%');
+});
+test('failed report never supplies successful rebound signal',async()=>{
+ const p=page();p.elements['decoration-enabled'].checked=true;
+ await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+  api=async path=>path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',report:{completion:'failed',errors:[{message:'no admission'}],samples:[],action:{call_outcome:'not_started'}},presentation:{title:'失败',note:'未派发',context:'记录'}};
+  memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
  assert.equal(p.run('decoration.phase'),null);
- assert.equal(p.elements['decoration-fill'].style.width,'0%');
+ assert.equal(p.elements['recent-title'].textContent,'失败');
+});
+
+test('early completion publishes result immediately but still finishes the linear descent',async()=>{
+ const p=page();p.elements['decoration-enabled'].checked=true;
+ await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+  api=async path=>path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'已完成',note:'原报告',context:'记录'}};
+  memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
+ assert.equal(p.elements['recent-title'].textContent,'已完成');
+ assert.equal(p.run('decoration.phase'),'emptying');
+ p.tick(1500);assert.equal(p.elements.percent.textContent,'20%');
+ p.run(`memory(${snapshot(70)})`);p.tick(3000);
+ assert.equal(p.elements.percent.textContent,'0%');
+ assert.equal(p.run('decoration.target'),30);
+ assert.equal(p.run('decoration.phase'),'returning');
+ p.tick(4200);assert.equal(p.elements.percent.textContent,'30%');
+ assert.equal(p.run('decoration.phase'),null);
 });
