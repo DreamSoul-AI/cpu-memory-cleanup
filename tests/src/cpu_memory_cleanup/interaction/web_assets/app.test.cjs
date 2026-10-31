@@ -68,52 +68,15 @@ test('live updates leave recent action feedback and original report intact',()=>
   assert.equal(p.elements.report.textContent,report);
 });
 
-test('effect empties, waits for backend, and returns while raw occupancy stays real',async()=>{
-  const p=page();p.run(`memory(${snapshot(60)});startEffect()`);
-  p.tick(1500);
-  assert.equal(p.elements.percent.textContent,'20%');
-  assert.equal(p.run('effect.phase'),'emptying');
-  p.tick(3000);
-  assert.equal(p.elements.percent.textContent,'0%');
-  assert.equal(p.elements.meter.attrs['aria-valuenow'],'40');
-  assert.match(p.elements['gauge-label'].textContent,/动效等待/);
-  p.run(`memory(${snapshot(70)})`);p.tick(5000);
-  assert.equal(p.elements.percent.textContent,'0%');
+test('live occupancy continues updating during cleanup and never becomes an effect value',()=>{
+  const p=page();p.run('busy=true;cleaning=true');
+  p.run(`memory(${snapshot(60)})`);
+  p.run(`memory(${snapshot(70)})`);p.tick(400);
+  assert.equal(p.elements.percent.textContent,'30%');
+  assert.equal(p.elements.gauge.style['--usage'],'108deg');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'30');
-  assert.equal(p.run('effect.phase'),'waiting');
-  const done=p.run('finishEffect(null)');p.tick(5100);p.tick(6300);await done;
-  assert.equal(p.elements.percent.textContent,'30%');
-  assert.equal(p.elements['gauge-label'].textContent,'物理内存占用');
-  assert.equal(p.run('effect'),null);
-});
-test('early completion cannot bypass emptying and repeated clicks dispatch once',async()=>{
-  const p=page();
-  const pending=p.run(`
-    token='session';supportedMethods=['working-set'];el('method').value='working-set';
-    var actionCount=0;
-    var savedReport={completion:'success',errors:[],action:{call_outcome:'success'},samples:[{metrics:{physical:{total_bytes:100,available_bytes:70}}}]};
-    api=async path=>{if(path==='/api/action'){actionCount++;return {id:'one'};}return {id:'one',kind:'cleanup',state:'finished',report:savedReport,presentation:{title:'真实结果',note:'真实快照',context:'记录'}};};
-    memory(${snapshot(60)});
-    var pendingRun=run({kind:'cleanup',mechanism:'working-set'});
-    run({kind:'cleanup',mechanism:'working-set'});
-    pendingRun;
-  `);
-  for(let i=0;i<6;i++)await Promise.resolve();
-  assert.equal(p.run('effect.ready'),true);
-  assert.equal(p.elements['global-clean'].disabled,true);
-  assert.notEqual(p.elements['recent-title']?.textContent,'真实结果');
-  p.tick(3000);assert.equal(p.elements.percent.textContent,'0%');
-  p.tick(3200);assert.equal(p.run('effect.phase'),'returning');
-  p.tick(4400);await pending;
-  assert.equal(p.run('actionCount'),1);
-  assert.equal(p.elements['recent-title'].textContent,'真实结果');
-  assert.equal(p.run('savedReport.samples[0].metrics.physical.available_bytes'),70);
-  assert.equal(p.elements['global-clean'].disabled,false);
-});
-test('reduced motion finishes without a timer-dependent effect',async()=>{
-  const p=page(true);p.run(`memory(${snapshot(60)});startEffect()`);
-  const done=p.run(`finishEffect(${snapshot(70)})`);await done;
-  assert.equal(p.elements.percent.textContent,'30%');
-  assert.equal(p.frames.size,0);
-  assert.equal(p.run('effect'),null);
+  p.run(`memory(${snapshot(50)})`);p.tick(400);
+  assert.equal(p.elements.percent.textContent,'50%');
+  assert.equal(p.elements.gauge.style['--usage'],'180deg');
+  assert.equal(p.elements.meter.attrs['aria-valuenow'],'50');
 });

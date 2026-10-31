@@ -390,11 +390,32 @@ presentation.summary不修改RunReport；摘要保留范围、记录时间、整
 
 Application.memory_cleanup与maintain增加可选observation_seconds（整数0至5，默认0保持兼容）；仅轻量系统工作集允许此观察。主窗口和HTTP工作集动作传3。core在原生调用返回后保留即时快照，再等待并保存三个后续样本，header记post_observation_seconds、post_observation_interval_s及实际期望数量；沿用原记录格式、同一运行与资源收尾。presentation对成功的观察报告使用“观察结束”，不声称稳定。批次、Standby及旧API/CLI不自动扩大观察范围。
 
-## 过程动效的当前映射
-沿用现有模块，不增加第二个清理执行器。desktop.py的_effect与_effect_job维护归零、等待、回弹和待呈现报告，_latest_values保存有效真实读数，_percent仍是实际占用；圆环绘制只在过程内读取独立动效值。后台报告由pump登记，_apply_report在收束后复用原结果呈现，关闭取消定时器并按原流程收尾。
+# 十四、功能恢复与动效隔离的目标结构
+承接 [架构中的职责修正](<架构设计 Architecture Design CPU 内存清理.md#实时状态任务结果与动效的职责修正>)。保留现有src三层目录，不因这次交互问题更换框架或拆出新服务。
 
-web_assets/app.js用effect、effectFrame及latestMemory分开同样职责，finishEffect只等待本地动效，不重复请求清理。归零3000毫秒、空环至少200毫秒、回弹1200毫秒是当前视觉参数，不属于系统动作进度合同。横条的aria-valuenow和容量保持真实值，圆环标签标明动效。减少动画偏好或隐藏页面时允许跳过视觉收束，但仍等待后台实际终态。
+## （一）实际逻辑位置与回退范围
+| **职责** | **文件及入口** | **当前处理** |
+| --- | --- | --- |
+| 一次业务维护、观察与报告 | application/core.py的memory_cleanup、maintain | 不改动，继续唯一管理动作及原记录 |
+| Windows实际派发 | system/platforms/windows.py的_Operation.perform_once | 不改动，不从前端模拟原生成功 |
+| 网页会话和动作调度 | interaction/web.py的LocalWebServer任务处理 | 不改动，继续调用同一Package；显示请求与维护任务分开 |
+| 桌面实际数据显示 | interaction/desktop.py的_target_memory、_paint_memory、_animate | 恢复cb47a70读数路径，普通缓动仅发生在有效读数之间 |
+| 桌面业务结果发布 | interaction/desktop.py的pump | 后台报告到达后直接解释及展示，不经动效待呈现队列 |
+| 网页实际数据显示 | interaction/web_assets/app.js的refreshDisplay、memory、paintMemory | 恢复cb47a70路径，不以effect状态替换主指标 |
+| 网页业务结果发布 | interaction/web_assets/app.js的run、present | 不再await finishEffect后才呈现原报告 |
+| 摘要解释 | interaction/presentation.py | 只消费原报告，不读取过程动效状态 |
+| 抗锯齿圆环像素 | interaction/ring.py | 保留渲染改善，只接收实际读数对应比例，不承担维护完成判定 |
 
-tests中新增后台提前返回仍先归零、保持等待不重复派发、动效0与实际占用并存、回弹后才显示报告，以及减少动画路径。纯动效不增加系统权限或写入运行样本，Package参数和记录版本不变。
+这次回退涉及desktop.py、app.js、index.html及对应交互测试，选择恢复文件内容，不重置整个仓库或删除历史提交。工作集系统命令、API、三秒有界观察、保护与规则、桌面尺寸及抗锯齿保留。已校准的清单检查预算也保留。
 
-归零采用三秒平缓衰减，进度p在0至1之间，显示比例为1−p²(3−2p)，两端一致。曲线中点仍显示起始值的一半，前后速度平顺，不再使用0.45秒且前半段急降的曲线。此p仅是动效时间，不是清理完成比例。
+## （二）独立装饰的后续结构约束
+后续装饰只位于interaction内部。桌面若确需独立时序对象，可用就近的cleanup_effect.py；网页可用web_assets/cleanup-effect.js，但这是待实施落点，不建立空文件，也不因文件名不同就认定已解耦。是否拆文件应先看职责和受控测试，不能把模块划分退化为全放在一个入口脚本。
+
+装饰接口仅接收只读阶段通知和选定的有效数据副本，内部保存自己的时钟、绘制目标及显示值。它不能持有Application、维护方法、任务Promise的完成控制、真实指标写入器或报告发布回调。业务调用方不能等待装饰结束才能兑现任务结果。
+
+主指标控件只有实际读数渲染路径可以写入。装饰使用单独区域或独立装饰环，不能再复用主percent、实际gauge、真实容量或结果标题作为过程显示。具体位置尚未确定，须先写入界面职责和计划，再实施。
+
+## （三）当前实现与目标的差距
+工作区已恢复功能基线并通过63项定向、6项JS检查，未提交。独立装饰模块和新位置尚未实现。主场景验证应先证明清理期间真实数字/圆环持续更新、一次调用、后台终态及时发布，再附加装饰，并用启用/禁用装饰的等价检查证明业务未受影响。
+
+现有tests/src/cpu_memory_cleanup/interaction/继续镜像对应文件。回退移除仅适用于被撤下动效的测试预期，补充主仪表在清理期间持续更新的JS回归。详细运行事实进入日期运行记录，不在结构设计中复制整份测试报告。
