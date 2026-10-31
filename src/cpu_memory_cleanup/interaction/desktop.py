@@ -6,6 +6,7 @@ import threading
 import time
 
 from .presentation import summary
+from .ring import RingRaster
 
 GREEN = "#087F4F"
 BACKGROUND = "#F3F7F4"
@@ -94,11 +95,16 @@ class MemoryWindow:
         self._latest_report = None
         self._report_details = "尚无运行记录"
         self._paused = False
+        # Canvas尺寸使用像素，普通Tk字体使用点；按同一显示比例换算，避免大字体挤进固定小圆环。
+        scale = root.winfo_fpixels("1i") / 96
+        px = lambda value: round(value * scale)
+        ring_size = px(220)
+        self._ring_inset, self._ring_width = px(14), px(11)
         root.title("内存清理")
-        root.geometry("400x600")
-        root.minsize(370, 580)
+        root.geometry(f"{px(460)}x{px(640)}")
+        root.minsize(px(460), px(640))
         root.configure(bg=BACKGROUND)
-        body = tk.Frame(root, bg=BACKGROUND, padx=26, pady=14)
+        body = tk.Frame(root, bg=BACKGROUND, padx=px(28), pady=px(18))
         body.pack(fill="both", expand=True)
         body.columnconfigure(0, weight=1)
         heading = tk.Frame(body, bg=BACKGROUND)
@@ -109,14 +115,17 @@ class MemoryWindow:
             bg="#E5EFE8", fg="#426451", activebackground="#D9E9DF", relief="flat", bd=0,
             font=("Microsoft YaHei UI", 9), padx=10, pady=6, cursor="hand2")
         self.refresh_button.grid(row=0, column=1, sticky="e")
-        self.ring = tk.Canvas(body, width=156, height=156, bg=BACKGROUND, highlightthickness=0)
-        self.ring.grid(row=1, column=0, pady=(18, 12))
-        self._ring_track = self.ring.create_oval(12, 12, 144, 144, outline="#DFEAE3", width=10)
-        self._ring_fill = self.ring.create_arc(12, 12, 144, 144, start=90, extent=0, style="arc", outline=GREEN, width=10)
+        self.ring = tk.Canvas(body, width=ring_size, height=ring_size, bg=BACKGROUND, highlightthickness=0)
+        self.ring.grid(row=1, column=0, pady=(px(22), px(16)))
+        self._photo_factory = tk.PhotoImage
+        self._ring_raster = None
+        self._ring_frame = None
+        self._ring_item = self.ring.create_image(ring_size/2, ring_size/2, anchor="center")
+        self._draw_ring(ring_size)
         self.ring.bind("<Configure>", lambda event: self._draw_ring(event.width))
-        self.percent = tk.Label(self.ring, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", 40, "bold"))
+        self.percent = tk.Label(self.ring, text="未知", bg=BACKGROUND, fg="#183428", font=("Microsoft YaHei UI", -px(54), "bold"))
         self.percent.place(relx=0.5, rely=0.43, anchor="center")
-        tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9)).place(relx=0.5, rely=0.68, anchor="center")
+        tk.Label(self.ring, text="物理内存占用", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", -px(13))).place(relx=0.5, rely=0.68, anchor="center")
         self.available = tk.Label(body, text="已用 未知 / 共 未知", bg=BACKGROUND, fg="#52645B", font=("Microsoft YaHei UI", 10))
         self.available.grid(row=2, column=0, pady=(0, 10))
         self.button = tk.Button(body, text="一键整理工作集", command=self.maintain, bg=GREEN, fg="white",
@@ -125,17 +134,17 @@ class MemoryWindow:
         self.button.grid(row=3, column=0, sticky="ew", pady=(8, 8))
         self.button.bind("<Enter>", lambda event: self.button.configure(bg="#066F45") if self._worker is None else None)
         self.button.bind("<Leave>", lambda event: self.button.configure(bg=GREEN))
-        self.status = tk.Label(body, text="实时查看，按需整理。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=340)
+        self.status = tk.Label(body, text="实时查看，按需整理。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=px(380))
         self.status.grid(row=4, column=0, sticky="ew", pady=(0, 14))
         feedback = tk.Frame(body, bg="white", padx=16, pady=14)
         feedback.grid(row=5, column=0, sticky="ew")
         feedback.columnconfigure(0, weight=1)
         tk.Label(feedback, text="最近一次整理", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 9)).grid(row=0, column=0, sticky="w")
-        self.result = tk.Label(feedback, text="尚未整理", bg="white", fg=GREEN, font=("Microsoft YaHei UI", 12, "bold"), anchor="w", justify="left", wraplength=300, height=2)
+        self.result = tk.Label(feedback, text="尚未整理", bg="white", fg=GREEN, font=("Microsoft YaHei UI", 12, "bold"), anchor="w", justify="left", wraplength=px(360), height=2)
         self.result.grid(row=1, column=0, sticky="ew", pady=(7, 5))
-        self.result_note = tk.Label(feedback, text="轻点绿色按钮，查看本次内存变化。", bg="white", fg="#6C7D73", font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=300, height=2)
+        self.result_note = tk.Label(feedback, text="轻点绿色按钮，查看本次内存变化。", bg="white", fg="#6C7D73", font=("Microsoft YaHei UI", 9), anchor="w", justify="left", wraplength=px(360), height=2)
         self.result_note.grid(row=2, column=0, sticky="ew")
-        self.result_context = tk.Label(feedback, text="结果与实时读数分别保留", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 8), anchor="w", wraplength=300, height=2)
+        self.result_context = tk.Label(feedback, text="结果与实时读数分别保留", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 8), anchor="w", wraplength=px(360), height=2)
         self.result_context.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         controls = tk.Frame(body, bg=BACKGROUND)
         controls.grid(row=6, column=0, sticky="ew", pady=(15, 0))
@@ -148,7 +157,7 @@ class MemoryWindow:
             bg=BACKGROUND, fg="#52645B", relief="flat", bd=0, font=("Microsoft YaHei UI", 9))
         self.cancel_button.grid(row=0, column=1, sticky="e")
         self._commit_text = "提交量 未知"
-        self.context = tk.Label(body, text="最近更新：未知", bg=BACKGROUND, fg="#72877A", font=("Microsoft YaHei UI", 8), wraplength=340)
+        self.context = tk.Label(body, text="最近更新：未知", bg=BACKGROUND, fg="#72877A", font=("Microsoft YaHei UI", 8), wraplength=px(380))
         self.context.grid(row=7, column=0, sticky="w", pady=(8, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._controls()
@@ -156,17 +165,23 @@ class MemoryWindow:
             self.status.configure(text=app.capabilities.reason or "当前系统不支持工作集整理，仅能查看内存。")
         # 只在初次布局时按真实字体尺寸适配，状态更新不反复改变窗口尺寸。
         root.update_idletasks()
-        width, height = max(400, root.winfo_reqwidth()), max(600, root.winfo_reqheight() + 12)
+        width, height = max(px(460), root.winfo_reqwidth()), max(px(640), root.winfo_reqheight() + px(12))
         root.minsize(width, height)
         root.geometry(f"{width}x{height}")
 
     def _draw_ring(self, width):
         height = self.ring.winfo_height()
-        size = min(width, height) - 24
-        x, y = (width - size) / 2, (height - size) / 2
-        for item in (self._ring_track, self._ring_fill):
-            self.ring.coords(item, x, y, x + size, y + size)
-        self.ring.itemconfigure(self._ring_fill, extent=0 if self._percent is None else -min(359.9, self._percent * 3.6))
+        size = int(min(width, height))
+        if size <= 2 * self._ring_inset:
+            return
+        frame = (size, round(self._percent or 0., 1))
+        if frame != self._ring_frame:
+            if self._ring_raster is None or self._ring_raster.size != size:
+                self._ring_raster = RingRaster(size, self._ring_inset, self._ring_width, BACKGROUND, "#DFEAE3", GREEN)
+            self._ring_photo = self._photo_factory(master=self.ring, data=self._ring_raster.render(frame[1]), format="PPM")
+            self.ring.itemconfigure(self._ring_item, image=self._ring_photo)
+            self._ring_frame = frame
+        self.ring.coords(self._ring_item, width/2, height/2)
 
     def _paint_memory(self, values):
         self._shown = values
@@ -326,11 +341,11 @@ class MemoryWindow:
         if not self._supported:
             return
         if self._submit(self.app.memory_cleanup, self._output_dir, confirmed=True,
-                        confirmation_source="desktop:memory-clean-button"):
+                        confirmation_source="desktop:memory-clean-button", observation_seconds=3):
             self.button.configure(text="正在整理…")
-            self.status.configure(text="正在整理内存，当前读数持续更新。")
+            self.status.configure(text="正在整理并观察3秒短期变化，当前读数持续更新。")
             self.result.configure(text="正在整理内存…")
-            self.result_note.configure(text="完成后显示本次可用内存变化。")
+            self.result_note.configure(text="只调用一次；观察结束后显示净变化，不代表系统已稳定。")
 
     def cancel(self):
         if self._cancel_event is not None:
@@ -417,6 +432,8 @@ class MemoryWindow:
                         self._report_details = view["details"]
                     completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消", "unknown": "结果未知"}.get(report.completion, report.completion)
                     self.status.configure(text=("清理：" if report.mode == "maintain" else "内存刷新：") + completion)
+                    if report.completion == "success" and (report.metadata.get("header") or {}).get("post_observation_seconds"):
+                        self.status.configure(text="本次调用与短期观察已结束，实时读数继续更新。")
                     if self.workspace is not None:
                         self.workspace.on_report(report)
                     if self._tray is not None and report.mode in ("maintain", "batch"):

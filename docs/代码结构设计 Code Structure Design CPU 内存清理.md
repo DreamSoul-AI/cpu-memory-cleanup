@@ -370,6 +370,7 @@ src/cpu_memory_cleanup/interaction/
 ├── desktop.py           主窗口、实时显示、单次按钮、线程与退出
 ├── workspace.py         一个次级窗口：进程范围 / 整理设置 / 运行详情
 ├── presentation.py      解释已有RunReport，生成两端共用的动作摘要
+├── ring.py              仅生成平滑圆环像素，Tk呈现不接触系统后端
 ├── web.py               HTTP调度，原始报告与呈现摘要分别传输
 └── web_assets/
     ├── index.html       紧凑主区、外置确认区、默认折叠详情
@@ -382,3 +383,9 @@ presentation.summary不修改RunReport；摘要保留范围、记录时间、整
 桌面不再保留主窗内的重复目标列表与第二个详情入口。单目标通过进程范围选择一项使用既有批次能力，Package原有单目标API与CLI合同仍保留。窗口初始尺寸根据控件字体适配，最近结果预留固定行数，处理完成不反复调整主窗尺寸。
 
 验证镜像新增test_presentation.py与test_workspace.py，test_desktop.py验证同一详情实例、25%/75%圆环及显示/结果分离。web_assets/app.test.cjs使用Node内置能力直接执行产品JS，独立于Python清单；命令从README定位。安装检查核对新模块与三份网页资源完整进入wheel和sdist，桌面CMD/pyw仍是源码仓库入口。
+
+桌面圆环的像素几何与字体必须使用一致的显示换算：desktop按Tk实际每英寸像素换算圆环、线宽、中心负像素字号、主窗宽度及主要换行宽度。96 DPI基准圆环220像素，150%约330像素；不再将固定156像素画布与随系统变化的点字号混用。此为呈现修正，不改变动作或模块职责。
+
+圆环绘制由ring.RingRaster生成标准PPM图像，desktop用Tk PhotoImage显示；内外缘和进度末端以像素覆盖混色，几何计算按尺寸缓存，相同0.1%呈现值不重复上传图像。test_ring.py验证方向、边缘中间色及未知/满环，不增加第三方图形依赖或后台线程。
+
+Application.memory_cleanup与maintain增加可选observation_seconds（整数0至5，默认0保持兼容）；仅轻量系统工作集允许此观察。主窗口和HTTP工作集动作传3。core在原生调用返回后保留即时快照，再等待并保存三个后续样本，header记post_observation_seconds、post_observation_interval_s及实际期望数量；沿用原记录格式、同一运行与资源收尾。presentation对成功的观察报告使用“观察结束”，不声称稳定。批次、Standby及旧API/CLI不自动扩大观察范围。

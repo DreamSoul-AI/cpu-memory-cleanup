@@ -70,6 +70,30 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(report.completion, "success")
         self.assertEqual(self.backend.calls, 0)
 
+    def test_cleanup_observes_after_single_call_and_replays_all_snapshots(self):
+        self.backend.open_memory_observation = lambda: self.backend
+        waits = []
+        self.app._sleep = lambda seconds: waits.append(seconds)
+        report = self.app.memory_cleanup(self.temp.name, confirmed=True, confirmation_source="test", observation_seconds=3)
+        self.assertEqual(waits, [1, 1, 1])
+        self.assertEqual(self.backend.calls, 1)
+        self.assertEqual(len(report.samples), 5)
+        self.assertEqual(report.metadata["header"]["post_observation_seconds"], 3)
+        self.assertEqual(report.completion, "success")
+        replay = self.app.memory_result(report.output_dir)
+        self.assertEqual(len(replay.samples), 5)
+        self.assertEqual(self.backend.calls, 1)
+
+    def test_stopping_post_observation_keeps_call_fact_and_partial_record(self):
+        self.backend.open_memory_observation = lambda: self.backend
+        self.app._sleep = lambda seconds: self.app.request_cancel()
+        report = self.app.memory_cleanup(self.temp.name, confirmed=True, confirmation_source="test", observation_seconds=3)
+        self.assertEqual(self.backend.calls, 1)
+        self.assertEqual(report.action["call_outcome"], "success")
+        self.assertEqual(report.completion, "partial")
+        self.assertEqual(len(report.samples), 2)
+        self.assertIn("后续观察已停止", report.errors[0]["message"])
+
     def test_record_directory_denied_is_explained_before_system_access(self):
         with patch.object(self.app.records, "open_write", side_effect=PermissionError("private path")), \
              patch.object(self.backend, "open_operation") as operation:

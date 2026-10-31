@@ -34,6 +34,7 @@ class WebTests(unittest.TestCase):
         self.backend.read_memory = read
         self.app = create_application(reader=self.backend, maintainer=self.backend, runtime=FakeRuntime(),
             capabilities=Capabilities("synthetic", "available", ("working-set",), scopes=("system", "process")))
+        self.app._sleep = lambda seconds: None
         self.server = LocalWebServer(self.app, Path(self.temp.name) / "runs", preview=True)
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01})
         self.thread.start()

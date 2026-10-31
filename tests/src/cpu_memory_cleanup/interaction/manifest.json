@@ -125,6 +125,17 @@
       "plans": [
         "regression"
       ]
+    },
+    "test_ring.py": {
+      "target": "src/cpu_memory_cleanup/interaction/ring.py",
+      "tags": [
+        "offline",
+        "module_ring"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
     }
   }
 }

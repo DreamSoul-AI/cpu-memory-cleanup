@@ -16,6 +16,9 @@ def summary(report):
     batch = report.mode in ("batch", "batch-review")
     scope = "选中进程批次" if batch else "指定进程" if header.get("scope") == "process" else "系统工作集" if header.get("mechanism", "working-set") == "working-set" else "系统 Standby"
     completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消"}.get(report.completion, "结果未知")
+    observation = header.get("post_observation_seconds", 0)
+    if observation and report.completion == "success":
+        completion = "观察结束"
     outcome = {"success": "调用成功", "failure": "调用失败", "not_started": "未派发", "unknown": "调用结果未知"}.get(report.action.get("call_outcome"), "逐项结果")
     title = f"{completion} · {outcome}"
     note = "容量变化不代表永久释放或提速。"
@@ -34,7 +37,8 @@ def summary(report):
             change_title = f"{completion} · {label}{'增加' if delta>0 else '减少' if delta<0 else '不变'}" + (f" {abs(delta)/1024**3:.2f} GiB" if delta else "")
             if report.action.get("call_outcome") == "success":
                 title = change_title
-            note = f"{before/1024**3:.2f} → {after/1024**3:.2f} GiB · 再次使用时占用可能回升。"
+            note = f"{before/1024**3:.2f} → {after/1024**3:.2f} GiB · " + (
+                f"调用后{observation}秒窗口内净变化，不代表已稳定或全部由清理造成。" if observation else "再次使用时占用可能回升。")
     if report.errors:
         note = str(report.errors[0].get("message") or report.errors[0].get("reason") or "详情中查看错误")
     end = _stamp(terminal.get("finished_at"))

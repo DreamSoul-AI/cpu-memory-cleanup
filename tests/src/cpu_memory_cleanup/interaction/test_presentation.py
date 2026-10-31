@@ -4,6 +4,15 @@ from cpu_memory_cleanup.contracts import RunReport, Sample
 from cpu_memory_cleanup.interaction.presentation import summary
 
 class PresentationTests(unittest.TestCase):
+    def test_observation_feedback_is_not_a_stability_claim(self):
+        report = RunReport("run", "maintain", completion="success", action={"attempted":True,"call_outcome":"success"},
+            samples=[Sample("run",i,None,{"physical":{"available_bytes":v*1024**3}}) for i,v in enumerate((2,3,4,3,5))],
+            metadata={"header":{"post_observation_seconds":3}})
+        view = summary(report)
+        self.assertIn("观察结束", view["title"])
+        self.assertIn("增加 3.00 GiB", view["title"])
+        self.assertIn("不代表已稳定", view["note"])
+
     def test_signed_change_and_recorded_flow_time(self):
         report = RunReport("run", "maintain", completion="success", action={"attempted":True,"call_outcome":"success"},
             samples=[Sample("run",i,None,{"physical":{"available_bytes":v*1024**3}}) for i,v in enumerate((3,2))],

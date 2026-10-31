@@ -156,8 +156,8 @@ async function run(action){
   el("job-status").textContent="正在提交本次请求…";
   try{
     const accepted=await api("/api/action",action);currentJob=accepted.id;
-    el("job-status").textContent="处理中 · 等待 Package 收尾";
-    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);el("job-status").textContent=`本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
+    el("job-status").textContent=action.kind==="cleanup" && action.mechanism==="working-set" ? "正在整理并观察3秒短期变化 · 只调用一次" : "处理中 · 等待 Package 收尾";
+    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
   }catch(exc){error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
   finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();}
 }

@@ -85,6 +85,10 @@ class Widget:
         self.items["arc"] = {"coords": args, **kwargs}
         return "arc"
 
+    def create_image(self, *args, **kwargs):
+        self.items["image"] = {"coords": args, **kwargs}
+        return "image"
+
     def itemconfigure(self, item, **kwargs):
         if DeferredThread.in_worker:
             raise AssertionError("工作线程不能更新 Tk")
@@ -136,6 +140,7 @@ class Variable:
 class FakeTk:
     Frame = LabelFrame = Label = Button = Radiobutton = Text = Scrollbar = Canvas = Widget
     StringVar = Variable
+    PhotoImage = Widget
 
 
 class Root:
@@ -160,6 +165,9 @@ class Root:
 
     def winfo_reqwidth(self):
         return 400
+
+    def winfo_fpixels(self, distance):
+        return 96
 
     def winfo_reqheight(self):
         return 600
@@ -207,7 +215,8 @@ class FakeApplication:
     def memory_status(self):
         return RunReport("display", "inspect", completion="success", samples=[self.memory_snapshot()])
 
-    def memory_cleanup(self, directory, *, confirmed=False, confirmation_source="", cancel_event=None):
+    def memory_cleanup(self, directory, *, confirmed=False, confirmation_source="", cancel_event=None, observation_seconds=0):
+        self.observation_seconds = observation_seconds
         self.cleanup_calls.append((directory, confirmed, confirmation_source))
         return self.maintain(ActionRequest("working-set", confirmed=confirmed, confirmation_source=confirmation_source),
                              directory, cancel_event=cancel_event, lightweight=True)
@@ -300,7 +309,7 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("6.000 GiB", self.window.available.cget("text"))
         self.assertIn("0.000 GiB", self.window._commit_text)
         self.assertIn("2026-10-26", self.window.context.cget("text"))
-        self.assertEqual(self.window.ring.items[self.window._ring_fill]["extent"], -270)
+        self.assertEqual(self.window._ring_frame[1], 75)
 
     def test_unknown_and_inconsistent_memory_never_become_zero(self):
         for metrics in ({}, {"physical": {"total_bytes": 8, "available_bytes": 9}},
@@ -335,11 +344,11 @@ class DesktopTests(unittest.TestCase):
 
     def test_compact_window_reuses_one_details_workspace_without_resizing_or_reading(self):
         width, height = (int(value) for value in self.root.size.split("x"))
-        self.assertLess(width, 460)
+        self.assertLessEqual(width, 460)
         self.assertLess(height, 900)
         self.assertEqual(self.window.details_button.cget("text"), "详情与设置  ›")
         self.assertFalse(hasattr(self.window, "workspace_button"))
-        self.assertEqual(self.window.ring.items[self.window._ring_fill]["extent"], 0)
+        self.assertEqual(self.window._ring_frame[1], 0)
         size = self.root.size
         with patch("cpu_memory_cleanup.interaction.workspace.Workspace") as factory:
             self.window.open_workspace()
@@ -350,9 +359,19 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(self.app.calls, [])
 
     def test_ring_tracks_known_percentages(self):
-        for available, expected in ((75, -90), (25, -270)):
+        for available, expected in ((75, 25), (25, 75)):
             self.window._paint_memory({"total":100, "available":available, "commit_used":None, "commit_limit":None})
-            self.assertEqual(self.window.ring.items["arc"]["extent"], expected)
+            self.assertEqual(self.window._ring_frame[1], expected)
+
+    def test_ring_and_center_font_scale_together_at_150_percent(self):
+        root = Root()
+        root.winfo_fpixels = lambda distance: 144
+        window = desktop.MemoryWindow(root, self.app, FakeTk, output_dir="chosen")
+        self.assertEqual(window.ring.cget("width"), 330)
+        self.assertEqual(window.ring.cget("height"), 330)
+        self.assertEqual(window.percent.cget("font")[1], -81)
+        self.assertGreaterEqual(int(root.size.split("x")[0]), 690)
+        self.assertEqual(self.app.calls, [])
 
     def test_unsupported_working_set_never_falls_back_to_standby(self):
         self.app.capabilities = Capabilities("fake", "available", ("standby",))
@@ -476,7 +495,7 @@ class DesktopTests(unittest.TestCase):
         self.advance_animation(0.2)
         self.assertTrue(worker.is_alive())
         self.assertEqual(window.percent.cget("text"), "50%")
-        self.assertEqual(window.ring.items[window._ring_fill]["extent"], -180)
+        self.assertEqual(window._ring_frame[1], 50)
         self.assertIn("4.000 GiB", window.available.cget("text"))
         self.assertEqual(self.app.calls, [])
         self.assertIn("正在整理", window.status.cget("text"))
@@ -581,7 +600,7 @@ class DesktopRunTests(unittest.TestCase):
                     self.finish()
 
         tk = types.SimpleNamespace(**{name: getattr(FakeTk, name) for name in
-                                   ("Frame", "LabelFrame", "Label", "Button", "Radiobutton", "Text", "Scrollbar", "Canvas", "StringVar")},
+                                   ("Frame", "LabelFrame", "Label", "Button", "Radiobutton", "Text", "Scrollbar", "Canvas", "StringVar", "PhotoImage")},
                                    Tk=lambda: root, TclError=RuntimeError,
                                    filedialog=types.SimpleNamespace(askdirectory=lambda **kwargs: None),
                                    messagebox=types.SimpleNamespace(askyesno=lambda *args, **kwargs: True))

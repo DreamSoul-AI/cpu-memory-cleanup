@@ -265,10 +265,11 @@ class Application:
         report.phase = "finished"
         return report
 
-    def memory_cleanup(self, output_dir, *, confirmed=False, confirmation_source="", cancel_event=None):
+    def memory_cleanup(self, output_dir, *, confirmed=False, confirmation_source="", cancel_event=None, observation_seconds=0):
         """明确请求一次工作集整理，使用内存专用前后快照。"""
         request = ActionRequest("working-set", confirmed=confirmed, confirmation_source=confirmation_source)
-        return self.maintain(request, output_dir, cancel_event=cancel_event, lightweight=True)
+        return self.maintain(request, output_dir, cancel_event=cancel_event, lightweight=True,
+                             observation_seconds=observation_seconds)
 
     def memory_targets(self, *, cancel_event=None):
         """按需发现可读进程，不采集CPU或执行维护。"""
@@ -509,7 +510,7 @@ class Application:
                 raise interruptions[0]
         return report
 
-    def maintain(self, request, output_dir, *, cancel_event=None, lightweight=False):
+    def maintain(self, request, output_dir, *, cancel_event=None, lightweight=False, observation_seconds=0):
         report = self._report("maintain")
         if not self._begin(report, cancel_event):
             return report
@@ -519,6 +520,8 @@ class Application:
             self._check_cancel()
             if type(lightweight) is not bool or (lightweight and not callable(getattr(self.reader, "open_memory_observation", None))):
                 raise ValueError("当前接入不支持所需的轻量内存快照")
+            if type(observation_seconds) is not int or not 0 <= observation_seconds <= 5:
+                raise ValueError("后续观察秒数必须为0至5的整数")
             if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
                 raise ValueError("维护必须有明确确认及来源")
             if request.scope not in self.capabilities.scopes:
@@ -527,9 +530,14 @@ class Application:
                 raise ValueError("当前操作系统接入不提供该维护机制")
             if output_dir is None or self.maintainer is None or self.reader is None:
                 raise ValueError("维护必须提供输出目录和接入")
-            options = _options({"count": 2, "interval": 0, "output_dir": output_dir})
+            if observation_seconds and (not lightweight or request.scope != "system" or request.mechanism != "working-set"):
+                raise ValueError("短时后续观察仅用于轻量系统工作集整理")
+            options = _options({"count": 2 + observation_seconds, "interval": 0, "output_dir": output_dir})
             report.metadata["header"] = self._header(report, options)
             report.metadata["header"]["mechanism"] = request.mechanism
+            if observation_seconds:
+                report.metadata["header"]["post_observation_seconds"] = observation_seconds
+                report.metadata["header"]["post_observation_interval_s"] = 1
             if request.scope == "process":
                 report.metadata["header"].update(schema_version=2, scope="process", target={
                     "pid": request.target.pid, "created_at": request.target.created_at, "name": request.target.name,
@@ -589,6 +597,17 @@ class Application:
                 return report
             report.phase = "after"
             self._read(session, report, journal, target_reader)
+            if observation_seconds and report.action.get("call_outcome") == "success":
+                report.phase = "observing"
+                for _ in range(observation_seconds):
+                    if self._sleep is None:
+                        self._cancel.wait(1)
+                    else:
+                        self._sleep(1)
+                    if self._cancel.is_set():
+                        self._error(report, "observing", ValueError("调用已返回，后续观察已停止；保留已有快照，未再次清理"), interruptions)
+                        break
+                    self._read(session, report, journal, target_reader)
             report.analysis = (analysis.cleanup_summary(report.samples, report.action, report.metadata["header"])
                                if lightweight else analysis.analyze(report.samples))
             journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
