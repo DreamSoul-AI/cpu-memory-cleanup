@@ -74,7 +74,7 @@ class WebTests(unittest.TestCase):
         self.fail("合成任务未完成")
 
     def test_opening_page_assets_and_session_never_reads_backend(self):
-        for path in ("/", "/app.js", "/styles.css", "/api/session"):
+        for path in ("/", "/app.js", "/cleanup-effect.js", "/styles.css", "/api/session"):
             status, content = self.request("GET", path, token=False)
             self.assertEqual(status, 200)
         self.assertEqual(self.reads, [])

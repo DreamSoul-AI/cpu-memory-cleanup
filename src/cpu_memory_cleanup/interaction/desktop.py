@@ -7,6 +7,7 @@ import time
 
 from .presentation import summary
 from .ring import RingRaster
+from .cleanup_effect import CleanupEffect
 
 GREEN = "#087F4F"
 BACKGROUND = "#F3F7F4"
@@ -95,6 +96,9 @@ class MemoryWindow:
         self._latest_report = None
         self._report_details = "尚无运行记录"
         self._paused = False
+        self._decoration = CleanupEffect()
+        self._decoration_job = None
+        self._decoration_enabled = True
         # Canvas尺寸使用像素，普通Tk字体使用点；按同一显示比例换算，避免大字体挤进固定小圆环。
         scale = root.winfo_fpixels("1i") / 96
         px = lambda value: round(value * scale)
@@ -136,8 +140,16 @@ class MemoryWindow:
         self.button.bind("<Leave>", lambda event: self.button.configure(bg=GREEN))
         self.status = tk.Label(body, text="实时查看，按需整理。", bg=BACKGROUND, fg="#6C7D73", font=("Microsoft YaHei UI", 9), wraplength=px(380))
         self.status.grid(row=4, column=0, sticky="ew", pady=(0, 14))
+        decoration = tk.Frame(body, bg=BACKGROUND)
+        decoration.grid(row=5, column=0, sticky="ew")
+        self.decoration_note = tk.Button(decoration, text="过程动效 · 点击关闭", command=self.toggle_decoration,
+            bg=BACKGROUND, fg="#72877A", relief="flat", bd=0, font=("Microsoft YaHei UI", 8))
+        self.decoration_note.pack(side="left")
+        self.decoration_bar = tk.Canvas(decoration, width=px(120), height=px(4), bg="#DFEAE3", highlightthickness=0)
+        self.decoration_bar.pack(side="right")
+        self._decoration_fill = self.decoration_bar.create_rectangle(0, 0, 0, px(4), fill=GREEN, outline="")
         feedback = tk.Frame(body, bg="white", padx=16, pady=14)
-        feedback.grid(row=5, column=0, sticky="ew")
+        feedback.grid(row=6, column=0, sticky="ew")
         feedback.columnconfigure(0, weight=1)
         tk.Label(feedback, text="最近一次整理", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 9)).grid(row=0, column=0, sticky="w")
         self.result = tk.Label(feedback, text="尚未整理", bg="white", fg=GREEN, font=("Microsoft YaHei UI", 12, "bold"), anchor="w", justify="left", wraplength=px(360), height=2)
@@ -147,7 +159,7 @@ class MemoryWindow:
         self.result_context = tk.Label(feedback, text="结果与实时读数分别保留", bg="white", fg="#72877A", font=("Microsoft YaHei UI", 8), anchor="w", wraplength=px(360), height=2)
         self.result_context.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         controls = tk.Frame(body, bg=BACKGROUND)
-        controls.grid(row=6, column=0, sticky="ew", pady=(15, 0))
+        controls.grid(row=7, column=0, sticky="ew", pady=(15, 0))
         controls.columnconfigure(0, weight=1)
         self.details_button = tk.Button(controls, text="详情与设置  ›", command=self.open_workspace,
             bg=BACKGROUND, fg=GREEN, activebackground="#E5EFE8", relief="flat", bd=0,
@@ -158,7 +170,7 @@ class MemoryWindow:
         self.cancel_button.grid(row=0, column=1, sticky="e")
         self._commit_text = "提交量 未知"
         self.context = tk.Label(body, text="最近更新：未知", bg=BACKGROUND, fg="#72877A", font=("Microsoft YaHei UI", 8), wraplength=px(380))
-        self.context.grid(row=7, column=0, sticky="w", pady=(8, 0))
+        self.context.grid(row=8, column=0, sticky="w", pady=(8, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._controls()
         if not self._supported:
@@ -342,10 +354,32 @@ class MemoryWindow:
             return
         if self._submit(self.app.memory_cleanup, self._output_dir, confirmed=True,
                         confirmation_source="desktop:memory-clean-button", observation_seconds=3):
+            if self._decoration_enabled:
+                self._decoration.start(self._percent, self._clock())
+                if self._decoration_job is not None:self.root.after_cancel(self._decoration_job)
+                self._decoration_job = self.root.after(16, self._tick_decoration)
             self.button.configure(text="正在整理…")
             self.status.configure(text="正在整理并观察3秒短期变化，当前读数持续更新。")
             self.result.configure(text="正在整理内存…")
             self.result_note.configure(text="只调用一次；观察结束后显示净变化，不代表系统已稳定。")
+
+    def toggle_decoration(self):
+        self._decoration_enabled = not self._decoration_enabled
+        self._stop_decoration()
+        self.decoration_note.configure(text="过程动效 · 点击关闭" if self._decoration_enabled else "动效已关闭 · 点击开启")
+
+    def _stop_decoration(self):
+        if self._decoration_job is not None:self.root.after_cancel(self._decoration_job)
+        self._decoration_job = None
+        self._decoration.stop()
+        self.decoration_bar.coords(self._decoration_fill, 0, 0, 0, self.decoration_bar.winfo_height())
+
+    def _tick_decoration(self):
+        self._decoration_job = None
+        if self._closing:return
+        value = self._decoration.tick(self._clock())
+        self.decoration_bar.coords(self._decoration_fill, 0, 0, self.decoration_bar.winfo_width()*value/100, self.decoration_bar.winfo_height())
+        if self._decoration.phase is not None:self._decoration_job = self.root.after(16, self._tick_decoration)
 
     def cancel(self):
         if self._cancel_event is not None:
@@ -357,6 +391,7 @@ class MemoryWindow:
         if self._closing:
             return
         self._closing = True
+        self._stop_decoration()
         if self.workspace is not None:
             self.workspace.policy.stop()
         if self._tray is not None:
@@ -441,6 +476,10 @@ class MemoryWindow:
                             self._tray.notify("整理：" + completion + "。数值变化不代表提速；详情见窗口。")
                         except Exception as error:
                             self.status.configure(text=f"整理已收尾，通知未确认：{error}")
+                if error is not None or report.completion != "success":
+                    self._stop_decoration()
+                elif report.mode == "maintain" and self._decoration.phase is not None:
+                    self._decoration.finish(self._percent)
                 self._controls()
         if self._closing and self._worker is None and self._memory_worker is None and not self.app.busy:
             self._closed = True

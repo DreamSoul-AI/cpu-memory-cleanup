@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>内存清理 · 本地工作台</title>
-  <link rel="stylesheet" href="/styles.css"><script defer src="/app.js"></script>
+  <link rel="stylesheet" href="/styles.css"><script defer src="/cleanup-effect.js"></script><script defer src="/app.js"></script>
 </head>
 <body>
   <header><a class="brand" href="/">◉ <span>内存清理<small>LOCAL WORKSPACE</small></span></a><div class="header-right"><span id="mode" class="badge">正在连接本地服务</span><label class="hint">页面缩放 <select id="view-scale"><option value="1">100%</option><option value="1.5">150%</option></select></label><button id="shutdown" class="quiet">停止服务</button></div></header>
@@ -17,6 +17,7 @@
         <div class="meter" role="progressbar" aria-label="物理内存占用" aria-valuemin="0" aria-valuemax="100" id="meter"><div id="fill"></div></div>
         <div class="metric"><span>可用 / 总量</span><strong id="capacity">尚未读取</strong></div>
         <button id="global-clean" class="primary">✦ 一键整理工作集</button>
+        <div class="decoration"><label><input id="decoration-enabled" type="checkbox" checked> <span id="decoration-note">过程动效 · 不代表内存指标</span></label><div class="decoration-track" aria-hidden="true"><div id="decoration-fill"></div></div></div>
         <p class="hint">全局范围，不支持应用排除。页面驻留减少不代表业务对象被释放，也不保证提速。</p>
         <div class="connection"><span class="dot"></span><span id="job-status" role="status" aria-live="polite">本地就绪 · 点击才执行</span><button id="cancel" class="quiet" disabled>停止后续动作</button></div>
         <p id="error" class="error" role="alert" hidden></p>

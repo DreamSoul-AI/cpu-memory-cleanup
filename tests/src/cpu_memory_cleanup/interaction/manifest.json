@@ -136,6 +136,17 @@
         "quick",
         "readonly_offline"
       ]
+    },
+    "test_cleanup_effect.py": {
+      "target": "src/cpu_memory_cleanup/interaction/cleanup_effect.py",
+      "tags": [
+        "offline",
+        "module_cleanup_effect"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
     }
   }
 }

@@ -312,6 +312,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlsplit(self.path)
         assets = {"/": ("index.html", "text/html; charset=utf-8"),
+                  "/cleanup-effect.js": ("cleanup-effect.js", "text/javascript; charset=utf-8"),
                   "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                   "/styles.css": ("styles.css", "text/css; charset=utf-8")}
         if parsed.path in assets:

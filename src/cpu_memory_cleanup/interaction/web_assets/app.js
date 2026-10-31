@@ -1,6 +1,16 @@
 "use strict";
 const el = (id) => document.getElementById(id);
 let cleaning = false;
+const decoration = typeof CleanupEffect === "function" ? new CleanupEffect(el("decoration-fill"),el("decoration-note")) : null;
+function notifyDecoration(kind){
+  try {
+    if(!decoration)return;
+    const value=shownMemory?.total>0?(shownMemory.total-shownMemory.available)/shownMemory.total*100:0;
+    if(kind==="start" && el("decoration-enabled").checked && !reducedMotion.matches && !document.hidden)decoration.start(value);
+    else if(kind==="finish")decoration.finish(value);
+    else if(kind==="stop")decoration.stop();
+  }catch(_){/* 装饰失败不影响任务、读数和报告。 */}
+}
 let liveEnabled = true, displayTimer = null, displayInFlight = false, animation = null, shownMemory = null;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let token = "", busy = false, currentJob = null, lastSaved = null, pendingAction = null;
@@ -126,8 +136,9 @@ async function refreshDisplay(){
 function pauseDisplay(){
   clearTimeout(displayTimer);if(animation!==null)cancelAnimationFrame(animation);animation=null;
 }
-document.addEventListener("visibilitychange",()=>{if(document.hidden)pauseDisplay();else refreshDisplay();});
-window.addEventListener("pagehide",()=>{liveEnabled=false;pauseDisplay();clearTimeout(ruleTimer);});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){pauseDisplay();notifyDecoration("stop");}else refreshDisplay();});
+el("decoration-enabled").addEventListener("change",()=>notifyDecoration("stop"));
+window.addEventListener("pagehide",()=>{notifyDecoration("stop");liveEnabled=false;pauseDisplay();clearTimeout(ruleTimer);});
 function present(job){
   const report=job.report;if(job.kind!=="replay")memory(report);
   if(job.kind==="targets"){
@@ -153,13 +164,14 @@ function present(job){
 }
 async function run(action){
   if(busy||stopped)return;error("");busy=true;cleaning=action.kind==="cleanup"||action.kind==="batch";controls();renderRows();
+  if(action.kind==="cleanup" && action.mechanism==="working-set")notifyDecoration("start");
   el("job-status").textContent="正在提交本次请求…";
   try{
     const accepted=await api("/api/action",action);currentJob=accepted.id;
     el("job-status").textContent=action.kind==="cleanup" && action.mechanism==="working-set" ? "正在整理并观察3秒短期变化 · 只调用一次" : "处理中 · 等待 Package 收尾";
     for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
   }catch(exc){error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
-  finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();}
+  finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();if(action.kind==="cleanup" && action.mechanism==="working-set")notifyDecoration("finish");}
 }
 function confirmAction(action,text){pendingAction=action;el("confirmation-text").textContent=text;el("confirmation").hidden=false;el("confirm-yes").focus();}
 el("read-status").addEventListener("click",()=>{liveEnabled=!liveEnabled;if(liveEnabled)refreshDisplay();else{pauseDisplay();el("live-status").textContent="实时显示已暂停 · 保留上次读数";}controls();});

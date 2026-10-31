@@ -77,6 +77,10 @@ class Widget:
     def yview(self, *args):
         pass
 
+    def create_rectangle(self, *args, **kwargs):
+        self.items["rectangle"] = {"coords": args, **kwargs}
+        return "rectangle"
+
     def create_oval(self, *args, **kwargs):
         self.items["track"] = {"coords": args, **kwargs}
         return "track"
@@ -362,6 +366,20 @@ class DesktopTests(unittest.TestCase):
         for available, expected in ((75, 25), (25, 75)):
             self.window._paint_memory({"total":100, "available":available, "commit_used":None, "commit_limit":None})
             self.assertEqual(self.window._ring_frame[1], expected)
+
+    def test_report_and_button_do_not_wait_for_decoration_and_disabled_is_equivalent(self):
+        results = []
+        for enabled in (True, False):
+            app, root = FakeApplication(), Root()
+            window = desktop.MemoryWindow(root, app, FakeTk, output_dir="chosen", clock=lambda: 0)
+            if not enabled:window.toggle_decoration()
+            window.maintain();window.maintain()
+            window._worker.finish();window.pump()
+            self.assertEqual(window.button.cget("state"), "normal")
+            self.assertEqual(len(app.cleanup_calls), 1)
+            self.assertEqual(window._decoration.phase, "emptying" if enabled else None)
+            results.append((window.result.cget("text"), window.result_note.cget("text"), app.cleanup_calls))
+        self.assertEqual(results[0], results[1])
 
     def test_ring_and_center_font_scale_together_at_150_percent(self):
         root = Root()

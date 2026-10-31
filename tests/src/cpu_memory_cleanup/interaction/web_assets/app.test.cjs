@@ -20,6 +20,7 @@ function page(reduced = false) {
     window:{addEventListener(){}}, matchMedia:()=>({matches:reduced}),performance:{now:()=>0},
     requestAnimationFrame(fn){frames.set(++next,fn);return next;},cancelAnimationFrame(id){frames.delete(id);},
     setTimeout(){return 0;},clearTimeout(){},fetch:()=>new Promise(()=>{})});
+  vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../../../src/cpu_memory_cleanup/interaction/web_assets/cleanup-effect.js"),"utf8"),context);
   vm.runInContext(source,context);
   return {elements,run:s=>vm.runInContext(s,context),tick(time){const jobs=[...frames.values()];frames.clear();jobs.forEach(fn=>fn(time));},frames};
 }
@@ -79,4 +80,44 @@ test('live occupancy continues updating during cleanup and never becomes an effe
   assert.equal(p.elements.percent.textContent,'50%');
   assert.equal(p.elements.gauge.style['--usage'],'180deg');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'50');
+});
+
+
+test('decoration enabled or disabled leaves action, report and live values equivalent',async()=>{
+  const results=[];
+  for(const enabled of [true,false]){
+    const p=page();p.elements['decoration-enabled'].checked=enabled;
+    await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+      var actionCount=0;var original={completion:'success',errors:[],samples:[],action:{call_outcome:'success'}};
+      api=async path=>{if(path==='/api/action'){actionCount++;return {id:'one'};}return {id:'one',kind:'cleanup',state:'finished',report:original,presentation:{title:'实际结果',note:'快照结果',context:'记录'}};};
+      memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
+    assert.equal(p.elements['global-clean'].disabled,false);
+    assert.equal(p.elements['recent-title'].textContent,'实际结果');
+    assert.equal(p.run('decoration.phase'),enabled?'emptying':null);
+    p.run(`memory(${snapshot(70)})`);p.tick(400);
+    assert.equal(p.elements.percent.textContent,'30%');
+    assert.equal(p.elements.gauge.style['--usage'],'108deg');
+    results.push(p.run('JSON.stringify([actionCount,original])'));
+  }
+  assert.equal(results[0],results[1]);
+});
+test('decoration failure cannot fail the business request',async()=>{
+  const p=page();p.elements['decoration-enabled'].checked=true;
+  await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+    decoration.start=()=>{throw new Error('visual only')};
+    api=async path=>path==='/api/action'?{id:'one'}:{id:'one',kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'完成',note:'原报告',context:'时间'}};
+    run({kind:'cleanup',mechanism:'working-set'});`);
+  assert.equal(p.elements['recent-title'].textContent,'完成');
+  assert.equal(p.elements['global-clean'].disabled,false);
+});
+
+
+test('isolated decoration clock empties, waits and settles without a business callback',()=>{
+ const p=page();p.run('decoration.start(40)');
+ p.tick(1500);assert.equal(p.elements['decoration-fill'].style.width,'20%');
+ p.tick(3000);assert.equal(p.run('decoration.phase'),'waiting');
+ p.tick(10000);assert.equal(p.run('decoration.phase'),'waiting');
+ p.run('decoration.finish(30)');p.tick(11000);p.tick(12200);
+ assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.elements['decoration-fill'].style.width,'0%');
 });
