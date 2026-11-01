@@ -518,7 +518,7 @@ class Application:
     def _working_sets(self):
         try:
             rows, errors = self.reader.process_targets()
-            value = {"timestamp": self._clock(), "processes": rows, "errors": errors}
+            value = {"timestamp": self._clock(), "processes": [dict(row) for row in rows], "errors": list(errors)}
             verification.working_set_changes(value, value)
             return value
         except ResourceCloseError:
@@ -529,8 +529,11 @@ class Application:
         try:
             value = verification.diagnostics(report.samples, report.metadata.get("header") or {},
                 timing=timings.snapshot() if timings is not None else None, working_sets=observations)
+            value["run_id"] = report.run_id
             report.metadata["diagnostics"] = value
-            if report.output_dir and callable(getattr(self.records, "write_diagnostics", None)):
+            if report.output_dir:
+                if not callable(getattr(self.records, "write_diagnostics", None)):
+                    raise ValueError("记录接入不支持诊断附件保存")
                 self.records.write_diagnostics(report.output_dir, value)
         except Exception as error:
             report.metadata.setdefault("diagnostics", {}).setdefault("errors", []).append(

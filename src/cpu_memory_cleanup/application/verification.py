@@ -84,6 +84,9 @@ def memory_timeline(samples, header, *, threshold_bytes=None):
     first = _stamp(gain["timestamp"]) if gain else None
     delay = (first - start).total_seconds() * 1000 if first is not None and start is not None and first >= start and ordered else None
     return {"window": "post_observation" if header.get("post_observation_seconds") else "immediate_snapshots",
+            "request_started_at": header.get("started_at"), "request_time_source": "package_header",
+            "window_started_at": rows[0]["timestamp"] if rows else None,
+            "window_ended_at": rows[-1]["timestamp"] if rows else None,
             "samples": rows, "available_delta_bytes": None if initial is None or last is None else last - initial,
             "peak_observed_available_bytes": peak["available_bytes"] if peak else None,
             "peak_observed_at": peak["timestamp"] if peak else None,
