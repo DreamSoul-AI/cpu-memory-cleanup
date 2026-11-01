@@ -9,5 +9,6 @@ def select_backend(operating_system=None):
     if name != "win32":
         return None, Capabilities(str(name), reason="当前操作系统尚无实时接入，离线回看仍可使用")
     from .platforms.windows import WindowsBackend
-    return WindowsBackend(), Capabilities(name, reading="available", mechanisms=("working-set", "standby"),
+    return WindowsBackend(process_working_set_method="SetProcessWorkingSetSize",
+                          system_working_set_method="SetProcessWorkingSetSize"), Capabilities(name, reading="available", mechanisms=("working-set", "standby"),
                                          scopes=("system", "process"), reason="接入已提供，实际指标、权限和维护支持在请求时核对")

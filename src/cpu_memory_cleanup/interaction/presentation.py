@@ -41,6 +41,9 @@ def summary(report):
                 f"调用后{observation}秒窗口内净变化，不代表已稳定或全部由清理造成。" if observation else "再次使用时占用可能回升。")
     if report.errors:
         note = str(report.errors[0].get("message") or report.errors[0].get("reason") or "详情中查看错误")
+    sweep = report.action.get("process_sweep")
+    if sweep:
+        note += f" 逐进程成功{sweep['successful_count']}、跳过{sweep['skipped_count']}、失败{sweep['failed_count']}。"
     end = _stamp(terminal.get("finished_at"))
     start = _stamp(header.get("started_at"))
     when = end.astimezone().strftime("%H:%M:%S") if end else "时间未记录"

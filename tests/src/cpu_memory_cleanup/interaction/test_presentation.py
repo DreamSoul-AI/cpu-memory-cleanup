@@ -4,6 +4,14 @@ from cpu_memory_cleanup.contracts import RunReport, Sample
 from cpu_memory_cleanup.interaction.presentation import summary
 
 class PresentationTests(unittest.TestCase):
+    def test_sweep_reports_coverage_separately_from_capacity_change(self):
+        report = RunReport("run", "maintain", completion="success",
+            action={"attempted": True, "call_outcome": "success", "process_sweep": {
+                "successful_count": 2, "skipped_count": 1, "failed_count": 0}})
+        view = summary(report)
+        self.assertIn("逐进程成功2、跳过1、失败0", view["note"])
+        self.assertNotIn("全机清空", view["note"])
+
     def test_observation_feedback_is_not_a_stability_claim(self):
         report = RunReport("run", "maintain", completion="success", action={"attempted":True,"call_outcome":"success"},
             samples=[Sample("run",i,None,{"physical":{"available_bytes":v*1024**3}}) for i,v in enumerate((2,3,4,3,5))],

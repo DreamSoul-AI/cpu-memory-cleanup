@@ -98,6 +98,38 @@ class WebTests(unittest.TestCase):
                 server.server_close()
                 server.app.shutdown()
 
+    def test_formal_working_set_job_uses_default_process_sweep(self):
+        from cpu_memory_cleanup.api import create_web_server
+        from cpu_memory_cleanup.system.operating_system import select_backend
+        from cpu_memory_cleanup.system.platforms import windows
+        from ..system.platforms.test_windows import FakeSystem, Function
+        fake, calls = FakeSystem(), []
+        fake.kernel.SetProcessWorkingSetSize = Function(lambda handle, *_: calls.append(handle) or True)
+        with patch.object(windows, "_load_dll", side_effect=fake.load), \
+             patch.object(windows, "_maintenance_lock", threading.Lock()), \
+             patch("cpu_memory_cleanup.api.select_backend", side_effect=lambda: select_backend("win32")):
+            formal = create_web_server(output_dir=Path(self.temp.name) / "sweep" / "runs", port=0)
+            try:
+                self.assertFalse(formal.preview)
+                self.assertEqual(fake.loads, [])
+                before = formal.display()
+                job = formal.submit({"kind": "cleanup", "mechanism": "working-set", "confirmed": True})
+                formal.worker.join(2)
+                self.assertFalse(formal.worker.is_alive())
+                result = formal.job(job["id"])
+                self.assertEqual(result["report"]["completion"], "success", result)
+                self.assertEqual(calls, [11, 12])
+                self.assertEqual(result["report"]["action"]["native_method"], "SetProcessWorkingSetSize")
+                self.assertIn("成功2、跳过1", result["presentation"]["note"])
+                self.assertTrue(formal.display())
+                self.assertTrue(before)
+                self.assertFalse(formal.policy.armed)
+                self.assertEqual(fake.nt_calls, [])
+                self.assertEqual(fake.adjustments, [])
+            finally:
+                formal.server_close()
+                formal.app.shutdown()
+
     def test_web_cli_routes_to_formal_factory_without_sampling(self):
         from cpu_memory_cleanup.__main__ import main
         from cpu_memory_cleanup.interaction.cli import parse_args

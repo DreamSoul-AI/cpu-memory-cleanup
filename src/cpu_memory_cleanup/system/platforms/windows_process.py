@@ -112,8 +112,9 @@ def image_path(kernel, handle):
     return name.value
 
 
-def targets(loader):
-    kernel, psapi = loader("kernel32.dll"), loader("psapi.dll")
+def process_ids(loader):
+    """一次有界枚举，不打开目标或执行维护。"""
+    psapi = loader("psapi.dll")
     capacity = 1024
     enum = bind(psapi, "EnumProcesses", [c.POINTER(w.DWORD), w.DWORD, c.POINTER(w.DWORD)], w.BOOL)
     while capacity <= 131072:
@@ -126,10 +127,91 @@ def targets(loader):
         capacity *= 2
     else:
         raise OSError("进程枚举超过上限")
+    return list(dict.fromkeys(int(pid) for pid in ids[:used.value // c.sizeof(w.DWORD)] if pid))
+
+
+def sweep_working_sets(loader, timings=None):
+    """一轮逐进程裁剪；不提权、不结束进程、不回退全局NT。"""
+    kernel = loader("kernel32.dll")
+    measure = timings.measure if timings is not None else lambda _: nullcontext()
+    with measure("process_enumeration"):
+        ids = process_ids(loader)
+    sweep = {"enumerated_count": len(ids), "visited_count": 0, "attempted_count": 0,
+             "successful_count": 0, "failed_count": 0, "unknown_count": 0, "skipped_count": 0,
+             "resources_closed": True, "items": [], "omitted_items_count": 0}
+    errors, first_failure = [], None
+    trim = bind(kernel, "SetProcessWorkingSetSize", [w.HANDLE, c.c_size_t, c.c_size_t], w.BOOL)
+    flush = c.c_size_t(-1).value
+    for pid in ids:
+        row = {"pid": pid, "outcome": "skipped"}
+        with measure("target_open"):
+            handle = bind(kernel, "OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE)(
+                QUERY | SET_QUOTA, False, pid)
+        if not handle:
+            row["status"] = c.get_last_error()
+            sweep["skipped_count"] += 1
+        else:
+            try:
+                try:
+                    with measure("target_verify"):
+                        row["created_at"] = identity(kernel, handle)
+                        if identity(kernel, handle) != row["created_at"]:
+                            raise ValueError("当前句柄的创建身份核验不一致")
+                except (OSError, ValueError) as error:
+                    row["error"] = str(error)
+                    sweep["skipped_count"] += 1
+                else:
+                    sweep["attempted_count"] += 1
+                    try:
+                        with measure("native_call"):
+                            ok = trim(handle, flush, flush)
+                            status = 0 if ok else c.get_last_error()
+                        if timings is not None:
+                            timings.mark("native_returned")
+                    except Exception as error:
+                        row.update(outcome="unknown", error=str(error))
+                        sweep["unknown_count"] += 1
+                    else:
+                        row.update(outcome="success" if ok else "failure", status=status)
+                        sweep["successful_count" if ok else "failed_count"] += 1
+                        if not ok and first_failure is None:
+                            first_failure = status
+            finally:
+                try:
+                    with measure("target_close"):
+                        checked(bind(kernel, "CloseHandle", [w.HANDLE], w.BOOL)(handle))
+                except Exception as error:
+                    row["close_error"] = str(error)
+                    sweep["resources_closed"] = False
+        sweep["visited_count"] += 1
+        if len(sweep["items"]) < 1024:
+            sweep["items"].append(row)
+        else:
+            sweep["omitted_items_count"] += 1
+        if sweep["unknown_count"] or not sweep["resources_closed"]:
+            break
+    if sweep["failed_count"]:
+        errors.append(f"{sweep['failed_count']}个进程工作集调用失败，逐项状态见process_sweep")
+    if sweep["unknown_count"]:
+        errors.append("目标原生调用结果未知，已停止遍历，不重试")
+    if not sweep["resources_closed"]:
+        errors.append("目标句柄关闭未确认，已停止遍历，不重复关闭")
+    if not sweep["attempted_count"]:
+        errors.append("没有可派发工作集整理的目标")
+    outcome = ("unknown" if sweep["unknown_count"] else "not_started" if not sweep["attempted_count"]
+               else "failure" if sweep["failed_count"] else "success")
+    sweep["coverage"] = "partial" if (not sweep["resources_closed"] or sweep["skipped_count"] or sweep["failed_count"] or
+        sweep["unknown_count"] or sweep["visited_count"] < len(ids)) else "observed_only"
+    return {"attempted": None if sweep["unknown_count"] else bool(sweep["attempted_count"]),
+            "call_outcome": outcome, "status": first_failure if first_failure is not None else 0,
+            "privilege_restored": True, "errors": errors,
+            "native_method": "SetProcessWorkingSetSize", "process_sweep": sweep}
+
+
+def targets(loader):
+    kernel, psapi = loader("kernel32.dll"), loader("psapi.dll")
     rows, errors = [], []
-    for pid in ids[:used.value // c.sizeof(w.DWORD)]:
-        if not pid:
-            continue
+    for pid in process_ids(loader):
         # 发现阶段尚无创建身份，先只读打开，再由同一句柄取得身份与名称。
         handle = bind(kernel, "OpenProcess", [w.DWORD, w.BOOL, w.DWORD], w.HANDLE)(QUERY, False, pid)
         if not handle:

@@ -23,4 +23,5 @@ class OperatingSystemTests(unittest.TestCase):
             backend, capabilities = select_backend("win32")
         self.assertIs(backend, factory.return_value)
         self.assertEqual(capabilities.mechanisms, ("working-set", "standby"))
-        factory.assert_called_once_with()
+        factory.assert_called_once_with(process_working_set_method="SetProcessWorkingSetSize",
+                                        system_working_set_method="SetProcessWorkingSetSize")

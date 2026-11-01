@@ -255,6 +255,9 @@
         "readonly_offline"
       ],
       "cases": {
+        "SweepTests.test_formal_package_sweeps_once_and_replay_preserves_each_result": {
+          "level": "e2e"
+        },
         "ProcessTests.test_target_cleanup_and_offline_replay_keep_identity_and_single_call": {
           "level": "e2e"
         },

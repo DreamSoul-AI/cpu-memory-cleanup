@@ -342,10 +342,14 @@ def _read_processes(kernel, psapi, errors, pending_handles, unknown_handles):
 class WindowsBackend:
     """只保存接入参数；原生能力仅在显式打开会话后取得。"""
 
-    def __init__(self, dll_loader=None, now=None, *, process_working_set_method="EmptyWorkingSet"):
+    def __init__(self, dll_loader=None, now=None, *, process_working_set_method="EmptyWorkingSet",
+                 system_working_set_method="NtSetSystemInformation"):
         if process_working_set_method not in ("EmptyWorkingSet", "SetProcessWorkingSetSize"):
             raise ValueError("未知单目标工作集接口")
         self.process_working_set_method = process_working_set_method
+        if system_working_set_method not in ("NtSetSystemInformation", "SetProcessWorkingSetSize"):
+            raise ValueError("未知系统范围工作集方法")
+        self.system_working_set_method = system_working_set_method
         self._dll = _load_dll if dll_loader is None else dll_loader
         self._now = now or (lambda: datetime.now(timezone.utc).isoformat())
         self._memory_info = None
@@ -547,6 +551,9 @@ class _Operation:
         self._restore_failed = False
         self.target_session = None
         self._timings = None
+        self._process_sweep = (request.scope == "system" and request.mechanism == "working-set"
+                               and backend.system_working_set_method == "SetProcessWorkingSetSize")
+        self._process_close_errors = []
 
     def set_timing(self, timings):
         self._timings = timings
@@ -569,7 +576,7 @@ class _Operation:
         self.owner_thread = threading.get_ident()
         try:
             self.kernel, self.advapi = self.backend._dll("kernel32.dll"), self.backend._dll("advapi32.dll")
-            if self.request.scope == "system":
+            if self.request.scope == "system" and not self._process_sweep:
                 ntdll = self.backend._dll("ntdll.dll")
                 self.nt_call = bind(ntdll, "NtSetSystemInformation", [c.c_int, c.c_void_p, w.ULONG], c.c_long)
             result["supported"] = True
@@ -591,6 +598,9 @@ class _Operation:
                 self.target_session.verify()
                 result["native_method"] = self.target_session.method
                 result["privilege_available"] = True
+                return dict(result)
+            if self._process_sweep:
+                result.update(privilege_available=True, native_method="SetProcessWorkingSetSize")
                 return dict(result)
             token = _open_token(self.kernel, self.advapi, TOKEN_QUERY, self.tokens)
             interruption = None
@@ -651,6 +661,12 @@ class _Operation:
         if self.request.scope == "process":
             self.target_session.timings = self._timings
             return self.target_session.perform_once()
+        if self._process_sweep:
+            from .windows_process import sweep_working_sets
+            result = sweep_working_sets(self.backend._dll, self._timings)
+            if not result["process_sweep"]["resources_closed"]:
+                self._process_close_errors = ["逐进程目标句柄关闭未确认，不重复关闭"]
+            return result
         token, original, luid, adjusted = None, None, None, False
         interruption = None
         try:
@@ -729,7 +745,7 @@ class _Operation:
             return {"closed": not self._restore_failed, "errors": []}
         if self._wait_unknown:
             return {"closed": False, "errors": ["互斥取得结果未知，保留句柄和进程维护阻断"]}
-        errors = []
+        errors = self._process_close_errors.copy()
         if self.owned and threading.get_ident() != self.owner_thread:
             return {"closed": False, "errors": ["必须由取得互斥的线程关闭维护会话"]}
         if self.target_session is not None:

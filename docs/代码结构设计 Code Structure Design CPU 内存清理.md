@@ -440,3 +440,15 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 | application/experiments.py | MemoryObserver仅接收读取回调、采样预算和单调时钟，关闭后返回原始轨迹与判读。controlled_load及内部模块入口显式准备1..256 MiB自有缓冲，标准输入read/quit完成触页、读回校验和自然退出，不读取其他进程或自动维护 |
 
 测试镜像在对应test_windows_process.py、test_batch.py、test_verification.py及test_experiments.py，依照共用测试规范登记局部清单。Package公共创建/动作参数和API_VERSION不变，不增加产品CLI、Tool或HTTP方法。实验模块入口只准备自有负载，真实比较另按执行范围开展，不能以内部装配选项冒充已切换默认或已提速。
+
+# 十八、一键逐进程工作集路径
+承接 [架构第十六章](<架构设计 Architecture Design CPU 内存清理.md#十六一键工作集整理采用360所见机制>)，沿用现有模块，不增加产品层或策略框架。
+
+- system/operating_system.py：正式装配明确选择逐进程SetProcessWorkingSetSize。构造不枚举、不读取、不维护；公共API、CLI/Tool、网页与桌面均复用这一装配
+- system/platforms/windows.py：内部全局方法配置区分逐进程方式与既有NT对照；process范围和Standby保留已有流程。工作集逐进程方式取得原互斥后进入同一操作会话，不要求或启用全局NT所需特权；完成后仍走公共资源与记录收尾
+- system/platforms/windows_process.py：提取共用进程ID枚举，新增一次工作集遍历，逐项打开QUERY/SET_QUOTA句柄、取得并核对创建身份、调用两个SIZE_T(-1)、关闭句柄。保存覆盖计数和有界逐项证据，失败不回退NT、不结束进程。原单目标TargetSession保持公开请求合同
+- application/core.py、interaction/web.py、interaction/desktop.py：保留原memory_cleanup调用和结果时机，无需复制遍历或调整动效。原动作增量字段随报告/记录传递，回看不派发
+- interaction/presentation.py：在原真实容量结果后附逐进程成功、跳过及失败数，网页与桌面共用；不改变圆环或结果发布时间
+- 测试：在windows_process镜像补逐项行为、原生计时与Package回看，在operating_system镜像核对正式装配；既有API/HTTP/桌面旅程用于验证调用合同
+
+结果使用原system范围动作记录，mechanism仍working-set，native_method明确SetProcessWorkingSetSize；process_sweep给出覆盖与逐项结果。一次用户请求只运行一轮枚举，不声称只调用一个目标；单目标与全局范围继续区分。阶段计时以每次实际原生调用为准，不把枚举及打开/关闭句柄计入原生时间。

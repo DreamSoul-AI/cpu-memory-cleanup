@@ -12,6 +12,148 @@ from tests.fixtures import FakeMonotonic
 from .test_windows import FakeSystem, Function
 
 
+class SweepTests(unittest.TestCase):
+    def setUp(self):
+        guard = patch.object(windows.c, "WinDLL", side_effect=AssertionError("不得加载真实DLL"), create=True)
+        guard.start()
+        self.addCleanup(guard.stop)
+        guard = patch.object(windows, "_maintenance_lock", threading.Lock())
+        guard.start()
+        self.addCleanup(guard.stop)
+        self.fake, self.calls = FakeSystem(), []
+        self.fake.kernel.SetProcessWorkingSetSize = Function(lambda *args: self.calls.append(args) or True)
+        self.backend = windows.WindowsBackend(self.fake.load, now=FakeRuntime().now,
+            system_working_set_method="SetProcessWorkingSetSize")
+        self.app = api.create_application(reader=self.backend, maintainer=self.backend, runtime=FakeRuntime(),
+            capabilities=api.Capabilities("synthetic", "available", ("working-set", "standby"), scopes=("system", "process")))
+        self.addCleanup(self.app.shutdown)
+
+    def test_formal_package_sweeps_once_and_replay_preserves_each_result(self):
+        import ctypes
+        import json
+        from pathlib import Path
+        from cpu_memory_cleanup.system.operating_system import select_backend
+        with patch.object(windows, "_load_dll", side_effect=self.fake.load):
+            backend, capabilities = select_backend("win32")
+            app = api.create_application(reader=backend, maintainer=backend, capabilities=capabilities)
+            self.addCleanup(app.shutdown)
+            with tempfile.TemporaryDirectory() as directory:
+                report = app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+                self.assertEqual(report.completion, "success", report.errors)
+                offline = api.create_application(offline=True)
+                self.addCleanup(offline.shutdown)
+                replay = offline.memory_result(report.output_dir)
+                self.assertEqual(replay.action, report.action)
+                self.assertEqual(replay.completion, "success", replay.errors)
+                intent = json.loads((Path(report.output_dir) / "operation.jsonl").read_text(encoding="utf-8").splitlines()[0])
+                self.assertEqual(intent["native_method"], "SetProcessWorkingSetSize")
+        self.assertEqual(self.calls, [(pid, ctypes.c_size_t(-1).value, ctypes.c_size_t(-1).value) for pid in (11, 12)])
+        sweep = report.action["process_sweep"]
+        self.assertEqual((sweep["enumerated_count"], sweep["successful_count"], sweep["skipped_count"]), (3, 2, 1))
+        self.assertEqual([row.get("created_at") for row in sweep["items"][:2]], [str((1 << 40) + pid) for pid in (11, 12)])
+        self.assertEqual(sweep["coverage"], "partial")
+        self.assertTrue(sweep["resources_closed"])
+        self.assertEqual(self.fake.nt_calls, [])
+        self.assertEqual(self.fake.adjustments, [])
+        self.assertNotIn("ntdll.dll", self.fake.loads)
+        self.assertIn(11, self.fake.closed)
+        self.assertIn(12, self.fake.closed)
+
+    def test_native_timing_excludes_enumeration_open_identity_and_close(self):
+        clock = FakeMonotonic()
+        self.app._monotonic = clock
+        for dll, name, delay in [(self.fake.psapi, "EnumProcesses", 50), (self.fake.kernel, "OpenProcess", 20),
+                                 (self.fake.kernel, "GetProcessTimes", 30), (self.fake.kernel, "CloseHandle", 10)]:
+            original = getattr(dll, name).function
+            def delayed(*args, original=original, delay=delay):
+                clock.advance_ms(delay)
+                return original(*args)
+            setattr(dll, name, Function(delayed))
+        def trim(*args):
+            clock.advance_ms(7)
+            self.calls.append(args)
+            return True
+        self.fake.kernel.SetProcessWorkingSetSize = Function(trim)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(report.completion, "success", report.errors)
+        self.assertEqual(report.metadata["diagnostics"]["verification"]["native_call_ms"], 14)
+        self.assertGreater(report.metadata["diagnostics"]["timing"]["elapsed_ms"], 14)
+
+    def test_failed_target_is_recorded_and_next_process_is_still_attempted(self):
+        def trim(handle, *args):
+            self.calls.append(handle)
+            windows.c.set_last_error(5)
+            return handle != 11
+        self.fake.kernel.SetProcessWorkingSetSize = Function(trim)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(self.calls, [11, 12])
+        self.assertEqual(report.completion, "partial")
+        self.assertEqual(report.action["status"], 5)
+        self.assertEqual(report.action["process_sweep"]["failed_count"], 1)
+        self.assertEqual(report.action["process_sweep"]["successful_count"], 1)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_unknown_native_result_stops_without_retry_or_fallback(self):
+        def trim(handle, *args):
+            self.calls.append(handle)
+            raise OSError("synthetic native unknown")
+        self.fake.kernel.SetProcessWorkingSetSize = Function(trim)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+            again = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(self.calls, [11])
+        self.assertEqual(report.completion, "unknown")
+        self.assertEqual(report.action["process_sweep"]["unknown_count"], 1)
+        self.assertEqual(again.action["attempted"], False)
+        self.assertEqual(self.fake.nt_calls, [])
+        self.assertEqual(self.fake.closed.count(11), 1)
+
+    def test_unconfirmed_close_preserves_action_and_stops_remaining_processes(self):
+        close = self.fake.kernel.CloseHandle.function
+        def fail_target(handle):
+            value = close(handle)
+            return False if handle == 11 else value
+        self.fake.kernel.CloseHandle = Function(fail_target)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(len(self.calls), 1)
+        self.assertTrue(report.action["attempted"])
+        self.assertEqual(report.completion, "partial")
+        self.assertFalse(report.action["process_sweep"]["resources_closed"])
+        self.assertEqual(self.fake.closed.count(11), 1)
+
+    def test_unreadable_identity_is_skipped_before_native_call(self):
+        original = self.fake.kernel.GetProcessTimes.function
+        self.fake.kernel.GetProcessTimes = Function(lambda handle, *args: False if handle == 11 else original(handle, *args))
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual([row[0] for row in self.calls], [12])
+        self.assertEqual(report.action["process_sweep"]["skipped_count"], 2)
+        self.assertEqual(self.fake.closed.count(11), 1)
+
+    def test_repeated_enumeration_ids_are_not_trimmed_twice(self):
+        def enumerate_ids(ids, size, needed):
+            for index, pid in enumerate((11, 11, 0, 12, 13)):
+                ids[index] = pid
+            needed._obj.value = 5 * windows.c.sizeof(windows.w.DWORD)
+            return True
+        self.fake.psapi.EnumProcesses = Function(enumerate_ids)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual([row[0] for row in self.calls], [11, 12])
+        self.assertEqual(report.action["process_sweep"]["enumerated_count"], 3)
+
+    def test_standby_retains_its_own_native_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.maintain(api.ActionRequest("standby", confirmed=True, confirmation_source="synthetic"), directory)
+        self.assertEqual(report.completion, "success", report.errors)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(len(self.fake.nt_calls), 1)
+        self.assertEqual(self.fake.nt_calls[0][1], 4)
+
+
 class ProcessTests(unittest.TestCase):
     def setUp(self):
         guard = patch.object(windows.c, "WinDLL", side_effect=AssertionError("不得加载真实DLL"), create=True)
