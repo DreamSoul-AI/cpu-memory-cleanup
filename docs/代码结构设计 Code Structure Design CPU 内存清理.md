@@ -69,6 +69,19 @@ Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证�
 上述Rust结构已落地，Package、CLI六工具、HTTP与Win32正式网页贯通，细节见 [验收记录](<运行记录 Run Record/2026-11-02 Rust原生网页验收.md>)。本轮只进行一次真实全局整理；定向/批次、自动规则的实机验证及其他系统版本未执行。历史CPU分析、Standby和Tk窗口不在本轮移植范围，不建立空目录冒充实现。后续改动从 [开发计划](<开发计划 Development Plan CPU 内存清理.md>)进入。
 
 
+# 七、流畅显示与阶段计量的源码映射
+本节对应架构第七章和UX-01/02、NATIVE-01。先更新结构合同，本轮不实施NATIVE-02/03。
+
+- interaction/web_assets/memory-display.js：纯显示驱动，拥有实时追踪、下降、刷新、回弹及连续交接，一个RAF持有者写入统一显示比例。替代cleanup-effect.js，既不发送维护也不计算业务收益
+- interaction/web_assets/app.js：保留真实快照、样本时间、报告与用户请求，原始容量立即呈现。显示驱动只接收比例及归零后的只读刷新回调。250毫秒轻量读取不重叠，保留有界请求/帧诊断供验收。主操作通过目标范围容器的disabled状态改变控件，不重建进程列表
+- interaction/web_assets/index.html、styles.css：细条使用单次scaleX显示，去除width的CSS叠加缓动，百分比等宽数字及固定占位。目标列表用fieldset统一忙碌状态，原始结果详情增加阶段/分布说明
+- system/measurement.rs：共享的阶段计时与纯分布汇总，返回版本化数据，统计总样本、P50/P95/P99、最大值和前20项，不查询应用名称或系统指标
+- contracts.rs：Sweep增量携带可选timing，旧数据缺项保持None；system/windows.rs包围既有原生路径收集互斥阶段，使用同一句柄，原生方法、访问权限及调用次数不变
+- application/service.rs：协调功能阶段，保留封存前窗口及完整业务窗口，摘要仍不携带全量明细；system/records.rs保存/核对同一run_id的timing.json附件，回看补充现有真实记录分布，不修改原件
+- interaction/web.rs：嵌入新显示资源，服务就绪时段与功能计时分别表达，不把浏览器时间写成系统调用时间
+
+新增检查按源职责组织在tests/system/measurement.rs与tests/interaction/web_assets/，已有Rust公共/HTTP合同测试继续使用Cargo入口。旧真实Run作为只读测试材料在忽略目录独立执行，不把机器路径写死进公开测试。不在Cargo测试或浏览器验收中调用真实清理。
+
 # 历史方案定位
 原章节和旧执行约定归档到 [Rust迁移前源码结构基线](<开发记录 Development Record/2026-11-02 Rust迁移前源码结构基线.md>)。历史记录中的提交、路径和验收状态保留原义。
 
