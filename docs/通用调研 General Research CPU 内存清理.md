@@ -548,7 +548,7 @@ flowchart TD
 当前默认按钮在前置检查后一次调用全局工作集命令，实际页面处理交给操作系统，不按动画帧逐页删除。该路线有同类源码依据，但只实现一个基础动作，不能据调用成功认定清理策略已经达到目标体验。现阶段有三项决定：
 
 1. 保留全局工作集作为比较基线，同时复用已有定向批次作为范围可控的比较对象，不预设后者更快或释放更多
-2. 系统文件缓存裁剪是首个新增方法候选，先明确接口、作用对象与测量条件，再决定是否进入产品。暂不把多个动作无条件串入主按钮
+2. 新取得的360静态调用链指向逐进程工作集裁剪。优先比较同一目标集上的既有EmptyWorkingSet与SetProcessWorkingSetSize候选，系统文件缓存保持后续独立候选，不把多个动作无条件串入主按钮
 3. 先建立底层耗时与真实读数的证据，再选择默认策略。动效只负责呈现，本轮保持不变。360 同版本、同负载的同步对照仍缺失，不声称已经解释其速度优势
 
 ## （二）同类源码实际采用了什么
@@ -570,7 +570,7 @@ flowchart TD
 | --- | --- | --- |
 | G0 全局工作集 | 当前信息类80、命令2路径，处理系统范围的可分页工作集，没有应用排除保证 | 保留基线，先量清其原生调用与外层成本，不按慢一次就判定路线错误 |
 | P1 明确目标的工作集批次 | 既有目标句柄调用 EmptyWorkingSet，系统尽可能移出该进程工作集中的页面。逐项处理增加枚举、打开和身份核验成本，也可能因范围缩小减少工作量 | 复用现有能力比较，保留 PID 与创建身份、路径保护及逐项结果。不新增自动挑选“可删进程”的规则，不预设比 G0 更快。[接口契约](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset) |
-| F1 系统文件缓存工作集裁剪 | 同类有独立系统文件缓存分支。Microsoft 的 SetSystemFileCacheSize 允许以两个 SIZE_T(-1) 请求刷新缓存，要求启用 SeIncreaseQuotaPrivilege，Flags=0保留既有限制设置 | 首个新增候选，优先核验公开接口，先比较 F1 单独与 G0，再考虑 G0→F1。不是磁盘垃圾文件删除，也不改变长期缓存上限。WinMemoryCleaner 同时调用 NT 与公开接口的写法，不证明两次调用都必要。[公开接口及影响](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setsystemfilecachesize)、[同类分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L662) |
+| F1 系统文件缓存工作集裁剪 | 同类有独立系统文件缓存分支。Microsoft 的 SetSystemFileCacheSize 允许以两个 SIZE_T(-1) 请求刷新缓存，要求启用 SeIncreaseQuotaPrivilege，Flags=0保留既有限制设置 | 公开接口规格已核对，优先级位于同目标工作集比较之后。以后先比较 F1 单独与 G0，再考虑组合。不是磁盘垃圾文件删除，也不改变长期缓存上限。WinMemoryCleaner 同时调用 NT 与公开接口的写法，不证明两次调用都必要。[公开接口及影响](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setsystemfilecachesize)、[同类分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L662) |
 | 完整或低优先级 Standby | 清除的是已可复用的缓存页。当前占用按 Total−Available 计算，而 Available 已包含 Standby、Free 和 Zero | 保留现有高级入口。不能把 Standby→Free 的全部变化算成占用下降，不把它作为默认“更快降数字”的补丁。[容量口径](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information) |
 | Modified、卷缓存刷新、注册表缓存和页合并 | 同类的不同动作，不是工作集命令的速度参数。写回涉及 I/O，页面合并也不等同于强制压缩全部应用内存 | 本轮后置。没有本机收益、耗时和恢复代价证据前，不复制整套默认掩码，不并发全局清理或循环清到零 |
 
@@ -588,11 +588,11 @@ flowchart TD
 本机360软件小助手已取得安装文件指纹及局部逐进程工作集裁剪路径，见本章第七节。但实际界面所用版本/模块、数值模式、按钮调用链及相同负载下的同步时间轴仍未核对。不能将上述任一开源组合直接命名为“360同款底层”，也不能把它更快的主观观感归结为驱动、语言或特殊压缩算法。
 
 ## （五）采用建议与实施边界
-下一轮按三部分推进：先给既有原生路径与外层流程建立分段计时，再复用 G0/P1 比较范围，并完成 F1 的接口与受控验证规格，最后在另有明确执行范围时做真实对照并决定默认策略。计时用于选型，不把增加报告字段本身当成性能改善。
+分段计时已实现，并取得一次G0测量。下一轮优先把360已连接的逐进程路径转换为可控的同目标接口比较：P1沿用EmptyWorkingSet，P2候选使用SetProcessWorkingSetSize的两个-1参数，先设计及假接入，再于执行范围明确时比较G0/P1/P2。F1保留已核规格，后置于工作集路线比较。计时用于选型，不把增加报告字段或换接口名本身当成性能改善。
 
 ```mermaid
 flowchart LR
-    SOURCE["固定源码与既有记录"] --> SPEC["明确 G0 / P1 / F1 的范围与合同"]
+    SOURCE["固定源码、二进制调用链与既有测量"] --> SPEC["明确 G0 与同目标 P1/P2，F1 后置"]
     SPEC --> OFFLINE["分段计时设计与假调用验证"]
     OFFLINE --> CHECK{"具备本次真实执行授权与固定负载？"}
     CHECK -->|否| WAIT["保留待测，不宣称提速"]
@@ -612,7 +612,7 @@ Microsoft 另提供 SetProcessWorkingSetSizeEx 的两个 SIZE_T(-1) 参数来尽
 
 结合本次3.324秒原生、3.444秒总计的单次证据，推断只优化原生之外的全部开销，理论上也只涉及约0.120秒，且其中含本次显式核验。故暂不重写语言、删除写盘或常驻特权来处理这个瓶颈。这个边界只针对该次测量，不是所有负载的性能上限。
 
-### 2. 优先验证独立文件缓存整理，暂不默认叠加
+### 2. 文件缓存作为后续独立候选
 同类真正扩大的处理对象是系统文件缓存等区域。Mem Reduct 在工作集后单独裁剪文件缓存，WinMemoryCleaner 的文件缓存分支先调用 NT 接口，再调用公开接口。源码说明存在这种组合，不证明重复调用必要，也不证明组合总耗时更短。[Mem Reduct 两个独立分支](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L390)、[WinMemoryCleaner 缓存分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L662)
 
 F1 的候选规格采用公开 SetSystemFileCacheSize：两个参数按当前进程指针宽度传 SIZE_T(-1)，Flags=0，请求一次缓存整理。只临时启用调用所需的 SeIncreaseQuotaPrivilege 并恢复。不得将 Flags=0解释为主动关闭缓存限制，也不写长期硬上限，不先后调用 NT 与公开接口来重复完成同一候选。[Microsoft 文件缓存接口](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setsystemfilecachesize)
@@ -624,7 +624,7 @@ F1 单独处理系统文件缓存，不能标成已整理所有应用工作集�
 System Informer 的文件缓存成功消息使用调用前取得的 cacheInfo.CurrentSize，没有在该函数内用调用后驻留量求差。本项目不将这样的调用前容量直接显示为实际释放量，只复用可核实的动作与测量职责。[System Informer 缓存消息路径](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L386)
 
 ### 3. 采用顺序与判断标准
-接下来先做 F1 的独立、显式候选接入及假接口验证，保留当前 G0 默认。并行整理全部进程、循环全局整理、清除完整 Standby、强制写回 Modified 或长期压低缓存上限均不作为本轮默认提速方案。Standby 已计入 Available，仅把它转成 Free 不构成按 Total−Available 计算的占用下降。
+接下来先将P1/P2同目标比较做成独立、显式候选，完成设计及假接口验证，保留当前G0默认。F1后置。并行整理全部进程、循环全局整理、清除完整Standby、强制写回Modified或长期压低缓存上限均不作为本轮默认提速方案。Standby已计入Available，仅把它转成Free不构成按Total−Available计算的占用下降。
 
 P1 继续服务明确选中的程序，比较时列出目标数量、覆盖及跳过，不用较小范围的短耗时声称完成与 G0 相同的工作。真实比较要同时检查首次观测下降、动作总时长、固定窗口净变化和应用恢复响应。单次容量增加不等于提速。未来若仍需解释 G0 内部等待，再单独设计系统跟踪，不能从3.324秒反推出磁盘写回、锁或驱动的具体占比。
 
@@ -641,7 +641,48 @@ P1 继续服务明确选中的程序，比较时列出目标数量、覆盖及�
 
 SoftMgrLite.exe 中的九处已找到的同接口静态引用，均具有先取得 GetCurrentProcess 再以两个-1调用的字节序列，属于自身工作集裁剪线索，不能混称为九次全机整理。SMLCore.dll 中上述一处已找到的引用则来自逐进程枚举片段。它们都是静态引用数量，不是本轮实际执行次数。
 
-### 3. 尚未确定的部分
-未恢复原始源码或完整函数/界面事件关系，未运行、附加、注入或点击360。实际按钮是否进入该例程、排除范围、权限、结果统计、动效时序和耗时均未验收。动态加载或其他模块分支仍可能存在，也不能凭 DeviceIoControl 名称认定清理使用驱动。
+### 3. 一键加速到清理函数的静态条件调用链
+现已连接按钮绑定、事件处理、组件工厂和实际工作集例程，限于已固定哈希的SoftMgrLite.exe 3.1.0.2511与SMLCore.dll 3.1.0.2120。界面类名COneKeyAcceWnd、进程管理类名CProcMgr来自RTTI，以下职责名称是分析标注，不冒充恢复的原始函数名。完整RVA、导入/虚表及48处指令核验见 [调用链运行记录](<运行记录 Run Record/2026-11-02 360一键加速调用链复核.md>)。
 
-后续优先静态追踪 BtnOneKeyAcce/CheckClearMem 的事件到清理例程的关联，再与既有P1的目标范围、身份核验及错误记录比较。不因这段代码就新增全进程循环、长期硬上限或替换G0默认。资源结构依据 [Microsoft PE格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format) 和 [LIEF资源读取说明](https://lief.re/doc/latest/tutorials/07_pe_resource.html)，本机LIEF 0.16.4，针对性提取与字节核验不代表完整反编译。
+```mermaid
+flowchart TD
+    XML["XML：BtnOneKeyAcce / CheckClearMem"] --> BIND["窗口查找控件并绑定事件0"]
+    BIND --> EVENT["委托转发到窗口事件处理函数"]
+    EVENT --> CHECK{"事件对象是主按钮且事件为0"}
+    CHECK --> START["进入一键加速处理"]
+    START --> SAVE["保存选项状态"]
+    SAVE --> MEMORY{"清理系统内存已勾选或控件缺失"}
+    MEMORY -->|是| API["CProcMgr 虚表 +0x4c"]
+    API --> ENUM["进程快照与逐项枚举"]
+    ENUM --> OPEN["OpenProcess：PROCESS_SET_QUOTA"]
+    OPEN --> TRIM["SetProcessWorkingSetSize：两个 -1"]
+    TRIM --> NEXT["关闭句柄，处理下一进程"]
+    NEXT --> APPS["进入软件项处理"]
+    MEMORY -->|否| APPS
+    APPS --> MARK{"软件项标志要求处理"}
+    MARK -->|是| EXIT["进程管理方法 → CProcItem → TerminateProcess"]
+    MARK -->|否| END["继续界面与统计流程"]
+    EXIT --> END
+    OBS["独立枚举更新 GlobalMemoryStatusEx"] --> DISPLAY["窗口更新容量差值与显示比例"]
+    END --> DISPLAY
+```
+
+跨模块关联不是仅凭相同虚表偏移猜测：窗口经提供器取得对象，提供器请求的GUID与SMLCore中的CProcMgr工厂常量相同。工厂构造函数安装已定位的CProcMgr虚表，其+0x4c确指向工作集循环。主按钮处理在检查CheckClearMem后调用该槽位，过程中没有等待动效结束的调用门控。此为静态条件链，不证明当前正在运行的360实例加载了同一文件、使用了相同配置或执行了该分支。
+
+工作集循环逐进程打开配额权限句柄，不调整长期工作集上限，不在这段例程中调用全局NT命令或文件缓存整理。打开失败则跳到下一项，SetProcessWorkingSetSize的返回值在该例程中未逐项检查，枚举走完返回1。因此“该方法返回”不等于全机每个进程整理成功，也不应复制这种结果口径。
+
+一键加速处理随后按软件项标志调用另一条管理路径，可追到CProcItem及TerminateProcess。该动作会结束程序，与工作集裁剪有本质区别，不能把其容量变化一起归功于裁剪算法。未核验当前界面选择和实际对象类型，不声称每次点击均结束程序。本仓库继续遵守不结束进程的约定，不采用此分支。
+
+### 4. 与本项目相比，哪些差异可能解释更快的感受
+| **比较点** | **360本机静态路径** | **本项目当前实现与判读** |
+| --- | --- | --- |
+| 主内存动作 | 枚举进程并逐项SetProcessWorkingSetSize(-1,-1) | G0为一次全局NT工作集命令，由系统执行。两者处理与访问范围不同，静态代码不能证明哪条更快 |
+| 同类定向接口 | 指定句柄的工作集裁剪 | P1已有EmptyWorkingSet及固定目标批次。官方将两个接口列为可完成工作集移页的方式，没有给出速度排名。[接口关系](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize) |
+| 附带作用 | 按软件项条件可进入结束进程路径 | 本项目不结束进程。若实际使用中该分支生效，下降幅度就不能与纯工作集整理作同等比较，是否生效尚未实测 |
+| 覆盖与成本 | 只按PID打开配额句柄，失败继续，无逐项返回检查 | P1按创建身份/路径核验，逐项留记录。更少检查可能减少外层工作或隐藏覆盖缺口，但不能解释已测G0中3.324秒的原生内部时间 |
+| 读数与结果 | 独立GlobalMemoryStatusEx更新字段，窗口再计算容量变化和显示比例 | 当前真实读数也独立更新，Run结果固定于前后快照。两者显示与统计时刻不同，单看圆环收束速度不足以比较清理完成时间 |
+| 已有性能证据 | 本轮未运行360，无本机原生耗时或配对负载结果 | 本项目仅有一次G0原生3.324秒、总计3.444秒测量，不能与360主观速度直接构成对照 |
+
+当前能确认机制不同及“一键加速”可能包含不同动作，尚不能给出“360在相同工作量下更快”的因果结论。优先验证P1/P2同目标接口差异，分别报告原生时间、整批时间、覆盖与后续响应，不以减少核验、结束应用或提前宣告成功制造性能结论。文件缓存候选并未在所追工作集函数中出现，暂不把增加F1当作已经找到的360提速原因。
+
+静态反汇编采用临时目录隔离的Capstone 5.0.6，没有运行目标程序或恢复原始源码。资源解析仍使用LIEF 0.16.4，结构依据 [Microsoft PE格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)、[LIEF资源说明](https://lief.re/doc/latest/tutorials/07_pe_resource.html) 和 [Capstone Python用法](https://www.capstone-engine.org/lang_python.html)。动态模块替换、不同版本、未追踪分支和当前屏幕的实际动效仍未验收。
