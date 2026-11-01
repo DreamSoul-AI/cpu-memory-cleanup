@@ -97,10 +97,15 @@ class LoadTests(unittest.TestCase):
 
     def test_module_load_child_exits_naturally_after_readback(self):
         import json
+        import os
+        from pathlib import Path
         import subprocess
         import sys
+        import cpu_memory_cleanup
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = str(Path(cpu_memory_cleanup.__file__).resolve().parent.parent)
         result = subprocess.run([sys.executable, "-X", "utf8", "-m", "cpu_memory_cleanup.application.experiments",
-            "--load-mib", "1"], input="read\nquit\n", text=True, capture_output=True, timeout=5)
+            "--load-mib", "1"], input="read\nquit\n", text=True, capture_output=True, timeout=5, env=environment)
         self.assertEqual(result.returncode, 0, result.stderr)
         rows = [json.loads(line) for line in result.stdout.splitlines()]
         self.assertEqual(rows[0]["kind"], "ready")
