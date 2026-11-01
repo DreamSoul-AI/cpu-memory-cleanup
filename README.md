@@ -24,7 +24,7 @@ cargo build --release --locked
 .\target\release\cpu-memory-cleanup.exe --web --port 14800 --output-dir .test-results/rust-runs
 ```
 
-该命令不自动打开浏览器；需要时加 `--open`。仅绑定回环地址。启动不采样，网页可见时约每秒读取一次真实容量，进程列表按需读取；点击绿色按钮执行一轮工作集整理。高级批次和规则启用仍需确认。关闭标签页不会停止服务，请使用网页“停止服务”。本轮验收使用内置浏览器，不占用桌面鼠标键盘。
+该命令不自动打开浏览器；需要时加 `--open`。仅绑定回环地址。启动不采样，网页可见时按250毫秒目标间隔读取真实容量（不重叠请求，实际间隔依响应而定），进程列表按需读取；点击绿色按钮执行一轮工作集整理。高级批次和规则启用仍需确认。关闭标签页不会停止服务，请使用网页“停止服务”。本轮验收使用内置浏览器，不占用桌面鼠标键盘。
 
 ## 当前能力和边界
 
@@ -43,7 +43,7 @@ cargo build --release --locked
 
 ## 交互与效果
 
-主区保留圆环、实际读数、绿色按钮和简短结果，进程选择、保护与原始报告收进详情。点击先绘制忙碌反馈，后台整理时继续读取；业务结束立即显示原始前后快照结果，再播放约750毫秒归零，到零请求一次新读数，再约300毫秒回弹。没有额外3～8秒趋稳等待。动效不改真实数据、不触发第二次清理、不推迟业务结果。
+主区保留圆环、实际读数、绿色按钮和简短结果，进程选择、保护与原始报告收进详情。圆环、大号百分比和细条共用一个显示驱动，连续追踪最新真实目标，去掉重复CSS缓动和回弹结束时的直接跳值。实际容量与小号实际百分比立即采用原始读数。主操作只切换必要控件，不重建已读进程列表。点击先绘制忙碌反馈，后台整理时继续读取；业务结束立即显示原始前后快照结果，再播放约750毫秒归零，到零请求一次新读数，再约300毫秒回弹。没有额外3～8秒趋稳等待。动效不改真实数据、不触发第二次清理、不推迟业务结果。
 
 工作集裁剪减少页面驻留，不删除程序数据，也不保证降低私有提交量。重新使用应用可能重新驻留和触发缺页。容量变化不等于提速，不能把圆环归零解释为系统内存清空。
 
@@ -66,7 +66,7 @@ Python导入API已发生不兼容变化；需要旧版时使用原版本或 [历
 ./scripts/run-tests.ps1
 ```
 
-独立检查分别为 `cargo fmt --all -- --check`、`cargo clippy --all-targets --locked -- -D warnings`、`cargo test --all-targets --locked` 和 `node --test tests/interaction/web_assets/app.test.cjs`。统一脚本检查Rust格式、严格Clippy、Cargo测试及网页Node检查，需Rust开发工具和Node；统一脚本在允许本地脚本的PowerShell环境执行。Windows PowerShell策略禁止脚本时，可直接使用Cargo命令与Node检查，无需修改系统策略。本轮12项Rust检查、20项正式网页JS检查通过，测试隔离系统副作用；这些检查不执行真实清理，也不代替实机效果证据。旧Python树状manifest保留在归档，不再参与当前测试发现。当前未配置GitHub CI，不把本地通过称为CI通过。
+独立检查分别为 `cargo fmt --all -- --check`、`cargo clippy --all-targets --locked -- -D warnings`、`cargo test --all-targets --locked` 和 `node --test tests/interaction/web_assets/app.test.cjs tests/interaction/web_assets/memory-display.test.cjs`。统一脚本检查Rust格式、严格Clippy、Cargo测试及网页Node检查，需Rust开发工具和Node；统一脚本在允许本地脚本的PowerShell环境执行。Windows PowerShell策略禁止脚本时，可直接使用Cargo命令与Node检查，无需修改系统策略。本轮15项Rust检查、26项正式网页JS检查通过，测试隔离系统副作用；这些检查不执行真实清理，也不代替实机效果证据。原生与业务分段计时、全量调用分布及最终写盘计时附件已接入；旧真实记录只读回看可重算已覆盖分布，缺失阶段保留未知。只读页面与已有记录验收见 [流畅显示与计时记录](<docs/运行记录 Run Record/2026-11-02 流畅显示与计时验收.md>)。旧Python树状manifest保留在归档，不再参与当前测试发现。当前未配置GitHub CI，不把本地通过称为CI通过。
 
 ## 文件与文档入口
 

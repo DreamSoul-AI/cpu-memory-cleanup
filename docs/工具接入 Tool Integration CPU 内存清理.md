@@ -29,7 +29,7 @@
 
 报告含run_id、mode、completion、phase、samples、analysis、action、errors、metadata和output_dir。物理量单位bytes；analysis.available_change_bytes是原始前后系统可用量差额，不是独占释放量或提速比例。action.process_sweep保存覆盖、返回、未知、关闭状态和有界明细；跳过与失败不是成功。整体非success仍可能已经发生维护，宿主不得自动重试。
 
-新记录为版本3的report.json：动作前先写calling/unknown意图，动作后保存原始事实，再封存。memory_result只接受已封存记录，支持新文件及既有samples.jsonl、operation.jsonl与可选diagnostics.json。回看使用新run_id，metadata.source_run_id指原运行；不回写原件。旧Python批次索引、CPU分析等格式不在本轮兼容承诺内。
+新记录为版本3的report.json，另有版本1的timing.json计时附件。附件保存同一运行的最终写盘时长，回看校验身份与版本后合并，原记录缺少阶段仍保持未知。metadata.native_summary给出已覆盖调用数、分位和最慢项，完整分布与截断覆盖分别标明。维护仍不自动重试。report.json流程为：动作前先写calling/unknown意图，动作后保存原始事实，再封存。memory_result只接受已封存记录，支持新文件及既有samples.jsonl、operation.jsonl与可选diagnostics.json。回看使用新run_id，metadata.source_run_id指原运行；不回写原件。旧Python批次索引、CPU分析等格式不在本轮兼容承诺内。
 
 六个工具名称及目录版本保留，Python模块导入API、旧CLI其他选项和Python发行方式已不兼容，不能只按名称推断全部合同相同。当前未提供MCP、远程RPC或特定Agent平台注册器。
 

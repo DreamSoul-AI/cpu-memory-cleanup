@@ -15,7 +15,8 @@ src/
 ├── system/
 │   ├── mod.rs                System能力合同、平台装配及系统随机源
 │   ├── windows.rs            Win32读取、身份核验、工作集循环、句柄所有权
-│   └── records.rs            原子报告写入及新旧记录只读回看
+│   ├── measurement.rs        阶段时钟与纯调用分布汇总
+│   └── records.rs            原子报告、计时附件与新旧记录回看
 └── interaction/
     ├── mod.rs
     ├── cli.rs                参数、六工具目录、JSON和退出码
@@ -24,7 +25,7 @@ src/
         ├── index.html        紧凑主区与折叠详情
         ├── styles.css        环形、绿色按钮和响应式布局
         ├── app.js            用户事件、实时刷新、业务结果和视觉协调
-        └── cleanup-effect.js 仅视觉状态机，不持有清理能力
+        └── memory-display.js 统一实时追踪与独立动效，不持有清理能力
 ```
 
 模块按职责划分，避免HTTP、CLI各自实现一次清理。`contracts`仅保存跨模块事实；运行标识使用系统随机源，不触发内存采样。系统接口位于接入边界，`Application::new`可注入隔离实现，默认工厂选择真实平台。
@@ -39,7 +40,7 @@ src/
 | AR-04 维护 | system/windows.rs | 同一句柄核验并SetProcessWorkingSetSize，逐项关闭；不创建终止/提权分支 |
 | AR-05 记录 | application/service.rs、system/records.rs | 功能决定保存时机，records实际读写；新report.json及旧JSONL只读回看 |
 | AR-06 呈现 | service.rs的presentation/brief、web.rs按需报告 | 摘要保留原终态，完整报告仅按需传递；不修改原始事实 |
-| AR-07 显示 | app.js、cleanup-effect.js | 后台/display独立读取，业务报告立即呈现，动效只拥有圆环显示 |
+| AR-07 显示 | app.js、memory-display.js | 后台/display独立读取，业务报告立即呈现，动效只拥有圆环显示 |
 
 # 三、依赖和状态约束
 
@@ -56,11 +57,11 @@ src/
 
 `app.js`点击后先给忙碌状态两帧绘制机会再POST，不等待系统完成才反馈。任务正常结束先展示结果并恢复业务按钮，再通知cleanup-effect下降。到零的刷新只读，网络超时2.5秒是失败界限，不是固定等待。旧周期的异步回复通过周期身份隔离。完整报告展开才获取与格式化，实时读数不会改写本次报告。
 
-`#gauge`的 `data-flow` 和 `data-max-frame-gap-ms`记录有界阶段及动效帧间隔，用于本地浏览器验收，不作为系统释放量或CPU性能计数。当前常规显示约每秒请求一次，已隐藏页面停止显示请求。
+`#gauge`的 `data-flow` 和 `data-max-frame-gap-ms`记录有界阶段及动效帧间隔，用于本地浏览器验收，不作为系统释放量或CPU性能计数。当前常规显示按250毫秒目标间隔请求一次，已隐藏页面停止显示请求。
 
 # 五、测试和交付映射
 
-`tests/rust/application.rs`核对公共合同、隔离调用次数、记录阻断/回看、保护与压力规则；`tests/rust/web.rs`核对HTTP会话、启动无副作用、明确目标、维护中读取、互斥和摘要/完整报告。测试System不连接Win32，测试文件仅写自己的临时目录。`tests/interaction/web_assets/app.test.cjs`核对业务与视觉分离、回弹刷新及旧回复隔离。
+`tests/rust/application.rs`核对公共合同、隔离调用次数、记录阻断/回看、保护与压力规则；`tests/rust/web.rs`核对HTTP会话、启动无副作用、明确目标、维护中读取、互斥和摘要/完整报告。测试System不连接Win32，测试文件仅写自己的临时目录。`tests/system/measurement.rs`核对阶段、分位和旧记录覆盖；`tests/interaction/web_assets/memory-display.test.cjs`核对连续显示与固定回弹目标；`tests/interaction/web_assets/app.test.cjs`核对业务与视觉分离、回弹刷新及旧回复隔离。
 
 Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证，不把legacy、工具链或运行证据装入crate。`scripts/build.ps1`与run-tests.ps1复用rust-environment.ps1；正式入口为memory-cleanup.cmd→memory-cleanup.exe→同一Rust库；保留独立控制台CLI cpu-memory-cleanup.exe。旧manifest执行器和Tk脚本归档，未重跑旧测试，不把原571项验收改称Rust覆盖。
 
@@ -70,7 +71,7 @@ Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证�
 
 
 # 七、流畅显示与阶段计量的源码映射
-本节对应架构第七章和UX-01/02、NATIVE-01。先更新结构合同，本轮不实施NATIVE-02/03。
+本节对应架构第七章和UX-01/02、NATIVE-01，已按本次代码与验收落地。本轮不实施NATIVE-02/03。
 
 - interaction/web_assets/memory-display.js：纯显示驱动，拥有实时追踪、下降、刷新、回弹及连续交接，一个RAF持有者写入统一显示比例。替代cleanup-effect.js，既不发送维护也不计算业务收益
 - interaction/web_assets/app.js：保留真实快照、样本时间、报告与用户请求，原始容量立即呈现。显示驱动只接收比例及归零后的只读刷新回调。250毫秒轻量读取不重叠，保留有界请求/帧诊断供验收。主操作通过目标范围容器的disabled状态改变控件，不重建进程列表
