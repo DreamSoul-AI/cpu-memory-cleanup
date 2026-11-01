@@ -93,6 +93,9 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(report.action["status"], 5)
         self.assertEqual(report.action["process_sweep"]["failed_count"], 1)
         self.assertEqual(report.action["process_sweep"]["successful_count"], 1)
+        self.assertEqual(report.errors[0]["message"], "部分进程未完成工作集整理，详见逐项结果")
+        from cpu_memory_cleanup.interaction.presentation import summary
+        self.assertTrue(summary(report)["limited"])
         self.assertEqual(self.fake.nt_calls, [])
 
     def test_unknown_native_result_stops_without_retry_or_fallback(self):

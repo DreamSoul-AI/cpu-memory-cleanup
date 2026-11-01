@@ -32,7 +32,7 @@ def summary(report):
     completion = {"success": "完成", "partial": "结果不完整", "failed": "失败", "cancelled": "已取消"}.get(report.completion, "结果未知")
     partial_sweep = _partial_sweep_completed(report, terminal)
     if partial_sweep:
-        completion = "部分完成"
+        completion = "已整理"
     observation = header.get("post_observation_seconds", 0)
     if observation and report.completion == "success":
         completion = "观察结束"
@@ -67,4 +67,5 @@ def summary(report):
     start = _stamp(header.get("started_at"))
     when = end.astimezone().strftime("%H:%M:%S") if end else "时间未记录"
     duration = f" · 本次流程{(end-start).total_seconds():.1f}秒" if start and end and end >= start else ""
-    return {"title": title, "note": note, "context": f"{scope} · {when}{duration}", "scope": scope}
+    return {"title": title, "note": note, "context": f"{scope} · {when}{duration}", "scope": scope,
+            "limited": partial_sweep}

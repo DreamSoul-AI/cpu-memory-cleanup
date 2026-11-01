@@ -637,7 +637,11 @@ class Application:
                 if report.action["call_outcome"] == "unknown":
                     self._unsafe = True
                 if action.get("errors"):
-                    self._error(report, "calling", ValueError("维护或恢复存在错误，见动作事实"), interruptions)
+                    sweep = action.get("process_sweep") or {}
+                    message = ("部分进程未完成工作集整理，详见逐项结果" if sweep.get("failed_count", 0) > 0
+                        and sweep.get("unknown_count") == 0 and sweep.get("resources_closed") is True
+                        and action.get("privilege_restored") is True else "维护或恢复存在错误，见动作事实")
+                    self._error(report, "calling", ValueError(message), interruptions)
                 if action.get("privilege_restored") is not True:
                     self._unsafe = True
                     self._error(report, "restore", ValueError("安全上下文恢复未确认"), interruptions)

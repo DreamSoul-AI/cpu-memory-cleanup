@@ -18,7 +18,8 @@ class PresentationTests(unittest.TestCase):
         report = self.partial_sweep_report()
         original = report.to_dict()
         view = summary(report)
-        self.assertEqual(view["title"], "部分完成 · 可用内存增加 6.00 GiB")
+        self.assertEqual(view["title"], "已整理 · 可用内存增加 6.00 GiB")
+        self.assertTrue(view["limited"])
         self.assertIn("逐进程成功692、跳过10、失败7", view["note"])
         self.assertIn("原生错误保留", view["note"])
         self.assertEqual(report.to_dict(), original)
@@ -28,9 +29,10 @@ class PresentationTests(unittest.TestCase):
         report.mode = "review"
         report.errors = [{"phase": "source", "message": "原运行条件或结果不完整"}]
         report.metadata["source_gaps"] = ["维护运行未完整成功或恢复未确认", "运行未完整成功"]
-        self.assertIn("部分完成 · 可用内存增加", summary(report)["title"])
+        self.assertIn("已整理 · 可用内存增加", summary(report)["title"])
         report.metadata["source_gaps"].append("缺样或重复序号")
         self.assertNotIn("可用内存增加", summary(report)["title"])
+        self.assertFalse(summary(report)["limited"])
 
     def test_unconfirmed_sweep_close_does_not_use_completed_partial_summary(self):
         report = self.partial_sweep_report()

@@ -452,6 +452,7 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 - application/core.py、interaction/web.py、interaction/desktop.py：保留原memory_cleanup调用和结果时机，无需复制遍历或调整动效。原动作增量字段随报告/记录传递，回看不派发
 - interaction/presentation.py：在原真实容量结果后附逐进程成功、跳过及失败数，网页与桌面共用；不改变圆环或结果发布时间
 - 已封存的逐进程partial结果：presentation核对原终态、样本数量、安全收尾和错误阶段后呈现“部分完成”及容量变化，原action、completion、errors均不修改；缺口或未知维持原错误显示。真实记录回看仍只读取原件，不重派发
+- 已知局部限制的统一反馈：presentation返回limited标志和“已整理”摘要；web_assets/app.js复用该标志控制顶层错误、结果说明、结束提示及原动效完成信号。application/core.py对安全收尾完整的逐项失败使用准确文案，避免泛称恢复异常；原记录不回写。未知、收尾失败及额外来源缺口不设置limited
 - 测试：在windows_process镜像补逐项行为、原生计时与Package回看，在operating_system镜像核对正式装配；既有API/HTTP/桌面旅程用于验证调用合同
 
 结果使用原system范围动作记录，mechanism仍working-set，native_method明确SetProcessWorkingSetSize；process_sweep给出覆盖与逐项结果。一次用户请求只运行一轮枚举，不声称只调用一个目标；单目标与全局范围继续区分。阶段计时以每次实际原生调用为准，不把枚举及打开/关闭句柄计入原生时间。

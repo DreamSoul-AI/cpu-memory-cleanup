@@ -137,6 +137,39 @@ test('failed report never supplies successful rebound signal',async()=>{
  assert.equal(p.elements['recent-title'].textContent,'失败');
 });
 
+test('known limited sweep ends normally while keeping raw failures in details',async()=>{
+ const p=page();p.elements['decoration-enabled'].checked=true;
+ await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+  var original={completion:'partial',errors:[{message:'维护或恢复存在错误，见动作事实'}],samples:[],
+    action:{call_outcome:'failure',status:5,process_sweep:{successful_count:676,failed_count:7,skipped_count:15}}};
+  var requests=0;
+  api=async path=>path==='/api/action'?(requests++,{id:'one'}):{kind:'cleanup',state:'finished',report:original,
+    presentation:{limited:true,title:'已整理 · 可用内存增加0.28 GiB',note:'保留7个未完成目标',context:'真实记录'}};
+  memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
+ assert.equal(p.elements.error.hidden,true);
+ assert.match(p.elements['job-status'].textContent,/整理已结束/);
+ assert.match(p.elements['result-summary'].textContent,/已整理676个进程/);
+ assert.match(p.elements['result-summary'].textContent,/7个未完成/);
+ assert.match(p.elements.report.textContent,/维护或恢复存在错误/);
+ assert.match(p.elements.report.textContent,/"status": 5/);
+ assert.equal(p.run('requests'),1);
+ assert.equal(p.elements['global-clean'].disabled,false);
+ p.tick(3000);assert.equal(p.run('decoration.phase'),'returning');
+ p.tick(4200);assert.equal(p.run('decoration.phase'),null);
+});
+
+test('unknown result keeps the error and never receives limited completion treatment',async()=>{
+ const p=page();p.elements['decoration-enabled'].checked=true;
+ await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+  api=async path=>path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',
+    report:{completion:'unknown',errors:[{message:'原生结果未知'}],samples:[],action:{call_outcome:'unknown'}},
+    presentation:{limited:false,title:'未知',note:'详见原报告',context:'记录'}};
+  memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
+ assert.equal(p.elements.error.hidden,false);
+ assert.equal(p.elements.error.textContent,'原生结果未知');
+ assert.equal(p.run('decoration.phase'),null);
+});
+
 test('early completion publishes result immediately but still finishes the linear descent',async()=>{
  const p=page();p.elements['decoration-enabled'].checked=true;
  await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';

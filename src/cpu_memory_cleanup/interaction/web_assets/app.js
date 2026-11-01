@@ -162,11 +162,13 @@ function present(job){
   if(feedback){el("recent-title").textContent=feedback.title;el("recent-note").textContent=feedback.note;el("recent-context").textContent=feedback.context;}
   el("result-items").replaceChildren();
   const action=report.action||{};
-  if(report.errors?.length) error(report.errors.map(item=>item.message||item.type||"未知错误").join("；"));
+  if(report.errors?.length && !feedback?.limited) error(report.errors.map(item=>item.message||item.type||"未知错误").join("；"));
   const scope=report.metadata?.header?.scope;
   if(scope==="process" && report.metadata?.header?.target?.image_path) el("job-status").title=report.metadata.header.target.image_path;
   const actionText={success:"调用成功",failure:"调用失败",not_started:"未派发",unknown:"调用结果未知"}[action.call_outcome]||"逐项结果见下方";
-  el("result-summary").textContent=`${labels[report.completion]||report.completion} · ${job.kind==="batch" || report.mode==="batch-review"?"逐项记录，不累加为系统释放量":actionText}。容量变化不代表提速。`;
+  el("result-summary").textContent=feedback?.limited
+    ? `已整理${action.process_sweep.successful_count}个进程，跳过${action.process_sweep.skipped_count}个、${action.process_sweep.failed_count}个未完成，逐项原因见原始报告。容量变化不代表提速。`
+    : `${labels[report.completion]||report.completion} · ${job.kind==="batch" || report.mode==="batch-review"?"逐项记录，不累加为系统释放量":actionText}。容量变化不代表提速。`;
   const items=report.metadata?.items||[];
   for(const item of items){const div=document.createElement("div");div.className="result-line";const a=item.analysis||{};div.textContent=`${item.target.name||"目标"} · PID ${item.target.pid} · ${labels[item.status]||item.status} · 工作集 ${gib(a.working_set_before_bytes)} → ${gib(a.working_set_after_bytes)} ${item.reason||""}`;el("result-items").append(div);}
   if(!items.length && report.samples?.length>=2){const div=document.createElement("div");div.className="result-line";div.textContent=`系统可用量：${gib(report.samples[0].metrics.physical?.available_bytes)} → ${gib(report.samples.at(-1).metrics.physical?.available_bytes)}`;el("result-items").append(div);}
@@ -180,7 +182,19 @@ async function run(action){
   try{
     const accepted=await api("/api/action",action);currentJob=accepted.id;
     el("job-status").textContent=action.kind==="cleanup" && action.mechanism==="working-set" ? "正在执行本次工作集整理 · 后台持续读取" : "处理中 · 等待 Package 收尾";
-    for(;;){const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);if(job.state!=="running"){if(job.state==="error")throw new Error(job.error);present(job);if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(job.report.completion==="success"?"finish":"stop");el("job-status").textContent=job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;break;}await new Promise(resolve=>setTimeout(resolve,120));}
+    for(;;){
+      const job=await api(`/api/job?id=${encodeURIComponent(currentJob)}`);
+      if(job.state!=="running"){
+        if(job.state==="error")throw new Error(job.error);
+        present(job);
+        const completed=job.report.completion==="success" || job.presentation?.limited===true;
+        if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(completed?"finish":"stop");
+        el("job-status").textContent=job.presentation?.limited ? "本次整理已结束 · 部分目标未处理" :
+          job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;
+        break;
+      }
+      await new Promise(resolve=>setTimeout(resolve,120));
+    }
   }catch(exc){notifyDecoration("stop");error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
   finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();}
 }
