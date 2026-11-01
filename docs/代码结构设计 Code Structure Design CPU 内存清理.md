@@ -418,9 +418,11 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 | application/verification.py | 新增纯数据核验模块，解释计时、系统容量、目标或进程工作集变化及观察时间轴，不持有接入、不执行采样或维护 |
 | system/platforms/windows.py | 全局原生调用、权限取得/恢复的准确分段，接收本次运行计时对象。保持同一个NT命令及一次派发 |
 | system/platforms/windows_process.py | 目标身份核验与真正EmptyWorkingSet分别计时，不把身份查询耗时冒充原生清理耗时 |
-| system/records.py | 同一运行目录下固定diagnostics.json附件的原子写入与有界读取，严格核对版本和运行身份。旧目录无附件时可读，不补写旧记录 |
+| system/records.py | 同一运行目录下固定diagnostics.json附件的原子写入与有界读取。application/verification.py核对版本、运行身份和数值。旧目录无附件时可读，不补写旧记录 |
 | interaction/web.py | 只在原始报告metadata中附服务器受理到报告就绪的时间，和Package分段区分。不新增动作或修改前端计时、确认及动效 |
 
 诊断附件版本独立为1，不提升原业务schema。原生调用和外层阶段共享单调时间基准，阶段明确含嵌套关系。附件写入在业务关闭之后，其写入成本不进入已记录的业务区间，HTTP和UI时间未测时保持未知。附件不影响原始快照或原动作事实。
+
+当前实现使用metadata.diagnostics，包含timing、working_sets原观察及verification派生核验。memory_cleanup的capture_timings默认true，verify_working_sets默认false；后者仅Package显式开启，不改网页请求或CLI目录。内存时间轴给出window_started_at/window_ended_at、样本间隔、首次观测增加及回升。原生返回事件与business_closed采用运行内单调偏移，不把无UTC的事件伪造成精确墙钟时刻。真实界面显示时刻没有新增测量。
 
 测试保持源码镜像：现有contracts、core、records和Windows测试补分段及兼容用例，新增application/test_verification.py验证进程身份、覆盖缺口、下降/回升时间轴及旧记录未知字段。合成计时可明确制造原生慢、权限慢或写盘慢，证明分段位置。所有原生能力均用替身，既有真实记录仅离线回读。
