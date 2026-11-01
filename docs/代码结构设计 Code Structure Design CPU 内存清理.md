@@ -466,3 +466,30 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 - `tests/.../web_assets/app.test.cjs`：验证业务未完成不启动下降、结果和按钮先就绪、到零只请求读取一次、读数返回即回弹、错误及旧回调不改变新业务。已有API/HTTP检查验证接口和报告保持，自动化测试隔离原生副作用
 
 网页实际验收按用户本轮授权使用正式后端及一次真实整理，不启动假数据页。真实系统接入、Package、桌面及其他前端保持原状。参数选择和真实验收事实分别归开发计划与运行记录，不在结构设计中冒充性能结论。
+
+# 二十、Rust正式源码结构
+承接 [架构第十八章](<架构设计 Architecture Design CPU 内存清理.md#十八原生运行时迁移的职责与部署>)，本节为本轮目标结构，之前Python目录为历史设计，迁移完成后从现行入口移除。Rust库、CLI和网页共用application，不通过Python子进程或FFI调用旧实现。
+
+```text
+src/
+├── lib.rs                    # 公共Application和合同
+├── main.rs                   # CLI入口，只选择适配
+├── contracts.rs              # 请求、快照、目标及报告
+├── application/
+│   ├── mod.rs
+│   ├── service.rs            # 业务、一次派发、取消及报告
+│   └── policy.rs             # 保护与显式自动规则
+├── system/
+│   ├── mod.rs                # 平台能力及接入选择
+│   ├── windows.rs            # 原生Win32绑定及句柄RAII
+│   └── records.rs            # 原子记录、旧记录只读回看
+└── interaction/
+    ├── mod.rs
+    ├── cli.rs                # 参数、六工具、退出码
+    ├── web.rs                # localhost HTTP、会话和后台任务
+    └── web_assets/           # 既有HTML、CSS与JS
+```
+
+Rust源码硬约束仍按三层职责，contracts不拥有系统副作用。Windows不安全调用集中在system，句柄仅由持有者关闭。应用通过系统能力合同接入，不在HTTP或JS复制清理循环。记录与完整报告不进入常规显示响应，按需读取详情。CLI静态目录及构造无副作用。
+
+旧源码、测试与配置进入legacy/python，保留历史事实，不作为Rust启动或测试前置。新测试按受影响职责组织，使用Cargo原生测试与网页Node检查，不强行复制Python测试清单协议。真实网页验收使用正式系统后端，不启动合成演示替代功能。
