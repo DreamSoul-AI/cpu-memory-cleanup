@@ -87,7 +87,7 @@ pub fn main(args: Vec<String>) -> i32 {
         }
     }
 }
-fn execute(args: Vec<String>) -> AppResult<i32> {
+pub fn execute(args: Vec<String>) -> AppResult<i32> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
             "CPU 内存清理 Rust {}\n--web [--port 14800] [--open] [--output-dir DIR]\n--tool-info\n--tool memory_status|memory_targets|memory_cleanup|memory_process_cleanup|memory_batch_cleanup|memory_result\n维护需要--confirm，单目标需要--pid及--created-at，批次需要--request-file，回看需要--run-dir。",
@@ -154,7 +154,14 @@ fn execute(args: Vec<String>) -> AppResult<i32> {
             })
             .transpose()?
             .unwrap_or(14800);
-        let server = web::Workbench::bind(Arc::new(Application::default()), output, port)?;
+        let server = match web::Workbench::bind(Arc::new(Application::default()), output, port) {
+            Ok(server) => server,
+            Err(_) if options.contains_key("--open") && running_workbench(port) => {
+                open(&format!("http://127.0.0.1:{port}/"))?;
+                return Ok(0);
+            }
+            Err(error) => return Err(error),
+        };
         println!("{}", server.url());
         println!(
             "Rust {} · 真实系统 · 启动不采样，点击才整理",
@@ -219,6 +226,46 @@ fn execute(args: Vec<String>) -> AppResult<i32> {
     println!("{value}");
     Ok(exit)
 }
+fn running_workbench(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, SocketAddrV4, TcpStream};
+    use std::time::Duration;
+    let Ok(mut stream) = TcpStream::connect_timeout(
+        &SocketAddrV4::new(Ipv4Addr::LOCALHOST, port).into(),
+        Duration::from_secs(1),
+    ) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
+    if write!(
+        stream,
+        "GET /api/session HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    )
+    .is_err()
+    {
+        return false;
+    }
+    let mut bytes = Vec::new();
+    if stream.take(16385).read_to_end(&mut bytes).is_err() || bytes.len() > 16384 {
+        return false;
+    }
+    let Ok(response) = std::str::from_utf8(&bytes) else {
+        return false;
+    };
+    if !response.starts_with("HTTP/1.1 200 ") {
+        return false;
+    }
+    let Some(body) = response.split("\r\n\r\n").nth(1) else {
+        return false;
+    };
+    serde_json::from_str::<Value>(body).is_ok_and(|value| {
+        value["implementation"] == "rust"
+            && value["version"] == crate::VERSION
+            && value["preview"] == false
+    })
+}
+
 fn open(url: &str) -> AppResult<()> {
     #[cfg(windows)]
     {
@@ -232,5 +279,57 @@ fn open(url: &str) -> AppResult<()> {
     {
         let _ = url;
         Err("当前平台请手动打开本地地址".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn only_matching_real_rust_service_is_reused() {
+        use std::io::{Read, Write};
+        for (body, expected) in [
+            (
+                serde_json::json!({"implementation":"rust","version":crate::VERSION,"preview":false}),
+                true,
+            ),
+            (
+                serde_json::json!({"implementation":"python","version":crate::VERSION,"preview":false}),
+                false,
+            ),
+            (
+                serde_json::json!({"implementation":"rust","version":"old","preview":false}),
+                false,
+            ),
+        ] {
+            let listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let worker = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0u8; 1];
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                    assert!(request.len() < 4096);
+                }
+                assert!(
+                    std::str::from_utf8(&request)
+                        .unwrap()
+                        .starts_with("GET /api/session")
+                );
+                let text = body.to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+                    text.len()
+                )
+                .unwrap();
+            });
+            assert_eq!(super::running_workbench(port), expected);
+            worker.join().unwrap();
+        }
     }
 }

@@ -1,76 +1,55 @@
-# 一、接入范围与固定版本
-面向本地Python程序和能执行本地子进程的Agent宿主。产品能力由本仓库Package实现，Knowledge只提供说明入口，不含另一份清理脚本。此前单进程接入指南的固定功能提交为 `9c7d725c453ba6d5a3defe9e4ecf22a652605ef3`，含五个工具与单进程整理，已通过 [PR #11](https://github.com/DreamSoul-AI/cpu-memory-cleanup/pull/11) 合并到master，尚未发布新版本。已发布v0.2.0只有原三个工具，不能用该Release冒充本轮定向能力。Knowledge PR #21已合并；其链接固定到合并前的指南快照，安装与调用合同不变，当前集成状态以本说明及运行记录为准。
+更新日期：2026年11月2日。当前接入为本地Rust 0.4.0候选，尚未发布。库、CLI工具和网页共用Application，不由宿主复制清理脚本，不要求先安装Python。版本、构建和边界见 [README](../README.md)。Knowledge已有固定历史指南本轮未改，不代表它已指向Rust版本。
 
-本地本轮候选版本0.3.0另含第六个工具memory_batch_cleanup和正式localhost网页，尚未push或发布。下述Git安装命令仍固定此前五工具版本，不包含本地新增能力；本轮只验证忽略目录中的wheel隔离安装，证据见 [本轮运行记录](<运行记录 Run Record/2026-10-31 正式网页与范围规则.md>)。
+# 一、静态发现与调用
 
-# 二、安装与静态发现
-使用调用方选定的Python 3.10+环境，产品无第三方运行依赖。固定提交安装需已有Git与满足pyproject要求的setuptools，不自动升级依赖或改用户环境。安装将访问GitHub并写入选定环境，命令仅供准备环境时使用，本轮未执行网络安装：
+构建后执行 `cpu-memory-cleanup.exe --tool-info`，返回工具目录版本1、Rust版本、描述、input_schema、参数数组模板和退出码。该调用不读取系统。宿主使用绝对可执行路径和参数数组，不将模型输入拼成shell命令。stdout是一份JSON，stderr为入口错误；退出0为整体success，1为partial/failed/unknown/cancelled，2为参数或入口错误。
 
-```powershell
-python -m pip install --no-deps --no-build-isolation "git+https://github.com/DreamSoul-AI/cpu-memory-cleanup.git@9c7d725c453ba6d5a3defe9e4ecf22a652605ef3"
-python -m cpu_memory_cleanup --tool-info
-```
-
-静态目录不装配系统能力，不读取指标或整理内存。可先只运行第二条核对安装版本的实际工具数，不能靠包名或版本号判断功能提交。本轮验证用隔离目录的wheel，见运行记录。
-
-# 三、宿主调用合同
-| **工具** | **作用与参数** | **执行边界** |
+| 工具 | 参数 | 副作用 |
 | --- | --- | --- |
-| memory_status | 单次内存读取，无必填参数 | 真实采样，需本次允许读取设备 |
-| memory_cleanup | `--confirm --output-dir 记录基目录` | 全局工作集动作，宿主落实真实授权 |
-| memory_result | `--run-dir 原运行目录` | 离线回看，不重新采样或整理 |
-| memory_targets | 按需列出可读进程和原始创建身份 | 真实进程枚举，不自动整理；部分覆盖仍可有返回数据 |
-| memory_process_cleanup | `--pid … --created-at … --confirm --output-dir …` | 一次指定进程动作，创建身份须来自列表，不能仅凭名称或PID猜测 |
-| memory_batch_cleanup（本地0.3.0候选） | `--request-file 请求.json --confirm --output-dir …` | 固定身份列表与可选保护，串行逐项执行；取消不撤销已派发项 |
+| memory_status | 无 | 一份真实容量快照 |
+| memory_targets | 无 | 真实进程枚举、创建身份及可读取工作集 |
+| memory_cleanup | --confirm [--output-dir DIR] | 一轮全局可访问进程工作集整理 |
+| memory_process_cleanup | --pid PID --created-at ID --confirm [--output-dir DIR] | 指定身份的一个目标 |
+| memory_batch_cleanup | --request-file FILE --confirm [--output-dir DIR] | 固定目标列表及可选保护 |
+| memory_result | --run-dir DIR | 只读回看，不连接当前内存、不重放 |
 
-命令行形式均为 `python -m cpu_memory_cleanup --tool 工具名 参数`，默认JSON。`tool_schema_version=1`、`tool`与RunReport字段共同解释结果。退出码0表示整体success，1表示非完整成功，2表示参数错误；退出1时仍需读取JSON中的样本、动作与错误，不能把动作已发生解释为未执行。进程列表部分覆盖可能有可用目标，同时仍是partial。
+形式为 `cpu-memory-cleanup.exe --tool 工具名 参数`。没有 `--tool` 时使用 `--web` 启动回环网页，默认端口14800，可显式指定 `--port`。同一宿主不要并发启动维护CLI和网页维护，互斥是应用实例内，未提供跨进程全机锁。
 
-宿主必须使用参数数组、指定Python解释器和shell=False，模型输入不拼接成shell命令。以下例子只读取静态目录，可作为无采样的接入检查：
+# 二、目标与确认
 
-```python
-import json
-import subprocess
-import sys
+先取得本次memory_targets返回的目标，再传PID及原始created_at；可选image_path用于额外路径核验。不得按程序名称猜PID、换同名进程或在失败后改全局范围。批次请求为UTF-8 JSON，最多1MiB：
 
-result = subprocess.run(
-    [sys.executable, "-m", "cpu_memory_cleanup", "--tool-info"],
-    capture_output=True, check=True, timeout=10,
-)
-catalog = json.loads(result.stdout)
-assert catalog["tool_schema_version"] == 1
-assert {"memory_targets", "memory_process_cleanup"} <= {
-    tool["name"] for tool in catalog["tools"]
-}
+```json
+{"targets":[{"pid":123,"created_at":"从本次发现复制","name":"显示名","image_path":null,"working_set_bytes":null}],"protections":[]}
 ```
 
-同进程调用从 `cpu_memory_cleanup.api` 导入 `create_application` 和 `ProcessTarget`，使用同名方法，返回对象而非JSON。离线回看用 `create_application(offline=True)`，结束时shutdown。不得在模块导入、工具注册或静态发现时自动调用读取或维护。
+以上是格式示例，不可直接拿示例身份执行。targets为1..4096个不重复身份。保护规则为完整image_path，或pid加created_at；保护在逐进程批次应用，全局整理不支持排除。规则注册和工具目录读取不产生维护授权。模型传入true或--confirm也不能自证用户许可。
 
-# 四、授权、目标与结果
-宿主首先区分只读许可、全局维护许可与指定进程许可，再决定开放哪些调用。模型传入true或--confirm不能自证授权。已有用户“不要真实采样和清理”的要求会阻止memory_status、memory_targets及全部维护入口，仍可读取工具目录、离线回看和运行受控假接口测试。不得因为安装了工具就周期调用它。
+# 三、结果与兼容
 
-只使用本次列表中的PID和created_at。目标退出、身份不符、不可访问或状态未知时保留失败，不更换同名进程、不转全局整理、不自动重放维护。定向操作仅作用于选中的一个进程，不代表整个多进程应用，系统可用量与目标工作集是不同指标。
+报告含run_id、mode、completion、phase、samples、analysis、action、errors、metadata和output_dir。物理量单位bytes；analysis.available_change_bytes是原始前后系统可用量差额，不是独占释放量或提速比例。action.process_sweep保存覆盖、返回、未知、关闭状态和有界明细；跳过与失败不是成功。整体非success仍可能已经发生维护，宿主不得自动重试。
 
-执行结果返回output_dir。回看顶层run_id是新回看请求，metadata.header.run_id、target与原样本保留原动作身份。schema1旧system记录和schema2process记录语义分开，旧读者拒绝新范围不能伪造兼容通过。工作集差额不代表永久释放或速度改善。
+新记录为版本3的report.json：动作前先写calling/unknown意图，动作后保存原始事实，再封存。memory_result只接受已封存记录，支持新文件及既有samples.jsonl、operation.jsonl与可选diagnostics.json。回看使用新run_id，metadata.source_run_id指原运行；不回写原件。旧Python批次索引、CPU分析等格式不在本轮兼容承诺内。
 
-# 五、验收与当前状态
-CLI适配已用合成进程贯通目标发现→明确确认→单次动作→离线回看，包、CLI和假窗口及安装验证见 [单进程整理运行记录](<运行记录 Run Record/2026-10-30 单进程定向整理实现.md>)。这证明本地命令接口的受控链路，不代表任意Agent平台都能注册工具。当前没有MCP服务、特定平台SDK、跨机器RPC或自动任务。
+六个工具名称及目录版本保留，Python模块导入API、旧CLI其他选项和Python发行方式已不兼容，不能只按名称推断全部合同相同。当前未提供MCP、远程RPC或特定Agent平台注册器。
 
-INT-01的本轮交付是固定版本说明、真实调用合同与Knowledge导航，不安装到用户环境、不运行真实接口、不在Knowledge复制核心。特定宿主如只接受MCP，须另立具体接入任务，不先加网络服务。
+# 四、Rust同进程接入
 
-# 六、本地批次与正式网页候选
-批次请求JSON为`{"targets":[{"pid":101,"created_at":"原始创建身份","name":"显示名","image_path":"完整程序文件路径"}],"protections":[]}`，其中targets必须来自本次发现，不使用示例值发真实动作。API同名memory_batch_cleanup接受ProcessTarget序列，保护规则支持image_path或pid/created_at。记录是独立批次索引加逐项原记录，memory_result只离线回看，不重放。
+通过本仓库Cargo库引用 `cpu_memory_cleanup::{Application, Target}`。Application::default选择实际系统，Application::new接受System隔离实现，构造本身不读取。公开方法为memory_status、memory_targets、memory_cleanup、memory_process_cleanup、memory_batch_cleanup及memory_result，维护传记录基目录、明确确认和取消标志。HTTP调用同一库，不经过CLI子进程。
 
-正式网页使用`python -m cpu_memory_cleanup --web`，或同进程`create_web_server`装配同一Package，HTTP不经过CLI子进程，也不复制维护实现。创建服务不采样；可见网页每秒调用轻量显示接口，工作集主按钮直接提交一次明确动作，高级/批次仍确认。实时显示不等于自动整理，启动后不会默认启用规则；真实请求仍受宿主/用户执行边界约束。服务仅绑定回环地址，默认端口0由系统分配并输出实际URL，显式固定端口失败不自动替换；默认记录与偏好位置见README。假数据入口与真实模式独立，不将假数据通关作为真实平台证据。
+# 五、验证与采用限制
 
-API_VERSION=1、tool_schema_version=1仍兼容旧工具；系统/进程记录schema和batch_schema_version分别管理。静态目录当前候选含六项，宿主按实际目录发现，不假设旧Release已包含所有能力。本轮未改Knowledge仓库的固定旧指南，未安装到用户环境，也未发布新包。
+本轮静态目录、旧真实记录只读回看、隔离库与HTTP检查、正式网页一次真实全局整理已执行，见 [Rust验收记录](<运行记录 Run Record/2026-11-02 Rust原生网页验收.md>)。定向/批次与规则真实动作未执行。工具可本地调用不代表已安装到其他项目、Knowledge固定链接已更新或已发布新包。宿主采用前固定实际提交和产物校验值，按用户范围开放读取与维护。
 
-# 七、维护诊断的增量字段
-维护报告新增metadata.diagnostics，阶段计时、工作集核验和观测时间轴都在此扩展，不改变原动作事实和记录schema。CLI/Tool按原RunReport输出携带这些字段，原生耗时缺失时为未知，不读取整体耗时替代。原子诊断附件版本独立为1，回看只读取已有文件。
 
-同进程memory_cleanup可显式传capture_timings=False或verify_working_sets=True。后者会额外发现前后进程，默认关闭，当前没有相应CLI/Tool参数或网页开关。宿主不能把这两个Package选项假定为现有工具目录已注册参数。定向记录已有目标前后值，核验复用它们，不追加系统读取。
+# 历史方案定位
+原章节和旧执行约定归档到 [Rust迁移前工具接入基线](<开发记录 Development Record/2026-11-02 Rust迁移前工具接入基线.md>)。历史记录中的提交、路径和验收状态保留原义。
 
-旧记录的缺失计时和覆盖保持未知，诊断不能证明所有可裁剪页面已清空或任务已提速。完整字段位置、执行边界及实际受控证据见 [README](<../README.md>) 和 [本轮运行记录](<运行记录 Run Record/2026-11-02 分段计时与工作集核验.md>)。
-
-内部P1/P2同目标比较新增动作字段native_method，批次analysis.comparison分列目标覆盖、原生时间合计、核验成本、批次墙钟和容量窗口。批次诊断附件保存于原目录diagnostics.json，回看重新核对原子记录；旧附件缺失的耗时保持未知。诊断写入失败单列，不重写动作事实。受控准备见 [候选运行记录](<运行记录 Run Record/2026-11-02 同目标工作集候选与实验准备.md>)。
-
-当前正式装配按用户选择改为逐进程SetProcessWorkingSetSize；同名memory_cleanup表示系统范围的一轮枚举/裁剪，包含多个目标调用，并非单个原生调用。增量action.process_sweep保存覆盖、返回及有界逐项证据；失败保留，不切换回NT。CLI/Tool名称、参数、API_VERSION和六项目录保持，Standby仍独立。已运行的旧宿主需重新装载新代码才能采用，源码修改不证明远端安装或旧Release已经更新。见 [产品接入运行记录](<运行记录 Run Record/2026-11-02 360逐进程工作集产品接入.md>)。
+<!-- 历史章节锚点仅供旧记录定位，不表示旧合同继续适用。 -->
+<a id="一接入范围与固定版本"></a>
+<a id="二安装与静态发现"></a>
+<a id="三宿主调用合同"></a>
+<a id="四授权目标与结果"></a>
+<a id="五验收与当前状态"></a>
+<a id="六本地批次与正式网页候选"></a>
+<a id="七维护诊断的增量字段"></a>

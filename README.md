@@ -1,270 +1,121 @@
 # CPU 内存清理
-当前正在迁移到 Rust。原生源码、Cargo配置及release产物已建立，但360构建告警尚未取得具体内容，暂不继续构建或运行新EXE，也未进行Rust真实网页验收。14800仍是原Python服务，不能当成Rust交付。进度和限制见 [Rust构建与告警记录](<docs/运行记录 Run Record/2026-11-02 Rust构建与告警核对.md>)，下列Python说明仍对应当前旧版入口。
 
-360加速球式的轻量内存清理桌面工具。紧凑主窗口以环形仪表显示内存状态，绿色按钮执行一次工作集整理，结果区呈现本次可用内存变化。Python 3.10+，使用标准库 ctypes、tkinter 和 unittest。
+Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 localhost 网页。正式运行不需要 Python，网页直接调用同进程 Rust 功能库与 Win32 后端，不通过 CLI 子进程执行清理。
 
-服务启动不采样；网页可见时每秒轻量更新内存，绿色工作集按钮单击即执行一次整理。高级动作仍独立确认。网页以工作集方式为默认，CPU 与历史分析命令属于辅助工具。可用内存上升不等于加速收益。
+[GitHub 源码](https://github.com/DreamSoul-AI/cpu-memory-cleanup) · [历史 Release](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases) · [MIT 许可证](LICENSE)
 
-当前源码的一键整理采用360已查明的内存路径：枚举进程，对可访问目标逐项调用`SetProcessWorkingSetSize(-1,-1)`，关闭句柄并继续。一键是一轮请求，包含多个目标调用；不会结束进程或叠加其他清理。Package、CLI/Tool、网页及桌面共用正式装配，实时读数和动效保留。源码更新不会替换已运行的旧服务，需重新启动后采用。已另行授权完成 [正式网页真实验收](<docs/运行记录 Run Record/2026-11-02 正式网页逐进程真实验收.md>)：一轮709项，692成功、10跳过、7失败，可用量即时净增5.91 GiB，原始结果为partial；部分目标失败时仍显示已取得的容量变化，错误和覆盖保留。该次验收服务已停止，原其他服务未替换。实现与受控证据见 [产品接入记录](<docs/运行记录 Run Record/2026-11-02 360逐进程工作集产品接入.md>)。
+当前源码版本 **0.4.0**，仅在本地构建和验证，尚未推送、打 tag 或发布。此前 v0.2.0 Release 和 GitHub Pages 静态演示保留各自版本，不包含本轮 Rust 运行时。正式网页使用真实系统读数，不提供合成数据回退。
 
-当前主流程将已知局部失败、但遍历和安全收尾完整的结果呈现为“已整理”，显示真实容量变化及未处理数量，不弹笼统的恢复错误红框。原始partial、错误码、CLI/Tool退出状态和详情不变；未知调用、真实恢复异常及记录缺口仍显著报错。正常业务终态与结果摘要共用判定，界面在业务完成后下降归零、请求新读数并回弹。对应错误提示修正见 [完成提示记录](<docs/运行记录 Run Record/2026-11-02 逐进程整理完成提示修正.md>)，当前节奏与主区收敛见 [本轮运行记录](<docs/运行记录 Run Record/2026-11-02 完成后归零与真实验收.md>)。
+## 启动和使用
 
-## 项目约定与执行边界
+Windows x64，需要现代浏览器。开发构建要求 Rust 1.85+；本轮实际使用 Rust/Cargo 1.99.1 GNU 工具链，其他工具链与系统版本尚未验证。网页资源嵌入 EXE，运行无需 Node 或 Python。
 
-开始研发或执行命令前，结合 [AGENTS.md](AGENTS.md) 读取本节。AGENTS.md 维护通用协作、资料定位和迭代流程，本节与专项文档维护 CPU 内存清理的具体约定。入口通用化不放宽以下限制。
-
-### 实现与设计约定
-
-- 当前交付形态为独立内存小窗口，以 360 加速球式快捷操作为参考。CPU 看板、排名和诊断前置不是主功能，未约定宿主协议前不声称已有浏览器或编辑器插件集成
-- 源码位于 `src/cpu_memory_cleanup/`，产品运行依赖保持 Python 标准库。`interaction/`、`application/`、`system/` 对应用户交互、功能和系统，具体平台接入位于 `system/platforms/`
-- 架构使用用户交互、功能、系统三层的结构与流程视图，统一表述操作系统能力。平台名称用于实现与验证现状，不能推定已具备多平台支持。AR-01 至 AR-07 在架构和代码结构设计中关联职责、实现与验证
-- 代码结构设计的硬约束集中于 `src/cpu_memory_cleanup/` 的模块职责、文件、入口、状态和依赖。外围目录由本文导航，属于可调整的软约定，变化时同步相关装配、脚本、配置、测试与文档
-- 测试镜像位于 `tests/src/cpu_memory_cleanup/`，脚本及其测试位于 `scripts/` 和 `tests/scripts/`，共享装配在 `tests/fixtures.py`，包发现由 `pyproject.toml` 配置。`tests/` 不设 README，镜像例外登记在代码结构设计中
-- 测试规则直接采用关联 DreamSoul 资料库中的飞书共用测试规范，不另建副本。根 `tests/manifest.json` 维护全局计划与预算，局部清单提供当前目录及子树元数据，执行器静态发现并展开 Python 方法。独立网页演示测试另行登记，不冒充 Python 计划覆盖
-- 架构任务先复用资料库中 `研发/研究/软件开发 Software Engineering/软件架构设计 Software Architecture Design/` 的通用调研、相关案例和来源范围。涉及 Codex 工具生命周期时，先读同一软件开发课题下《Codex 闲置工具进程安全回收调研》，保留其版本与阅读范围
-
-### 运行与验证限制
-
-- 不结束进程、不停服务、不修改系统设置、页面文件或注册表，不自动提权。Windows 内存维护与工具生命周期回收分别分析，聊天闲置、低 CPU、Node 名称和进程年龄不能证明可以关闭
-- 真实释放、GUI、实时巡检、持续采样和后台任务必须有本次明确执行指令。2026年11月1日经单独授权完成了一次真实网页工作集整理，不启用自动规则；该次授权不自动扩展为后续重复执行，文档命令、历史实验和未来计划不构成执行授权
-- 释放与权限调整测试注入假调用，禁止测试触发真实释放。当前 quick、regression 和 readonly_offline 只执行离线与假接入验证，不代表真实平台或清理效果验收
-- 读取失败保留未知和错误，不补零。调用结果未知不自动重试，后置失败保留已发生事实。目录存在、离线通过和源码分析均不能代替行为验证
-- 已删除的历史 `logs/` 不自动重建。新验证使用当前计划的独立输出，旧回执保留原路径、版本和标识，不改写成新布局通过
-
-## 当前交互需求与网页实施
-网页使用正式Package及操作系统后端，显示真实内存。后台执行整理时，主圆环仍显示实际占用。调用、后置快照和安全收尾结束后立即公布结果、恢复业务按钮，再播放约750毫秒线性归零。到零请求一次新的只读快照，得到有效读数就用约300毫秒回弹，取消额外3～8秒趋缓等待。持续读数、容量和时间独立更新，结果仍按原始前后快照计算。
-
-归零后的读取失败或网络超时会退出过程显示并保留错误与最后有效读数，不重试清理。显示参数参考360静态流程，回弹300毫秒是本项目参数，不代表测得360完整时序。正式交付和浏览器验收使用真实系统模式，不以假数据页替代。自动化测试仍隔离原生副作用。用户本轮已授权真实网页验收，允许真实读取和一次整理，自动规则保持关闭。实际执行结果见 [完成后归零与真实验收记录](<docs/运行记录 Run Record/2026-11-02 完成后归零与真实验收.md>)。
-
-主区只保留圆环、真实读数、绿色按钮、简短结果；处理数量、完整前后值、错误与动效开关收进“详情与设置”。当前合同见 [开发计划第十四章](<docs/开发计划 Development Plan CPU 内存清理.md#十四360式过程与结果收敛>)，架构及源码映射分别为第十七章、第十九章。
-
-本地桌面保留此前版本，本轮不与网页同步改造或启动。旧独立反馈条不再作为本次需求方案。需求、状态合同与验证任务见 [开发计划第十章](<docs/开发计划 Development Plan CPU 内存清理.md#十网页需求重定与实施计划>)，设计见 [架构第十三章](<docs/架构设计 Architecture Design CPU 内存清理.md#十三网页交互的需求与状态合同>) 和 [源码映射第十五章](<docs/代码结构设计 Code Structure Design CPU 内存清理.md#十五网页主圆环与真实读数分工>)。本轮网页实现已通过变化假数据、内置浏览器及离线回归；证据见 [网页验收记录](<docs/运行记录 Run Record/2026-11-01 网页完成信号与主圆环.md>)，不代表真实系统效果验收。
-
-后续 [一次真实验收](<docs/运行记录 Run Record/2026-11-01 正式网页真实整理验收.md>) 使用当前代码及正式模式，原生返回0、权限恢复，观察到实际占用约47%降至20%、随后回升到22–24%。即时报告可用量25.04→30.56 GiB与数秒后实时区37.46 GiB属于不同时间点，不把后续全部净变化认定为清理独占收益。18768仍为合成演示，本次正式服务地址为http://127.0.0.1:18769/，服务存续以实际启动状态为准。
-
-当前路线按用户决定收敛为复刻360的逐进程工作集路径，见 [开发计划第十三章](<docs/开发计划 Development Plan CPU 内存清理.md#十三按360内存路径收敛产品>)。机制来源为 [360静态调用链](<docs/运行记录 Run Record/2026-11-02 360一键加速调用链复核.md>)；没有引入其中条件性结束进程分支。此前 [一次G0真实测量](<docs/运行记录 Run Record/2026-11-02 真实分段计时与工作集核验.md>)及 [P1/P2单目标探索](<docs/运行记录 Run Record/2026-11-02 P1与P2真实同目标对照.md>)保留各自版本、范围与可比性限制，不作为本次新路径的全机效果证据。采用决定来自产品目标，不宣称P2已在性能上胜出，不继续扩展文件缓存或其他候选。
-
-## 内部工作集候选与实验准备
-正式操作系统装配为单目标和系统范围工作集都选择SetProcessWorkingSetSize。内部WindowsBackend仍保留显式EmptyWorkingSet单目标和NtSetSystemInformation全局对照配置；它们不作为正式绿色按钮默认，不新增产品CLI、Tool或HTTP方法名。逐进程身份核验、明确目标的路径检查和批次保护继续保留，系统范围一轮遍历不支持排除，按需保护仍使用明确目标批次。
-
-正式工作集动作增加`process_sweep`：枚举、访问、尝试、成功、失败、未知、跳过计数与最多1024条逐项证据，超出明细数另记，不影响处理计数。无法打开的目标跳过，不冒充全覆盖；原生失败保留，结果未知或句柄关闭未确认则停止且不重试。全局遍历不临时启用特权；高级Standby保持原独立权限流程。原动作和记录schema不变，native_method明确实际方法，已有NT记录回看仍保留原义。
-
-单目标动作新增native_method，原动作/记录版本保持。批次analysis.comparison提供选定/跳过/确认及未知数、原生时间合计、核验时间、整批墙钟与实际容量窗口。子时间不与整批时间相加，系统净变化不等于清理独占收益。批次diagnostics.json在业务收尾后保存，附件失败单列diagnostics_errors，旧批次回看缺少整批时间时保持未知。
-
-内部MemoryObserver按至少250毫秒、至多60秒/241份样本的配置独立读取，只持有读取回调，不派发动作。轨迹保存读取完成偏移、原始样本、调用标记及实际间隔，区分调用中/调用后观测下降。它不提供硬中断阻塞读取的保证，超预算如实记录。
-
-固定负载准备入口为`python -m cpu_memory_cleanup.application.experiments --load-mib 128`，显式分配自有缓冲并触页，输出ready及校验值，标准输入read执行固定读回任务，quit或输入结束自然退出。大小限1..256 MiB。它是内部实验入口，既不采样主机也不自动清理。此前离线测试使用1 MiB，后续单独授权的真实探索使用128 MiB；结果与限制见上述运行记录。未发布新版本。
-
-## 正式localhost网页与独立假数据模式
-
-当前源码与本地安装产物版本为0.3.0；GitHub已发布的v0.2.0保留原样，本次没有发布新版本。正式网页直接复用Package和操作系统后端，不通过CLI子进程执行清理、不采用合成数据回退。
-
-已安装本包后运行：
+在仓库根目录构建：
 
 ```powershell
-python -m cpu_memory_cleanup --web
+cargo build --release --locked
 ```
 
-在源码仓库使用当前版本时可先设置 `$env:PYTHONPATH="src"`，再执行上述命令。默认由操作系统分配可用端口，打开启动输出的实际地址。需要固定端口时使用`--port 18767`；端口被占用或系统保留时会明确报错，不修改系统配置，也不静默改用其他固定端口。正式入口默认选择当前系统后端，平台不支持时明确显示不可用；服务启动不采样；网页连接后在可见时每秒读取内存，读数约0.4秒平滑过渡，隐藏或关闭页面暂停显示请求，可手动暂停/恢复。进程列表仍按需读取，不自动枚举。绿色主按钮点击即确认一次工作集动作，不再弹出二次确认；Standby和批次仍展示范围并确认。模式标签不证明当前权限可用，权限在具体动作前置检查时核对。2026年10月31日已在用户授权下通过内置浏览器完成本机一次真实内存读取、一次全局工作集动作及离线回看，原生返回0且权限恢复；这不是多平台、持续收益或完整产品验收。见 [真实网页验收](<docs/运行记录 Run Record/2026-10-31 真实网页验收与启动修正.md>)。
+构建后双击 **`scripts/memory-cleanup.cmd`**，隐藏启动本地服务并在默认浏览器打开网页；默认地址为 **http://127.0.0.1:14800/**。再次打开会复用同版本的正式 Rust 服务。CMD直接启动无控制台的Rust程序，不依赖PowerShell脚本或改变系统执行策略。端口被旧版或其他程序占用时明确失败，不结束其他进程。当前验收服务已由 Rust 启动，自动规则关闭。
 
-受限运行环境如果不能写默认用户目录，可显式指定仓库内记录位置：`python -m cpu_memory_cleanup --web --output-dir .test-results/formal-web/runs`。创建记录失败会在动作前停止，页面显示原因；不要据“未派发”直接判断为系统清理权限不足。
-
-假数据体验使用独立脚本和端口，不接主机：
+需要从命令行明确指定记录位置时：
 
 ```powershell
-python scripts/preview-memory-web.py --port 8766
+.\target\release\cpu-memory-cleanup.exe --web --port 14800 --output-dir .test-results/rust-runs
 ```
 
-此脚本需要本仓库的tests合成装配，禁止WinDLL及真实平台选择，只是受控验收入口。两种模式不能按“同样运行在localhost”混同。产品运行仍仅依赖Python标准库。
+该命令不自动打开浏览器；需要时加 `--open`。仅绑定回环地址。启动不采样，网页可见时约每秒读取一次真实容量，进程列表按需读取；点击绿色按钮执行一轮工作集整理。高级批次和规则启用仍需确认。关闭标签页不会停止服务，请使用网页“停止服务”。本轮验收使用内置浏览器，不占用桌面鼠标键盘。
 
-网页支持按需状态、搜索/排序/多选、同一程序文件分组、批次整理与保护名单、逐项结果和离线回看。路径组不是完整多程序应用；未知路径保守跳过路径保护，当前实例保护不跨PID复用。全局工作集及高级Standby动作不支持排除，工作集主按钮直接执行一次，Standby保留独立确认；逐进程批次执行保护规则。默认关闭的定时/持续压力规则只使用启用时的目标与保护快照，需本次独立确认；设置可保存，武装状态不保存。规则运行在同一服务，没有开机任务或额外守护进程。实时显示只是只读刷新，与自动整理规则分开；默认不开启自动整理。修改偏好、取消、失败或显式停用后停止规则，不自动重试未知动作。
+## 当前能力和边界
 
-“停止服务”先停规则、拒绝新请求并收尾，Ctrl+C也可结束；关闭标签页本身不会停止服务。页面重开恢复显示刷新与已保存设置、服务状态，不重放原动作。默认记录在 `~/.cpu-memory-cleanup/runs/`，偏好在同级preferences.json；`--output-dir`可指定记录基目录。假数据脚本默认写入忽略目录 `.test-results/localhost-preview/`。服务仅绑定127.0.0.1，核对Host、来源和会话令牌，不提供任意文件访问或shell执行。
-
-此前正式入口和受控验证的历史状态见 [本轮运行记录](<docs/运行记录 Run Record/2026-10-31 正式网页与范围规则.md>)。当前授权和已验证范围见上述真实网页验收；此前记录的未执行状态保留原日期含义。今后执行仍须遵守前文的当次授权边界。
-
-网页资源的独立逻辑测试使用 `node --test tests/src/cpu_memory_cleanup/interaction/web_assets/app.test.cjs`，覆盖圆环与读数、忙碌绑定、动画、主按钮确认语义及结果保留。它与下文静态Demo测试分别执行，不计入Python计划数量，不增加产品运行依赖。
-
-## 网页演示
-打开 [在线交互演示](https://dreamsoul-ai.github.io/cpu-memory-cleanup/)。源码位于 [demo/index.html](<demo/index.html>)，用合成数据展示绿色按钮、工作集整理和再次使用后的占用回升。新增选中进程与保护名单的合成演示，支持重置和再次使用后的回升；它不读取访客设备，也不执行真实清理。静态Demo改动尚未部署，AI资源Agent仍是候选研究，不等于当前确定性规则。
-
-本地可运行 `python -m http.server 8765 --bind 127.0.0.1 --directory demo`，再访问 `http://127.0.0.1:8765/`。演示逻辑测试单独执行 `node --test tests/demo/app.test.cjs`，使用 Node 内置测试能力，不是桌面 Python 测试计划的一部分。产品运行依赖仍为 Python 标准库。
-
-## Package 与工具入口
-当前已实现“Package → CLI/Tool → 前端接入”的源码：`cpu_memory_cleanup.api` 提供公共创建入口，包内提供一次内存状态、一次明确工作集整理和离线回看。CLI 与现有桌面使用同一套能力，当前改动已通过完整离线与隔离安装验收，证据见 [包与工具接入运行记录](<docs/运行记录 Run Record/2026-10-30 包与工具接入.md>)。后续安排见 [当前开发计划](<docs/开发计划 Development Plan CPU 内存清理.md#二下一步开发任务>)。MCP和AI资源协调仍为后续选项；当前已有仅回环访问的网页HTTP服务与显式启用的本地规则，不提供跨机器服务或后台AI Agent。
-
-安装后可直接使用包，创建实例本身不采样、不维护、不打开界面。下面示例仅离线回看已有记录，`保存的运行目录` 替换为实际位置：
-
-```python
-from cpu_memory_cleanup.api import API_VERSION, create_application
-
-app = create_application(offline=True)
-try:
-    report = app.memory_result("保存的运行目录")
-    print(API_VERSION, report.completion, report.action)
-finally:
-    app.shutdown()
-```
-
-实时实例使用 `create_application()`。`app.memory_status()` 返回一次内存专用 `RunReport`，原始容量位于 `samples[].metrics.physical.total_bytes / available_bytes` 和 `commit.used_bytes / limit_bytes`，时间带时区，平台能力在 `metadata.capabilities`。已用量按总量减可用量计算，占用百分比按已用量除总量计算，包不添加重复派生字段。`app.memory_cleanup(记录基目录, confirmed=True, confirmation_source="可信宿主的授权来源")` 固定执行一次工作集整理，并返回前后原始快照、动作事实和 `output_dir`。调用这两个方法会读取当前系统，后者还会尝试维护，必须遵守本次执行授权。包只返回对象，JSON、终端退出码和控件呈现由外层负责。 `memory_cleanup`可选`observation_seconds=0..5`，默认0保持已有API/CLI行为；桌面主按钮传3，额外快照记入同一运行；网页主按钮采用默认0，在一次调用、即时后置快照与收尾结束后公布结果，连续读数独立更新。两种方式均不重复调用维护。
-
-阶段计时默认随维护报告返回，位于`metadata.diagnostics.timing`。`verification.native_call_ms`只在实际调用两侧取得计时才有值，不能用整段流程代替。嵌套阶段包含子阶段，不能全部相加。`diagnostics.json`独立保存阶段和核验证据，附件构造/写入、HTTP传输及UI渲染排除在已记录业务区间外。计时附件失败单列错误，不把已发生的维护改写成未派发。
-
-Package 的`memory_cleanup`新增`capture_timings=False`用于关闭计时，`verify_working_sets=True`用于显式开启全局动作前后的进程工作集只读观察。默认核验关闭，不额外枚举进程；该选项目前仅由Package显式调用，不新增网页动作或CLI参数。结果在`metadata.diagnostics.verification.working_sets`按PID与创建身份匹配，区分下降、不变、上升、新增/退出及覆盖缺口，不累加成整机释放量，也不声称全部可裁剪页面已清空。开启核验会额外读取进程，需要遵守当次执行范围。2026年11月2日单次真实核验匹配748项，747项下降，另有不可读对象，覆盖仍为partial；不能据此宣称全机所有页面清空。
-
-`memory_result`离线回看新版附件或旧记录。旧记录没有原生计时、逐进程观察或足够时间采样时保留未知，不补采、不重放。`verification.timeline`只说明实际观测窗口、净变化、窗口内观测低点及回升；未提供噪声阈值时，显著下降时刻保持未知。实现及验收见 [本轮运行记录](<docs/运行记录 Run Record/2026-11-02 分段计时与工作集核验.md>)。
-
-跨进程工具使用下列接口。`--tool-info` 只输出静态目录，可在未连接实时能力时读取，目录包含参数 schema、命令模板与维护确认要求。
-
-```powershell
-python -m cpu_memory_cleanup --tool-info
-python -m cpu_memory_cleanup --tool memory_status
-python -m cpu_memory_cleanup --tool memory_cleanup --confirm --output-dir 记录基目录
-python -m cpu_memory_cleanup --tool memory_result --run-dir 保存的运行目录
-```
-
-当前六个内存工具的 `--tool` 调用默认输出 JSON，在 `RunReport` 字段上增加 `tool_schema_version: 1` 和 `tool`，整体 `completion == "success"` 时退出码为 0，其余为 1，参数错误为 2。工具 JSON 使用 ASCII 转义，解析后的中文值不变，便于 Windows 重定向读取。`--confirm` 表达当前请求的确认，真实授权由可信宿主核对，模型填写布尔值不自动取得权限。状态与清理命令不是本轮执行指令。回看使用离线装配，顶层 `run_id` 标识本次回看请求，原清理身份保留在 `metadata.header.run_id` 和原样本中，不再执行动作。旧 CLI 参数与普通 `--json` 表示保持兼容。
-
-接入方安装与调用方式见 [工具接入说明](<docs/工具接入 Tool Integration CPU 内存清理.md>)，明确区分原发布版与本轮固定功能提交。
-
-## 单进程定向整理
-单进程定向整理已通过PR #11合并到master，尚未包含在已发布的v0.2.0预览包中。现有全局绿色按钮不变，当前在“详情与设置”的进程范围中按需读取列表，选择一个身份后点击“整理选中对象”即可单目标整理。列表中的名字只作显示，目标由PID与原始创建身份绑定，一个程序的其他进程不会自动加入。
-
-Package入口为 `app.memory_targets()` 与 `app.memory_process_cleanup(ProcessTarget(pid, created_at, name), output_dir, confirmed=True, confirmation_source="可信宿主的本次授权")`，ProcessTarget从 `cpu_memory_cleanup.api` 导入。前者读取一次进程列表，后者只调用一次指定进程的EmptyWorkingSet，不结束程序、不启用调试特权，不自动切换全局方式。目标工作集前后值与系统可用量是不同指标，均不证明永久释放或提速。
-
-CLI对应新增 `--tool memory_targets` 与 `--tool memory_process_cleanup --pid … --created-at … --confirm --output-dir …`。创建身份须原样使用列表返回值，不自行用当前时间替代。进程列表可能不完整，不可读项保留错误，不能据可读列表声称全机覆盖。新进程运行记录采用schema2，旧system记录schema1仍可回看，回看不重新打开目标。
-
-单进程阶段增加两项工具，本轮再增加一项批次工具，原有字段与三个工具语义保留。工具版本仍为1，新增名字是目录的附加能力，调用方按实际目录发现。记录版本、工具版本和包API版本分别管理。实际执行边界与前文一致，本轮不运行这些实时示例，仅离线验证。
-
-本地开发快照另提供 `memory_batch_cleanup`，静态目录为六项工具；已发布v0.2.0与此前固定提交的工具数量不变。批次入口是 `--tool memory_batch_cleanup --request-file 请求.json --confirm --output-dir 记录基目录`，请求JSON只接受 `targets`（完整ProcessTarget列表）和可选 `protections`（程序文件路径或PID/创建身份规则）。API对应 `app.memory_batch_cleanup(targets, output_dir, protections=…, confirmed=True, confirmation_source=…)`，物理批次索引和逐项原运行分别保存；`memory_result`识别批次并离线回看。localhost页面已接入批次保护与默认关闭的规则，真实效果未验收。
-
-## 文档入口
-
-当前独立文档统一将类型放在前、项目名放在后。每类维护一个现行入口，历史执行按日期分目录归档。
-
-| **文件或入口** | **维护内容** |
+| 能力 | 当前状态 |
 | --- | --- |
-| [AGENTS.md](<AGENTS.md>) | 通用协作规则、资料定位、文档分工和自动化开发流程 |
-| [通用调研 General Research CPU 内存清理.md](<docs/通用调研 General Research CPU 内存清理.md>) | 360 产品对照、内存机制、方案、来源和证据限制；保留支撑结论所需的证据摘要，执行与迁移详细经过归日期记录 |
-| [架构设计 Architecture Design CPU 内存清理.md](<docs/架构设计 Architecture Design CPU 内存清理.md>) | 三层职责、能力、结构与流程、部署和质量目标，不写 Python 文件或具体类型 |
-| [代码结构设计 Code Structure Design CPU 内存清理.md](<docs/代码结构设计 Code Structure Design CPU 内存清理.md>) | 架构到源码、模块、文件、公开入口、状态、依赖和测试的映射，区分当前实现与目标 |
-| [开发计划 Development Plan CPU 内存清理.md](<docs/开发计划 Development Plan CPU 内存清理.md>) | 后续目标、优先级、依赖和验收条件，探索与已决定任务分开，不产生运行授权 |
-| [缺陷记录 Bug Report CPU 内存清理.md](<docs/缺陷记录 Bug Report CPU 内存清理.md>) | 活动缺陷待办，验证关闭后将经过和证据归档到日期记录 |
-| [开发记录 Development Record/](<docs/开发记录 Development Record/README.md>) | 按日期记录实现、职责和工程组织的演进，不重复完整执行回执 |
-| [运行记录 Run Record/](<docs/运行记录 Run Record/README.md>) | 按日期记录实际命令、环境、版本、结果和限制，不冒充当前验证 |
-| [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf) | 关联 DreamSoul 资料库中的共用正文，不在本仓库复制一份规范 |
+| 真实物理容量与提交量 | Win32读取，未知或错误不补零；显示与整理任务独立 |
+| 全局工作集整理 | 一轮枚举，对可访问进程调用 `SetProcessWorkingSetSize(-1,-1)`，关闭句柄；不结束应用 |
+| 选定进程和批次 | PID＋创建身份核验，支持路径/实例保护；全局整理不应用保护名单 |
+| 记录与回看 | 新版 `report.json`，维护前保存意图、维护后保存事实；只读兼容既有 JSONL/诊断记录 |
+| Package、CLI/Tool、HTTP | 共用 Rust `Application`，六个工具见接入指南 |
+| 定时和持续压力规则 | 已迁移、默认关闭；重启不自动武装，本轮未启用真实规则 |
+| 本地桌面入口 | 统一启动网页工作台，旧 Tk 独立小窗口归档 |
+| Linux/macOS、CPU分析、Standby、旧Python导入API | 未迁移或未支持，不由旧解释器静默补位 |
 
-## 关联的 DreamSoul 资料
-本仓库：[DreamSoul-AI/cpu-memory-cleanup](https://github.com/DreamSoul-AI/cpu-memory-cleanup)。每次从当前项目关联文件夹和资料链接定位 DreamSoul 文档库，读取相关规范与已有研究，再沿用既有飞书分享链接。使用资料库的逻辑目录，不写死机器盘符或用户名。
+本次真实验收一轮691个目标：679成功、10跳过、2失败，未知0、资源关闭确认；前后可用量19.77→28.06 GiB，增加8.29 GiB，业务约3.23秒。原始 `partial` 保留。证据见 [Rust原生网页验收](<docs/运行记录 Run Record/2026-11-02 Rust原生网页验收.md>)。这证明功能生效，不证明与360同速、长期收益或多平台支持。
 
-本地资料通常从 `文档/规范/` 与 `研发/研究/` 定位。未关联时，从 [飞书规范总索引](https://dreamsoul.feishu.cn/docx/UmU1d2EwLoeET5xCJChcOKPknyb) 和 [工具与教程总索引](https://dreamsoul.feishu.cn/docx/VSQ5dlJl3o0hbIxrEhUc8qKEnBc) 查找，具体任务入口见 AGENTS.md。
+## 交互与效果
 
-## 仓库目录导航
+主区保留圆环、实际读数、绿色按钮和简短结果，进程选择、保护与原始报告收进详情。点击先绘制忙碌反馈，后台整理时继续读取；业务结束立即显示原始前后快照结果，再播放约750毫秒归零，到零请求一次新读数，再约300毫秒回弹。没有额外3～8秒趋稳等待。动效不改真实数据、不触发第二次清理、不推迟业务结果。
 
-下面记录当前仓库布局。`src/cpu_memory_cleanup/` 内部结构按代码结构设计约束，外围目录的位置和组织属于软约定，可以按实际需要调整，同时更新包发现、启动与测试入口及文档引用。
+工作集裁剪减少页面驻留，不删除程序数据，也不保证降低私有提交量。重新使用应用可能重新驻留和触发缺页。容量变化不等于提速，不能把圆环归零解释为系统内存清空。
+
+## Package 与 Agent 工具
+
+```powershell
+.\target\release\cpu-memory-cleanup.exe --tool-info
+.\target\release\cpu-memory-cleanup.exe --tool memory_result --run-dir 原记录目录
+```
+
+静态目录不读取或整理系统。`memory_status`、`memory_targets` 是真实读取；三个维护工具需要本次授权及 `--confirm`。输出JSON，退出0为完整成功、1为非完整成功、2为参数/入口错误。完整参数、批次格式和 Rust 库接入见 [工具接入](<docs/工具接入 Tool Integration CPU 内存清理.md>)。
+
+Python导入API已发生不兼容变化；需要旧版时使用原版本或 [历史源码](legacy/python/README.md)。不要对当前仓库运行旧的pip安装命令。Cargo包使用MIT，当前未发布 crates.io/PyPI 或新的 GitHub Release。
+
+## 开发与测试
+
+开始研发先读 [AGENTS.md](AGENTS.md)，从已关联的本地DreamSoul资料库读取相关规范正文；本地缺失再沿其中飞书链接定位。测试直接采用共用 [测试规范 代码](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)，不另建一份规范。
+
+```powershell
+./scripts/run-tests.ps1
+```
+
+独立检查分别为 `cargo fmt --all -- --check`、`cargo clippy --all-targets --locked -- -D warnings`、`cargo test --all-targets --locked` 和 `node --test tests/interaction/web_assets/app.test.cjs`。统一脚本检查Rust格式、严格Clippy、Cargo测试及网页Node检查，需Rust开发工具和Node；统一脚本在允许本地脚本的PowerShell环境执行。Windows PowerShell策略禁止脚本时，可直接使用Cargo命令与Node检查，无需修改系统策略。本轮12项Rust检查、20项正式网页JS检查通过，测试隔离系统副作用；这些检查不执行真实清理，也不代替实机效果证据。旧Python树状manifest保留在归档，不再参与当前测试发现。当前未配置GitHub CI，不把本地通过称为CI通过。
+
+## 文件与文档入口
 
 ```text
-cpu-memory-cleanup/
-├── AGENTS.md               项目协作、资料定位和执行边界
-├── README.md               使用说明与当前仓库导航
-├── pyproject.toml           src 包发现与安装元数据
-├── src/
-│   └── cpu_memory_cleanup/  产品源码，内部设计见代码结构设计
-├── scripts/
-│   ├── desktop-memory-ui.pyw      无控制台桌面入口
-│   ├── desktop-memory-ui.cmd      脱离终端的兼容入口
-│   ├── preview-memory-web.py      独立合成数据网页入口
-│   └── run-tests.py               测试选择、执行与结果保存
-├── tests/
-│   ├── src/cpu_memory_cleanup/  产品源码镜像
-│   ├── scripts/                 脚本镜像
-│   ├── fixtures.py              离线测试应用装配
-│   └── manifest.json            全局测试计划与预算入口
-└── docs/                    调研与设计、开发记录、运行记录、缺陷记录
+src/                 Rust库、CLI、HTTP及嵌入网页
+  application/       共用业务、保护和规则
+  system/            操作系统接入和记录
+  interaction/       CLI、网页适配及资源
+scripts/             测试、构建和正式网页启动
+tests/              Rust合同/HTTP测试、正式网页JS及静态Demo测试
+demo/               历史GitHub Pages静态演示
+docs/               当前设计、计划、调研与日期记录
+legacy/python/      原Python源码、测试、配置和入口
 ```
 
-用例统一负责观察、回看与单次维护。两个界面不直接调用原生维护，导入模块不采样、不打开界面。旧旁路实现已移除。
+源码职责硬约束以代码结构设计为准；外围目录为可调整约定。`target/`为构建产物，`.test-results/`为忽略的本地证据与隔离工具链，不提交原始主机路径清单或编译缓存。
 
-源码已按 `interaction/`、`application/`、`system/` 分包，具体操作系统接入收在 `system/platforms/`。记录访问和运行支撑由系统层提供，功能层通过启动注入使用。当前仅实现 Windows 实时接入，未适配系统会明确拒绝实时操作，离线回看不依赖具体接入加载。
+- [通用调研 General Research](<docs/通用调研 General Research CPU 内存清理.md>)：机制、360和同类源码、证据及限制
+- [架构设计 Architecture Design](<docs/架构设计 Architecture Design CPU 内存清理.md>)：语言无关的三层职责、结构与流程
+- [代码结构设计 Code Structure Design](<docs/代码结构设计 Code Structure Design CPU 内存清理.md>)：架构到Rust源码的映射
+- [开发计划 Development Plan](<docs/开发计划 Development Plan CPU 内存清理.md>)：本轮验收与剩余事项
+- [缺陷记录 Bug Report](<docs/缺陷记录 Bug Report CPU 内存清理.md>)：活动问题
+- [开发记录 Development Record](<docs/开发记录 Development Record/README.md>)、[运行记录 Run Record](<docs/运行记录 Run Record/README.md>)：按日期保存演进和真实执行证据
 
-相关测试目录按需设置局部 `manifest.json`，只描述该目录文件及子树的默认值和例外。测试代码与源码的对应关系见代码结构设计，辅助装配位于 `tests/fixtures.py`。测试编写和执行遵循 [通用测试规范 Test Specification](https://dreamsoul.feishu.cn/docx/KE4IdW6EWoKdvExSkdvcjTJFnsf)。测试镜像当前沿用源码路径，调整目录时仍需保持目标可定位、测试发现与清单一致。产品运行记录写入调用方指定的位置，测试回执写入独立结果目录，均不属于产品源码。
+## 执行约定
 
-## 产品定位与当前行为
-当前主窗口围绕“看内存—点击整理—看本次变化”组织：环形仪表、大号占用百分比、可用量与总量、绿色“一键整理工作集”以及独立的最近结果区。打开后只读刷新，点击才整理。暂停/恢复和更新状态直接可见；提交量、原始报告、离线回看、进程范围及整理设置统一放入详情。主窗口按实际字体适配初始尺寸，结果区预留空间。桌面圆环以96 DPI下220像素为基准，圆环、中心文字和窗口宽度按同一比例换算，避免字体放大而圆环不变。圆环使用像素覆盖过渡绘制平滑边缘，产品运行仍只依赖标准库。
+真实读取、维护、持续后台任务和发布按当前用户确认执行。计划和示例不扩大授权。本轮允许真实读取与一次全局整理，该次已完成，不自动追加第二轮；规则关闭。测试原生副作用必须隔离。默认不提权、不结束其他进程、不改注册表/页面文件或系统设置、不关闭防护、不启用系统服务或开机任务。只读回看不访问当前内存、不重放动作。错误和未知保留，不自动换机制或重试。
 
-## 安装与启动
-产品包位于 `src/`，本地开发先在仓库根目录安装可编辑包，再使用 `python -m cpu_memory_cleanup`。使用当前 Python 环境已有的构建工具，安装命令不拉取运行依赖；产品运行依赖仍为标准库。
 
-```powershell
-python -m pip install --no-build-isolation --no-deps -e .
-```
+# 历史方案定位
+原章节和旧执行约定归档到 [Python版本项目说明基线](<docs/开发记录 Development Record/2026-11-02 Python版本项目说明基线.md>)。历史记录中的提交、路径和验收状态保留原义。
 
-桌面启动入口从自身位置定位源码。`.pyw` 使用窗口版 Python，直接启动不创建控制台；CMD 兼容入口改用 `start` 启动 `pythonw` 后退出，不再保留背后的终端。直接双击 `.pyw` 需要系统已有对应文件关联，CMD 直接把文件交给 `pythonw`，不依赖该关联，启动可能有短暂闪窗。统一测试入口自行定位源码与测试目录，命令仍为 `python scripts/run-tests.py`。
-
-## 辅助只读与离线命令
-下面是安装后的命令说明。安装包与离线验证的执行结果见运行记录，示例本身不表示已经执行。`--help`、`--tool-info` 和离线回看不读取当前系统，状态读取及采样命令会读取当前 Windows 指标。
-
-```powershell
-python -m cpu_memory_cleanup --help
-python -m cpu_memory_cleanup --json
-python -m cpu_memory_cleanup --sample --count 2 --interval 1 --with-processes --top 10 --json
-python -m cpu_memory_cleanup --review 保存的运行目录 --json
-python -m cpu_memory_cleanup --ab-compare A运行目录 B运行目录 --json
-```
-
-`--output-dir` 指向输出基目录，运行在其中创建独立子目录，基目录可以已经存在。采样可通过 `--output-dir 目录` 保存独立运行，或通过 `--jsonl 新文件路径` 保存指定样本文件。目标 JSONL 必须不存在，不追加到旧运行。`--top` 限制解释中的工作集排名，完整进程样本保留给 CPU 差分，不能把共享工作集相加当成可回收量。
-
-`--analyze`、`--pressure`、`--tree-summary` 是离线回看的兼容别名，输出统一为 RunReport。历史格式仍可读取，但缺少条件、版本、时区或终态时明确标为不完整。比较保留数值变化，缺少校准、任务指标或完整动作证据时只报告证据不足。
-
-有界采样统一使用上面的 Python 命令。历史聚合文件只支持离线回看，当前进程父链不足时不猜测树归属。
-
-## 显式单项维护与桌面
-维护必须同时指定 `--release`、`--release-what working-set` 或 `--release-what standby`、`--output-dir 目录`。不再接受缺省组合或 `both`。一次请求至多一次原生调用，未满足权限或记录条件时零调用，后置失败保留已发生的调用事实。
-
-使用 `scripts/desktop-memory-ui.pyw` 或原 CMD 入口打开小窗口。当前 Windows 接入使用轻量只读接口，窗口存活时约每500毫秒尝试刷新一次，清理期间继续更新，关闭后停止。不会自动清理。点击绿色“一键清理”即明确提交一次系统工作集整理，不清 Standby、不结束进程，也不要求先运行诊断。
-
-环形仪表、百分比和内存数值在真实读数之间以约400毫秒缓动过渡，不将动画值写入动作记录。按钮忙碌状态与动作结果连续呈现；本次可用内存增加、减少或不变由清理前后快照计算，结果保留在独立区域，实时刷新不覆盖它。数值变化不是永久释放量或提速证明。提交量前后值和技术信息放在详情中。桌面前后快照只取内存，不等待 PDH 或枚举进程，命令行完整采集保持原样。动作失败、结果未知或恢复未确认时仍保留原因。默认记录位置为当前用户主目录下的 `.cpu-memory-cleanup/runs/`，也可通过已有 `--output-dir` 指定。目录和记录在用户发起清理后由核心准备，无法保存则阻止动作。忙时不排队，不自动重试。真实采样与清理仍未在本轮执行。
-
-程序不提权、不结束业务进程、不停服务、不改页面文件或系统设置。真实维护可能产生缺页和 I/O 代价，内部 NT 路线仍需按实际 Windows 构建验证。
-
-旧的自动 A/B、`--ab-null`、日志跟随、独立预检和 CLI 自定义阈值入口已明确停用，解析时返回错误，不调用系统。实验编排需要另行固定方案与验证条件，不自动串联维护。
-
-## 验证与结果
-
-```powershell
-python scripts/run-tests.py --plan quick
-python scripts/run-tests.py --plan readonly_offline
-python scripts/run-tests.py --plan regression
-python scripts/run-tests.py --plan regression --list
-python scripts/run-tests.py --rebuild-report .test-results/运行ID
-```
-
-日常完整离线检查执行 `python scripts/run-tests.py --plan regression`，其中已包含 quick 阶段。`tests/fixtures.py` 只复用合成运行信息与应用装配；根 `tests/manifest.json` 保留全局预算、计划和禁用实机验收草案，局部清单就近提供默认值与方法差异；普通方法自动发现，执行器统一展开，计划所选项全部为必需项。产品测试的完整模块名使用 `tests.src.cpu_memory_cleanup` 前缀；迁移前回执保留当时的路径和测试标识，当前布局的运行回执统一见 [运行记录 Run Record](<docs/运行记录 Run Record/README.md>)。默认计划全部使用合成数据、假 DLL、假界面或受控测试工作进程。结果保存在 `.test-results/<run_id>/`，包含运行清单、逐项事件和可从磁盘重建的报告。`--list` 只显示最终名单及 `config_sources` 来源链，不启动测试；每次运行的回执也保存来源链。未启用 GitHub Actions。
-
-CFG-01 已修复，根入口恢复分层加载，并阻止旧根格式静默忽略子清单，验证见 [本轮运行记录 Run Record](<docs/运行记录 Run Record/2026-10-26 桌面诊断与配置修复.md>)。
-
-已用实际 Tk 与合成数据核对紧凑窗口、绿色按钮、结果摘要和详情展开，见 [本轮界面与验证记录](<docs/运行记录 Run Record/2026-10-29 紧凑内存窗口.md>)。真实 Windows 采集、特权路径、清理效果及未检查的显示配置仍未验证。历史桌面 A/B 没有证明持续净收益，原始 `logs/` 已删除，不重建或以新数据冒充。
-
-只读诊断验收安排见开发计划中的“只读诊断验收计划”，实际执行配置以 `tests/manifest.json` 为准。9 项实机检查、环境矩阵和资源预算已登记在根清单的 acceptance_plans 下，当前禁用，不会被 quick、regression 或 --all 自动执行。readonly_offline 只运行假接入准备检查，不代表实机验收通过。
-
-构建 wheel 使用干净检出或隔离的源码目录，并核对产物与当前源码一致，避免旧构建缓存带入已删除的平铺模块。本轮仅验证本地安装包及离线启动，不作为发布验收。
-
-## 入口维护与研究范围
-
-用途、当前能力、技术栈、目录、文档入口、命令或执行边界变化时，同步核对本 README 与源码、配置和实际文档。七类开发文档当前入口见上表，历史命名与日期记录保持可追溯。持续资源管理 Agent 方案仍为候选，尚未形成独立文献调研与研究计划，与当前一次性包/工具调用分开，不以工程测试或网页演示代替研究证据。
-
-文档职责按 AGENTS.md 维护：通用调研维护机制、方案、来源与当前判断，正文保留支撑结论所需的证据摘要、条件与限制，并引用相关记录；执行和迁移的详细经过归日期记录。架构保留当前关键设计取舍及理由，代码结构设计说明划分依据、必要约束及实现差距，计划维护后续工作与判据。按任务范围核对受影响内容，本次入口适配不代表专项正文已全面重审。
-
-## 许可证与版本分发
-本项目采用 [MIT License](LICENSE)。第三方代码如有引入，仍须分别保留其许可与来源要求；通用调研引用的外部源码未作为产品代码复制进本项目。
-
-GitHub Release 是当前分发渠道，暂不上传 PyPI。0.2.0 作为预览版本分发，真实平台采样、清理效果和特定 Agent 宿主尚未完成验收，离线通过不等于性能保证。版本入口为 [v0.2.0](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.2.0)，创建完成前以本次发布记录为准。
-
-从 Release 下载 wheel 后，在选定的 Python 3.10+ 环境安装。以下命令仅安装包和读取静态工具目录，不采样或清理：
-
-```powershell
-python -m pip install --no-index --no-deps ./cpu_memory_cleanup-0.2.0-py3-none-any.whl
-python -m cpu_memory_cleanup --tool-info
-```
-
-安装后的桌面入口为 `python -m cpu_memory_cleanup --gui`，会启动窗口并实时只读刷新，须在允许读取当前设备时执行。源码仓库的 `.pyw` 与 CMD 启动脚本不包含在 wheel 中。源码分发包用于构建该 Python 包，完整设计、测试与脚本从 GitHub 对应 tag 查看。当前没有独立 EXE 产物，不会安装 Windows 服务或自动提权。
+<!-- 历史章节锚点仅供旧记录定位，不表示旧合同继续适用。 -->
+<a id="项目约定与执行边界"></a>
+<a id="实现与设计约定"></a>
+<a id="运行与验证限制"></a>
+<a id="当前交互需求与网页实施"></a>
+<a id="内部工作集候选与实验准备"></a>
+<a id="正式localhost网页与独立假数据模式"></a>
+<a id="网页演示"></a>
+<a id="package-与工具入口"></a>
+<a id="单进程定向整理"></a>
+<a id="文档入口"></a>
+<a id="关联的-dreamsoul-资料"></a>
+<a id="仓库目录导航"></a>
+<a id="产品定位与当前行为"></a>
+<a id="安装与启动"></a>
+<a id="辅助只读与离线命令"></a>
+<a id="显式单项维护与桌面"></a>
+<a id="验证与结果"></a>
+<a id="入口维护与研究范围"></a>
+<a id="许可证与版本分发"></a>

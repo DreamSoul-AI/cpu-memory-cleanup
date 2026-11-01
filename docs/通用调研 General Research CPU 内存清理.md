@@ -1,4 +1,4 @@
-当前重点为底层清理策略，结论与下一轮选择见第十六章。针对性阅读四款固定源码、Microsoft接口，并静态提取本机360软件小助手资源及核对局部机器码。已有一次真实分段测量单独归档，本轮解包没有运行真实读取或清理。原机制资料始于2026年10月21日，源码与包分发比较见第十二章，显示与工作集机制区分见第十五章。本文维护机制、方案、来源与当前判断，逐次调研和执行过程归日期记录。设计输入见 [架构设计 Architecture Design](<架构设计 Architecture Design CPU 内存清理.md>)，实施与验收见 [开发计划](<开发计划 Development Plan CPU 内存清理.md#十二底层清理策略的下一轮任务>)，资料入口见 [项目协作约定](<../AGENTS.md>)。
+当前重点为正式原生运行时与工作集调用成本的区分，现行判断见第十七章。360及同类固定源码、Microsoft接口和静态机器码证据见第十二至十六章；具体执行过程归日期记录。当前架构和实施分别见 [架构设计](<架构设计 Architecture Design CPU 内存清理.md>)、[开发计划](<开发计划 Development Plan CPU 内存清理.md>)，资料入口见 [项目协作约定](../AGENTS.md)。
 
 # 一、研究目标、范围与技术全景
 ## （一）核心问题
@@ -604,7 +604,7 @@ G0/P1已有实现，分段计时与工作集证据核验已完成受控实现，
 
 ## （六）原生调用瓶颈后的优化取舍
 ### 1. 现有命令是否有更快的调用方式
-四款固定版本的全局工作集分支均发送一个 MemoryEmptyWorkingSets 命令。WinMemClean 明确传入32位命令及其长度，本仓库同样发送信息类80、命令2、4字节载荷。在已读调用中没有“清理速度”或“强度”参数，也没有依靠重复派发、逐页延时或并发全局调用加速的证据。[WinMemClean 命令封装](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/nt.rs#L140)、[本仓库原生派发](<../src/cpu_memory_cleanup/system/platforms/windows.py>)
+四款固定版本的全局工作集分支均发送一个 MemoryEmptyWorkingSets 命令。WinMemClean 明确传入32位命令及其长度，本仓库同样发送信息类80、命令2、4字节载荷。在已读调用中没有“清理速度”或“强度”参数，也没有依靠重复派发、逐页延时或并发全局调用加速的证据。[WinMemClean 命令封装](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/nt.rs#L140)、[本仓库原生派发](<../legacy/python/src/cpu_memory_cleanup/system/platforms/windows.py>)
 
 System Informer 将选中的多种命令交给工作线程，但线程内部仍逐项调用回调。这解决界面等待问题，不证明一个全局命令变快。WinMemoryCleaner 与 WinMemClean 在配置排除项时才枚举并逐进程整理，是处理范围变化，不是同一全局算法的加速参数。[System Informer 命令线程](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L478)、[WinMemoryCleaner 范围分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710)、[WinMemClean 逐进程循环](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs#L61)
 
@@ -706,8 +706,23 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 ### 7. 核心语言、逐段差异与按键卡顿的证据
 同一副本的 EXE 与 DLL 均为 I386 原生映像，链接器版本字段为14.16。窗口及进度控件分别具有 `COneKeyAcceWnd`、`CXProgressCtrlAC` 的 C++ RTTI，管理模块具有 `CProcMgr`，结合已核对虚表可确认这条核心链使用编译后的 C++ 类，具有 MSVC 兼容工具链特征。不能据此认定整个产品只有一种语言、精确编译器版本或已恢复原始 `.cpp`。[Microsoft RTTI说明](https://learn.microsoft.com/en-us/cpp/build/reference/gr-enable-run-time-type-information?view=msvc-170)
 
-逐段比较确认：360普通按钮直接进入本地调用，进程快照采用 Toolhelp，只申请 SET_QUOTA，逐项整理后关闭句柄。本项目是浏览器JS、HTTP和Python工作线程，采用 EnumProcesses，增加 QUERY 权限、两次创建身份读取及动作计时。核心裁剪接口相同。业务已在线程中执行，DLL用 WinDLL 装载，该调用会释放 Python GIL，不能将两秒原生调用说成Python在前端主线程中执行。[Python3.13 WinDLL文档](https://docs.python.org/3.13/library/ctypes.html#ctypes.WinDLL)
+逐段比较确认：360普通按钮直接进入本地调用，进程快照采用 Toolhelp，只申请 SET_QUOTA，逐项整理后关闭句柄。迁移前实现是浏览器JS、HTTP和Python工作线程，采用 EnumProcesses，增加 QUERY 权限、两次创建身份读取及动作计时。核心裁剪接口相同。业务已在线程中执行，DLL用 WinDLL 装载，该调用会释放 Python GIL，不能将两秒原生调用说成Python在前端主线程中执行。[Python3.13 WinDLL文档](https://docs.python.org/3.13/library/ctypes.html#ctypes.WinDLL)
 
 已有真实Run 88d38249的2649.665毫秒中，原生调用区间2581.800毫秒，身份核验13.829毫秒、打开16.279毫秒、枚举0.609毫秒。原生区间包含跨语言调用与系统等待，不能用该比例推算重写C++的收益或与360排名。该轮报告有2908项阶段，HTTP报告本体按现行序列化为741247字节，浏览器二空格格式化后为1203373字节，页面在结果返回时立即格式化并写入折叠报告。这是可确认的呈现负担，其帧耗时未测，不能当成按下瞬间卡顿的已证实原因。
 
 全局遍历也会处理可访问的运行服务自身，记录中服务PID对应目标成功。裁剪后再次使用页面可能产生缺页及重新驻留，这是机制上的解释候选，而非本轮采到的卡顿因果，不能据此擅自增加排除项或复制360的软件退出分支。[Microsoft工作集与缺页说明](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)。完整对照、RVA、源码入口与未测范围见 [按键静态复核](<运行记录 Run Record/2026-11-02 360语言与按键链路对照.md>)。下一步优先量清点击反馈和结果呈现各自时段，不继续用动效参数掩盖等待或在证据不足时换语言。
+
+
+# 十七、原生运行时与当前清理成本
+
+用户已明确选择Rust正式运行时。当前产品不再依赖Python，Package、CLI、回环HTTP和Windows接入由Rust实现，浏览器仍是网页。源码入口为 [功能流程](../src/application/service.rs)、[系统接入](../src/system/windows.rs)、[网页适配](../src/interaction/web.rs) 和 [显示协调](../src/interaction/web_assets/app.js)。旧实现保存在legacy/python，前文Python调用链比较按原版本理解。
+
+语言变化没有改变操作系统的工作集语义：仍是一次枚举，对可访问进程调用SetProcessWorkingSetSize(-1,-1)，关闭句柄。它不删除应用数据、不等私有提交清零、不承诺永久释放；继续使用应用会重新驻留。360静态链确认C++类和相同核心裁剪接口，但没有恢复全部原始源码或取得同负载动态性能对照，不能据语言推断快慢。[Microsoft接口说明](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize)、[工作集](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)
+
+当前Rust实现比迁移前主通道更小：按原生绑定调用，目标创建身份在同一句柄核验，全局不额外读取逐目标工作集；主页面先获取摘要，完整事实展开后再取，点击先绘制忙碌反馈。上述是可从源码核对的实现差异，不自动等于测得响应收益。
+
+本次正式内置浏览器一次真实整理覆盖691个枚举目标，679成功、10跳过、2失败，资源关闭且未知0。前后可用量19.77→28.06 GiB，业务3231.06毫秒，其中原生调用3211.37毫秒，约99.39%；这提示当前该次等待主要位于操作系统调用区间。原生区间也包含调用和调度成本，不能据此断言每个进程的磁盘等待或全部卡顿原因。不同负载的旧Python记录不能作为配对语言基准，不能声称Rust必然比Python/360快。
+
+浏览器该轮点击后21.7毫秒提交，26.0毫秒受理，3360.1毫秒呈现结果；随后归零，到零刷新约4.1毫秒返回，回弹结束4441.2毫秒。动效不决定后台动作和结果；它没有把系统内存真正清到0。详细时序、原件和限制见 [Rust原生网页验收](<运行记录 Run Record/2026-11-02 Rust原生网页验收.md>)。
+
+当前采用判断：保留真实整理及独立动效，Rust作为用户指定的运行路线；不增加并行裁剪、NT全局切换、结束应用或循环重试来追求预设占用值。若后续仍需比较360速度，应先固定负载、目标、读数窗口及恢复条件再设计明确对照。本轮未启用自动规则，未增加第二次清理或进行竞品实机测试。

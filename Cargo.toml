@@ -7,7 +7,8 @@ description = "Native memory cleanup library, CLI tools and localhost workbench"
 license = "MIT"
 repository = "https://github.com/DreamSoul-AI/cpu-memory-cleanup"
 readme = "README.md"
-include = ["src/**/*.rs", "src/interaction/web_assets/*", "Cargo.toml", "Cargo.lock", "LICENSE", "README.md"]
+default-run = "cpu-memory-cleanup"
+include = ["/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -16,7 +17,11 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 tiny_http = "0.12"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Memory", "Win32_Security_Cryptography"] }
+windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Memory", "Win32_Security_Cryptography", "Win32_UI_WindowsAndMessaging"] }
+
+[[bin]]
+name = "memory-cleanup"
+path = "src/launcher.rs"
 
 [profile.release]
 lto = "thin"
