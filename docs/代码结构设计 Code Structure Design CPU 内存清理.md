@@ -435,8 +435,8 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 | system/platforms/windows.py | WindowsBackend内部装配可选择单目标原生方法，默认EmptyWorkingSet，传给现有TargetSession。全局命令及API选择不变 |
 | system/platforms/windows_process.py | TargetSession保留相同句柄权限、创建身份/路径核验与一次派发。内部候选使用SetProcessWorkingSetSize及两个指针宽度的全1值，动作记录保留native_method |
 | application/core.py | 动作意图保留系统前置检查提供的原生方法标识，不扩展公共请求字段或工具目录 |
-| application/verification.py | 纯数据提取逐项计时/窗口并汇总批次，不采样、不整理、不累加工作集差额。旧记录缺项保持未知 |
+| application/verification.py | child_evidence、batch_summary从原子记录提取逐项计时及批次窗口。observer_summary按观察器自身单调轴区分调用中/调用后观测下降，不采样、不整理、不累加工作集差额。旧记录缺项保持未知 |
 | application/batch.py | 继续调用同一单目标Package流程，追加每项诊断证据。批次关闭后复用RecordStore独立diagnostics.json保存整批计时；回看按子运行重建摘要 |
-| application/experiments.py | 新增内部MemoryObserver，仅接收读取回调、采样预算和单调时钟。上下文负责观察线程收尾，返回原始样本、偏移、错误及标记，不持有维护能力，不自动运行真实实验 |
+| application/experiments.py | MemoryObserver仅接收读取回调、采样预算和单调时钟，关闭后返回原始轨迹与判读。controlled_load及内部模块入口显式准备1..256 MiB自有缓冲，标准输入read/quit完成触页、读回校验和自然退出，不读取其他进程或自动维护 |
 
-测试镜像在对应test_windows_process.py、test_batch.py、test_verification.py及新增test_experiments.py，依照共用测试规范登记局部清单。Package公共创建/动作参数和API_VERSION不变，不增加CLI、Tool或HTTP方法。固定负载及真实比较的入口另按执行范围准备，不能以内部装配选项冒充已切换默认或已提速。
+测试镜像在对应test_windows_process.py、test_batch.py、test_verification.py及test_experiments.py，依照共用测试规范登记局部清单。Package公共创建/动作参数和API_VERSION不变，不增加产品CLI、Tool或HTTP方法。实验模块入口只准备自有负载，真实比较另按执行范围开展，不能以内部装配选项冒充已切换默认或已提速。

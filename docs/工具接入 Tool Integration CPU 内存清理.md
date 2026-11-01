@@ -70,3 +70,5 @@ API_VERSION=1、tool_schema_version=1仍兼容旧工具；系统/进程记录sch
 同进程memory_cleanup可显式传capture_timings=False或verify_working_sets=True。后者会额外发现前后进程，默认关闭，当前没有相应CLI/Tool参数或网页开关。宿主不能把这两个Package选项假定为现有工具目录已注册参数。定向记录已有目标前后值，核验复用它们，不追加系统读取。
 
 旧记录的缺失计时和覆盖保持未知，诊断不能证明所有可裁剪页面已清空或任务已提速。完整字段位置、执行边界及实际受控证据见 [README](<../README.md>) 和 [本轮运行记录](<运行记录 Run Record/2026-11-02 分段计时与工作集核验.md>)。
+
+内部P1/P2同目标比较新增动作字段native_method，批次analysis.comparison分列目标覆盖、原生时间合计、核验成本、批次墙钟和容量窗口。批次诊断附件保存于原目录diagnostics.json，回看重新核对原子记录；旧附件缺失的耗时保持未知。诊断写入失败单列，不重写动作事实。P2仅由内部后端装配，未注册为公共Package参数、CLI/Tool或HTTP动作，六项工具目录及默认清理方式保持。受控验证见 [候选运行记录](<运行记录 Run Record/2026-11-02 同目标工作集候选与实验准备.md>)。
