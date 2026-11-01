@@ -1,5 +1,6 @@
 use crate::contracts::{AppResult, Memory, Sweep, Target};
 use std::sync::{Arc, atomic::AtomicBool};
+pub mod measurement;
 pub mod records;
 #[cfg(windows)]
 pub mod windows;

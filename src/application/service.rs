@@ -10,7 +10,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    time::Instant,
 };
 
 pub struct Application {
@@ -115,28 +114,30 @@ impl Application {
             return Err("已有整理任务执行中".into());
         }
         let _guard = Guard(&self.busy);
-        let started = Instant::now();
+        let mut timing = crate::system::measurement::Stages::default();
         let mut report = Report::new(if targets.is_some() {
             "batch"
         } else {
             "maintain"
         })?;
         report.metadata["header"] = json!({"run_id":report.run_id,"record_version":3,"program_version":crate::VERSION,"implementation":"rust","mechanism":"working-set","scope":if targets.is_some(){"process"}else{"system"},"started_at":crate::contracts::now()});
-        match self.system.snapshot() {
+        match timing.measure("before_snapshot", || self.system.snapshot()) {
             Ok(memory) => report.sample(memory),
             Err(error) => {
                 report.error("before_snapshot", error);
+                report.metadata["timing"] = timing.report("failed_before_action");
                 return Ok(report);
             }
         }
         report.phase = "calling".into();
         report.completion = "unknown".into();
         report.action = json!({"attempted":true,"call_outcome":"unknown","native_method":"SetProcessWorkingSetSize","intent":"one explicitly confirmed sweep"});
-        if let Err(error) = records::save(base, &mut report) {
+        if let Err(error) = timing.measure("record_intent", || records::save(base, &mut report)) {
             report.phase = "finished".into();
             report.completion = "failed".into();
             report.action = json!({"attempted":false,"call_outcome":"not_started"});
             report.error("record_before_action", error);
+            report.metadata["timing"] = timing.report("failed_before_action");
             return Ok(report);
         }
         let selected = targets.map(|list| {
@@ -145,7 +146,9 @@ impl Application {
                 .cloned()
                 .collect::<Vec<_>>()
         });
-        let result = self.system.cleanup(selected.as_deref(), cancel);
+        let result = timing.measure("system_cleanup", || {
+            self.system.cleanup(selected.as_deref(), cancel)
+        });
         match result {
             Ok(sweep) => {
                 let outcome = if !sweep.resources_closed || sweep.unknown_count > 0 {
@@ -201,13 +204,13 @@ impl Application {
             }
         }
         report.phase = "after_snapshot".into();
-        if let Err(error) = records::save(base, &mut report) {
+        if let Err(error) = timing.measure("record_action", || records::save(base, &mut report)) {
             report.error("record_action", error);
             if report.completion == "success" {
                 report.completion = "partial".into();
             }
         }
-        match self.system.snapshot() {
+        match timing.measure("after_snapshot", || self.system.snapshot()) {
             Ok(memory) => report.sample(memory),
             Err(error) => {
                 report.error("after_snapshot", error);
@@ -225,13 +228,23 @@ impl Application {
                 .unwrap_or(0);
             report.analysis = json!({"available_change_bytes":after as i128-before as i128});
         }
-        report.metadata["timing"] = json!({"elapsed_ms":started.elapsed().as_secs_f64()*1000.,"scope":"business_including_native"});
+        timing.measure("summary", || {
+            crate::system::measurement::summarize_report(&mut report)
+        });
+        report.metadata["timing"] = timing.report("business_before_final_record");
         report.phase = "finished".into();
-        if let Err(error) = records::save(base, &mut report) {
+        if let Err(error) = timing.measure("record_final", || records::save(base, &mut report)) {
             report.error("record", error);
             if report.completion == "success" {
                 report.completion = "partial".into();
             }
+        }
+        let before_final = report.metadata["timing"].clone();
+        report.metadata["timing"] =
+            timing.report("business_through_final_record_excludes_timing_attachment");
+        report.metadata["timing"]["before_final_record_ms"] = before_final["elapsed_ms"].clone();
+        if let Err(error) = records::save_timing(&report) {
+            report.metadata["timing_record_error"] = json!(error);
         }
         Ok(report)
     }

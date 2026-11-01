@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/DreamSoul-AI/cpu-memory-cleanup"
 readme = "README.md"
 default-run = "cpu-memory-cleanup"
-include = ["/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
+include = ["/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -34,3 +34,7 @@ path = "tests/rust/application.rs"
 [[test]]
 name = "web"
 path = "tests/rust/web.rs"
+
+[[test]]
+name = "measurement"
+path = "tests/system/measurement.rs"

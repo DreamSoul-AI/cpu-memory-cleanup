@@ -21,6 +21,18 @@ fn read(path: &Path) -> AppResult<Vec<u8>> {
     }
     fs::read(path).map_err(|e| e.to_string())
 }
+pub fn save_timing(report: &Report) -> AppResult<()> {
+    let directory = Path::new(report.output_dir.as_deref().ok_or("报告尚未保存")?);
+    let value =
+        json!({"schema_version":1,"run_id":report.run_id,"timing":report.metadata["timing"]});
+    let temporary = directory.join("timing.json.tmp");
+    fs::write(
+        &temporary,
+        serde_json::to_vec(&value).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    fs::rename(temporary, directory.join("timing.json")).map_err(|e| e.to_string())
+}
 pub fn review(directory: &Path) -> AppResult<Report> {
     let path = directory.join("report.json");
     let mut original: Report = if path.exists() {
@@ -31,6 +43,27 @@ pub fn review(directory: &Path) -> AppResult<Report> {
     if original.phase != "finished" {
         return Err("记录尚未封存，已有动作结果保持未知，不重放".into());
     }
+    let timing = directory.join("timing.json");
+    if timing.exists() {
+        let value: Value = serde_json::from_slice(&read(&timing)?).map_err(|e| e.to_string())?;
+        let measured = &value["timing"];
+        if value["schema_version"] != 1
+            || value["run_id"] != original.run_id
+            || measured["schema_version"] != 1
+            || !measured["elapsed_ms"]
+                .as_f64()
+                .is_some_and(|ms| ms.is_finite() && ms >= 0.)
+            || !measured["stages_ms"].as_object().is_some_and(|stages| {
+                stages
+                    .values()
+                    .all(|v| v.as_f64().is_some_and(|ms| ms.is_finite() && ms >= 0.))
+            })
+        {
+            return Err("计时附件身份或版本不符".into());
+        }
+        original.metadata["timing"] = value["timing"].clone();
+    }
+    super::measurement::summarize_report(&mut original);
     let source_id = original.run_id.clone();
     original.run_id = crate::contracts::identifier()?;
     original.mode = "review".into();

@@ -163,10 +163,12 @@ impl super::System for Windows {
         Ok(targets)
     }
     fn cleanup(&self, selected: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep> {
-        let ids = match selected {
-            Some(targets) => targets.iter().map(|t| t.pid).collect(),
-            None => ids()?,
-        };
+        let mut timing = super::measurement::Stages::default();
+        let mut native_samples = Vec::new();
+        let ids = timing.measure("enumeration", || match selected {
+            Some(targets) => Ok(targets.iter().map(|t| t.pid).collect::<Vec<_>>()),
+            None => ids(),
+        })?;
         let mut sweep = Sweep {
             enumerated_count: ids.len(),
             resources_closed: true,
@@ -178,7 +180,7 @@ impl super::System for Windows {
                 break;
             }
             sweep.visited_count += 1;
-            let handle = match ProcessHandle::open(pid, true) {
+            let handle = match timing.measure("open", || ProcessHandle::open(pid, true)) {
                 Ok(handle) => handle,
                 Err(status) => {
                     sweep.skipped_count += 1;
@@ -186,9 +188,9 @@ impl super::System for Windows {
                     continue;
                 }
             };
-            let identity = handle.identity();
+            let identity = timing.measure("identity", || handle.identity());
             let target = selected.and_then(|targets| targets.iter().find(|t| t.pid == pid));
-            let mismatch = match &identity {
+            let mismatch = timing.measure("path_verification", || match &identity {
                 Ok(created) => target.is_some_and(|t| {
                     t.created_at != *created
                         || t.image_path.as_ref().is_some_and(|p| {
@@ -198,7 +200,7 @@ impl super::System for Windows {
                         })
                 }),
                 Err(_) => true,
-            };
+            });
             if mismatch {
                 sweep.skipped_count += 1;
                 sweep.push(json!({"pid":pid,"outcome":"skipped","reason":"目标身份或路径未确认"}));
@@ -206,7 +208,9 @@ impl super::System for Windows {
                 sweep.cancelled = true;
             } else {
                 sweep.attempted_count += 1;
-                let before = selected.and_then(|_| handle.working_set());
+                let before = selected.and_then(|_| {
+                    timing.measure("working_set_verification", || handle.working_set())
+                });
                 let started = Instant::now();
                 let ok = unsafe { SetProcessWorkingSetSize(handle.0, usize::MAX, usize::MAX) };
                 let status = if ok == 0 {
@@ -215,16 +219,20 @@ impl super::System for Windows {
                     0
                 };
                 let elapsed = started.elapsed().as_secs_f64() * 1000.;
+                timing.add("native", elapsed);
                 sweep.native_call_ms += elapsed;
+                native_samples.push((pid, elapsed));
                 if ok != 0 {
                     sweep.successful_count += 1;
                 } else {
                     sweep.failed_count += 1;
                 }
-                let after = selected.and_then(|_| handle.working_set());
+                let after = selected.and_then(|_| {
+                    timing.measure("working_set_verification", || handle.working_set())
+                });
                 sweep.push(json!({"pid":pid,"created_at":identity.ok(),"outcome":if ok!=0 {"success"} else {"failure"},"status":status,"native_call_ms":elapsed,"working_set_before_bytes":before,"working_set_after_bytes":after}));
             }
-            if let Err(error) = handle.close() {
+            if let Err(error) = timing.measure("close", || handle.close()) {
                 sweep.resources_closed = false;
                 sweep.unknown_count += 1;
                 sweep.push(json!({"pid":pid,"close_error":error,"outcome":"unknown"}));
@@ -234,6 +242,10 @@ impl super::System for Windows {
                 break;
             }
         }
+        let summary = super::measurement::native_summary(&native_samples, sweep.attempted_count);
+        let mut measured = timing.report("serial_system_sweep");
+        measured["native_summary"] = summary;
+        sweep.timing = Some(measured);
         Ok(sweep)
     }
 }

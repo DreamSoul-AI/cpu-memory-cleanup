@@ -8,5 +8,5 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $taskCargo test --all-targets --locked
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-node --test tests/interaction/web_assets/app.test.cjs
+node --test tests/interaction/web_assets/app.test.cjs tests/interaction/web_assets/memory-display.test.cjs
 exit $LASTEXITCODE

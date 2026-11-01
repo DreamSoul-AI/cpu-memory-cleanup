@@ -59,6 +59,8 @@ pub struct Sweep {
     pub resources_closed: bool,
     pub cancelled: bool,
     pub native_call_ms: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timing: Option<Value>,
     pub items: Vec<Value>,
     pub omitted_items_count: usize,
 }

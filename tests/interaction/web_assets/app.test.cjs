@@ -20,7 +20,7 @@ function page(reduced = false) {
     window:{addEventListener(){}}, matchMedia:()=>({matches:reduced}),performance:{now:()=>clock},
     requestAnimationFrame(fn){frames.set(++next,fn);return next;},cancelAnimationFrame(id){frames.delete(id);},
     AbortSignal,setTimeout(){return 0;},clearTimeout(){},fetch:()=>new Promise(()=>{})});
-  vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../src/interaction/web_assets/cleanup-effect.js"),"utf8"),context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../src/interaction/web_assets/memory-display.js"),"utf8"),context);
   vm.runInContext(source,context);
   vm.runInContext("var originalYieldForPaint=yieldForPaint;yieldForPaint=async()=>{}",context);
   return {elements,run:s=>vm.runInContext(s,context),tick(time){clock=time;for(const id of [...frames.keys()]){const fn=frames.get(id);frames.delete(id);if(fn)fn(time);}},frames};
@@ -29,12 +29,13 @@ const snapshot = available => `({samples:[{metrics:{physical:{total_bytes:100,av
 
 test('25/75 occupancy updates actual ring, number and accessible bar together',()=>{
   const p=page();
+  let time=0;
   for(const [available,pct,angle] of [[75,25,90],[25,75,270]]){
-    p.run(`paintMemory({total:100,available:${available}})`);
+    p.run(`paintMemory({total:100,available:${available}})`);p.tick(time+=1000);
     assert.equal(p.elements.percent.textContent,`${pct}%`);
     assert.equal(p.elements.gauge.style['--usage'],`${angle}deg`);
     assert.equal(p.elements.meter.attrs['aria-valuenow'],String(pct));
-    assert.equal(p.elements.fill.style.width,`${pct}%`);
+    assert.equal(p.elements.fill.style.transform,`scaleX(${pct/100})`);
     assert.equal(p.elements.meter.style['--usage'],undefined);
   }
 });
@@ -47,8 +48,8 @@ test('business busy indicator disables repeated main clicks',()=>{
 });
 test('interpolation and reduced motion preserve final observed occupancy',()=>{
   const p=page();p.run(`memory(${snapshot(75)})`);p.run(`memory(${snapshot(25)})`);
-  p.tick(200);assert.equal(p.elements.percent.textContent,'50%');
-  p.tick(400);assert.equal(p.elements.percent.textContent,'75%');assert.equal(p.frames.size,0);
+  p.tick(100);const middle=parseInt(p.elements.percent.textContent);assert.ok(middle>25&&middle<75);
+  p.tick(1000);assert.equal(p.elements.percent.textContent,'75%');assert.equal(p.frames.size,0);
   const q=page(true);q.run(`memory(${snapshot(75)})`);q.run(`memory(${snapshot(25)})`);
   assert.equal(q.elements.percent.textContent,'75%');assert.equal(q.frames.size,0);
 });
@@ -73,11 +74,11 @@ test('live updates leave recent action feedback and original report intact',()=>
 test('without effect, live occupancy continues updating during cleanup',()=>{
   const p=page();p.run('busy=true;cleaning=true');
   p.run(`memory(${snapshot(60)})`);
-  p.run(`memory(${snapshot(70)})`);p.tick(400);
+  p.run(`memory(${snapshot(70)})`);p.tick(1000);
   assert.equal(p.elements.percent.textContent,'30%');
   assert.equal(p.elements.gauge.style['--usage'],'108deg');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'30');
-  p.run(`memory(${snapshot(50)})`);p.tick(800);
+  p.run(`memory(${snapshot(50)})`);p.tick(2000);
   assert.equal(p.elements.percent.textContent,'50%');
   assert.equal(p.elements.gauge.style['--usage'],'180deg');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'50');
@@ -203,7 +204,7 @@ test('refresh failure preserves completed report and last actual value',async()=
  const p=page();p.run(`token='session';readingSupported=true;memory(${snapshot(60)});
  el('recent-title').textContent='已整理';api=async()=>{throw new Error('timeout')};decoration.start(40)`);
  p.tick(750);for(let i=0;i<5;i++)await p.run('Promise.resolve()');
- assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'40%');
+ assert.equal(p.run('decoration.phase'),null);p.tick(1800);assert.equal(p.elements.percent.textContent,'40%');
  assert.equal(p.elements['recent-title'].textContent,'已整理');assert.match(p.elements['live-status'].textContent,/timeout/);
 });
 
@@ -249,4 +250,14 @@ test('full report is fetched only when requested and never dispatches cleanup',a
  present({id:'one',kind:'cleanup',full_report_url:'/api/report?id=one',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}}});`);
  assert.equal(p.run('paths.length'),0);assert.equal(p.elements.report.textContent,'展开后读取完整记录。');
  await p.run('loadFullReport()');assert.equal(p.run('paths.length'),1);assert.equal(p.run('paths[0]'),'/api/report?id=one');assert.match(p.elements.report.textContent,/原始记录/);
+});
+
+
+test('main action changes busy controls without rebuilding the process list',async()=>{
+ const p=page();p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
+ rows=[{pid:42,created_at:'one',name:'recorded target',working_set_bytes:100}];renderRows();var beforeRows=rowRenderCount;
+ api=async path=>path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}}};
+ var active=run({kind:'cleanup',mechanism:'working-set'});`);
+ assert.equal(p.elements['target-controls'].disabled,true);await p.run('active');
+ assert.equal(p.run('rowRenderCount'),p.run('beforeRows'));assert.equal(p.elements['target-controls'].disabled,false);
 });

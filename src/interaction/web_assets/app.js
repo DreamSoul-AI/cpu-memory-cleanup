@@ -3,18 +3,18 @@ const el = (id) => document.getElementById(id);
 let cleaning = false;
 const occupancy=value=>value?.total>0&&value.available!=null&&value.available>=0&&value.available<=value.total?(value.total-value.available)/value.total*100:null;
 function paintGauge(value,label){
-  el("percent").textContent=value==null?"未知":`${Math.round(value)}%`;
+  const text=value==null?"未知":`${Math.round(value)}%`;
+  if(el("percent").textContent!==text)el("percent").textContent=text;
   el("gauge").style.setProperty("--usage",`${(value||0)*3.6}deg`);
-  el("gauge-label").textContent=label;
+  if(el("gauge-label").textContent!==label)el("gauge-label").textContent=label;
+  el("fill").style.transform=`scaleX(${(value||0)/100})`;
+  if(value!=null)el("meter").setAttribute("aria-valuenow",String(Math.round(value)));else el("meter").removeAttribute("aria-valuenow");
+  el("meter").setAttribute("aria-label",label);
 }
-const decoration=typeof CleanupEffect==="function"?new CleanupEffect((value,phase)=>{
+const decoration=new MemoryDisplay((value,phase)=>{
   if(phase!==lastEffectPhase){lastEffectPhase=phase;recordFlow(phase);}
-  if(phase==="idle"){
-    if(animation!==null)cancelAnimationFrame(animation);animation=null;
-    if(latestMemory)paintMemory(latestMemory);else paintGauge(null,"物理内存占用");
-  }
-  else paintGauge(value,{emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用"}[phase]);
-},refreshForRebound):null;
+  paintGauge(value,{emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:"物理内存占用"}[phase]);
+},refreshForRebound,()=>reducedMotion.matches);
 let latestMemory=null,latestMemoryAt=null;
 let fullReportUrl=null,flowStarted=null,flowEvents=[],flowFrame=null,lastEffectPhase=null;
 function recordFlow(phase){
@@ -33,13 +33,14 @@ async function yieldForPaint(){await new Promise(resolve=>requestAnimationFrame(
 function notifyDecoration(kind){
   try{
     if(!decoration)return;
-    if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start(occupancy(shownMemory||latestMemory));
+    if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start();
     else if(kind==="stop")decoration.stop();
   }catch(_){paintGauge(occupancy(latestMemory),"物理内存占用");}
 }
-let liveEnabled = true, displayTimer = null, displayInFlight = false, animation = null, shownMemory = null;
+let liveEnabled = true, displayTimer = null, displayInFlight = false;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let token = "", busy = false, currentJob = null, lastSaved = null, pendingAction = null;
+let rowRenderCount=0;
 let rows = [], selected = new Set(), descending = true, stopped = false;
 let settings = {schema_version:1,protections:[],descending:true,resident:false,geometry:""};
 let supportedMethods = [], readingSupported = false, ruleTimer = null, seenRuleJob = null;
@@ -58,6 +59,7 @@ const gib = (value) => value == null ? "未知" : `${(value / 1024 ** 3).toFixed
 const labels = {success:"完成", partial:"结果不完整", failed:"失败", cancelled:"已取消", skipped:"已跳过", not_started:"未执行"};
 function error(message) { el("error").textContent = message; el("error").hidden = !message; }
 function controls() {
+  el("target-controls").disabled=busy||stopped;
   for (const id of ["read-targets","global-clean","shutdown"]) el(id).disabled = busy || stopped || !token;
   el("read-status").disabled = stopped || !token || !readingSupported;
   el("read-status").textContent = liveEnabled ? "暂停实时显示" : "恢复实时显示";
@@ -80,6 +82,7 @@ async function api(path, body, options={}) {
   return data;
 }
 function renderRows() {
+  el("targets").setAttribute("data-render-count",String(++rowRenderCount));
   const query = el("search").value.trim().toLowerCase();
   const visible = rows.filter(row=>`${row.name} ${row.pid} ${row.image_path||""}`.toLowerCase().includes(query));
   visible.sort((a,b)=>(descending ? -1 : 1)*((a.working_set_bytes||0)-(b.working_set_bytes||0)));
@@ -97,13 +100,13 @@ function renderRows() {
     if(el("grouped").checked && !added.has(groupKey)) {
       added.add(groupKey);
       const members=groups.get(groupKey), tr=document.createElement("tr"), cell=document.createElement("td"), box=document.createElement("input"), title=document.createElement("td");
-      tr.className="group-row";box.type="checkbox";box.checked=members.every(r=>selected.has(key(r)));box.disabled=busy;
+      tr.className="group-row";box.type="checkbox";box.checked=members.every(r=>selected.has(key(r)));
       box.setAttribute("aria-label",`选择程序文件组 ${row.image_path||row.name}`);
       box.addEventListener("change",()=>{for(const member of members)box.checked?selected.add(key(member)):selected.delete(key(member));renderRows();controls();});
       cell.append(box);title.colSpan=3;title.textContent=`${row.name} · 同一程序文件 ${members.length} 项`;tr.append(cell,title);el("targets").append(tr);
     }
     const tr=document.createElement("tr"), td=document.createElement("td"), checkbox=document.createElement("input");
-    checkbox.type="checkbox"; checkbox.checked=selected.has(key(row)); checkbox.disabled=busy;
+    checkbox.type="checkbox"; checkbox.checked=selected.has(key(row));
     checkbox.setAttribute("aria-label",`选择 ${row.name} PID ${row.pid}`);
     checkbox.addEventListener("change",()=>{checkbox.checked?selected.add(key(row)):selected.delete(key(row)); controls(); count();});
     td.append(checkbox);tr.append(td);
@@ -117,17 +120,12 @@ function renderRows() {
 }
 function count(){el("selection-count").textContent=`${rows.length} 个目标 · 已选 ${selected.size} 个`;}
 function paintMemory(value){
-  shownMemory=value;
   const {total,available,commitUsed,commitLimit}=value;
-  const valid=total>0 && available!=null && available>=0 && available<=total;
-  const pct=valid?(total-available)/total*100:null;
-  if(!decoration?.phase)paintGauge(pct,"物理内存占用");
+  const pct=occupancy(value);
   el("actual-percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
-  el("fill").style.width=`${pct||0}%`;
-
-  if(pct!=null)el("meter").setAttribute("aria-valuenow",String(Math.round(pct)));else el("meter").removeAttribute("aria-valuenow");
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
   el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
+  decoration.update(pct);
 }
 function memory(report){
   const sample=report.samples?.at(-1);if(!sample)return;
@@ -135,25 +133,15 @@ function memory(report){
   const sampleAt=Date.parse(sample.timestamp);
   if(Number.isFinite(sampleAt)&&latestMemoryAt!=null&&sampleAt<latestMemoryAt)return;
   if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
-  const target={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
-  latestMemory=target;
-  if(animation!==null)cancelAnimationFrame(animation);
-  animation=null;
-  if(!shownMemory||reducedMotion.matches||target.available==null){paintMemory(target);return;}
-  const before={...shownMemory},started=performance.now();
-  function frame(now){
-    const progress=Math.min(1,Math.max(0,(now-started)/400));
-    const weight=progress*progress*(3-2*progress);
-    const value={};for(const name of Object.keys(target))value[name]=before[name]!=null&&target[name]!=null?before[name]+(target[name]-before[name])*weight:target[name];
-    paintMemory(progress===1?target:value);
-    animation=progress<1?requestAnimationFrame(frame):null;
-  }
-  animation=requestAnimationFrame(frame);
+  latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
+  paintMemory(latestMemory);
 }
+const displayMetrics={reads:0,request_ms:[],interval_ms:[]};let previousRead=null;
 async function refreshDisplay(){
   clearTimeout(displayTimer);
   if(!liveEnabled||document.hidden||stopped||!token||!readingSupported||displayInFlight)return;
-  displayInFlight=true;
+  displayInFlight=true;const readStarted=performance.now();
+  if(previousRead!=null){displayMetrics.interval_ms.push(readStarted-previousRead);if(displayMetrics.interval_ms.length>120)displayMetrics.interval_ms.shift();}previousRead=readStarted;
   try{
     const report=await api("/api/display",{});
     if(!liveEnabled||document.hidden||stopped)return;
@@ -162,7 +150,11 @@ async function refreshDisplay(){
     const stamp=report.samples.at(-1)?.timestamp;
     el("live-status").textContent=`后台持续读取 · ${stamp?new Date(stamp).toLocaleTimeString():"刚刚更新"}`;
   }catch(exc){el("live-status").textContent=`显示暂未更新，保留上次读数 · ${exc.message}`;}
-  finally{displayInFlight=false;if(liveEnabled&&!document.hidden&&!stopped)displayTimer=setTimeout(refreshDisplay,1000);}
+  finally{
+    displayInFlight=false;displayMetrics.reads++;displayMetrics.request_ms.push(performance.now()-readStarted);if(displayMetrics.request_ms.length>120)displayMetrics.request_ms.shift();
+    el("gauge").setAttribute("data-display-metrics",JSON.stringify({...displayMetrics,motion:decoration.stats(),row_renders:rowRenderCount}));
+    if(liveEnabled&&!document.hidden&&!stopped)displayTimer=setTimeout(refreshDisplay,Math.max(0,250-(performance.now()-readStarted)));
+  }
 }
 async function refreshForRebound(){
   if(document.hidden||stopped||!token||!readingSupported)return null;
@@ -179,9 +171,9 @@ async function refreshForRebound(){
   }catch(exc){el("live-status").textContent=`整理后读数未更新，保留上次有效值 · ${exc.message}`;return null;}
 }
 function pauseDisplay(){
-  clearTimeout(displayTimer);if(animation!==null)cancelAnimationFrame(animation);animation=null;
+  clearTimeout(displayTimer);previousRead=null;decoration.suspend();
 }
-document.addEventListener("visibilitychange",()=>{if(document.hidden){pauseDisplay();notifyDecoration("stop");}else refreshDisplay();});
+document.addEventListener("visibilitychange",()=>{if(document.hidden){pauseDisplay();notifyDecoration("stop");}else{decoration.resume();refreshDisplay();}});
 el("decoration-enabled").addEventListener("change",()=>notifyDecoration("stop"));
 window.addEventListener("pagehide",()=>{notifyDecoration("stop");liveEnabled=false;pauseDisplay();clearTimeout(ruleTimer);});
 function present(job){
@@ -193,6 +185,8 @@ function present(job){
   }
   if(job.kind==="status"){if(report.completion!=="success")error(JSON.stringify(report.errors.concat(report.samples.at(-1)?.errors||[])));return;}
   const feedback=job.presentation;
+  const timing=report.metadata?.timing, distribution=report.metadata?.native_summary;
+  el("timing-summary").textContent=distribution?`调用合计 ${(distribution.sum_ms/1000).toFixed(2)} 秒 · 单项P95 ${distribution.p95_ms==null?"未知":distribution.p95_ms.toFixed(1)+"毫秒"} · 最慢20项占 ${distribution.top20_percent==null?"未知":distribution.top20_percent.toFixed(1)+"%"}${distribution.complete?"":" · 仅已保存项目"}${timing?.stages_ms?.record_final==null?" · 最终记录耗时未知":` · 最终记录 ${timing.stages_ms.record_final.toFixed(1)}毫秒`}`:"";
   if(feedback){
     el("recent-title").textContent=feedback.title;
     const sweep=report.action?.process_sweep;
@@ -217,7 +211,7 @@ function present(job){
   if(report.output_dir && job.kind!=="replay")lastSaved=job.id;
 }
 async function run(action){
-  if(busy||stopped)return;error("");busy=true;cleaning=action.kind==="cleanup"||action.kind==="batch";if(cleaning)beginFlow();controls();renderRows();
+  if(busy||stopped)return;error("");busy=true;cleaning=action.kind==="cleanup"||action.kind==="batch";if(cleaning)beginFlow();controls();
   notifyDecoration("stop");
   el("job-status").textContent="正在提交本次请求…";
   try{
@@ -239,7 +233,7 @@ async function run(action){
       await new Promise(resolve=>setTimeout(resolve,120));
     }
   }catch(exc){notifyDecoration("stop");error(exc.message);el("job-status").textContent="本次未完成，请核对结果；不自动重试整理。";}
-  finally{busy=false;cleaning=false;currentJob=null;controls();renderRows();recordFlow("business_idle");}
+  finally{busy=false;cleaning=false;currentJob=null;controls();recordFlow("business_idle");}
 }
 async function loadFullReport(){
   const url=fullReportUrl;if(!url)return;
@@ -249,7 +243,7 @@ async function loadFullReport(){
 }
 el("report-details").addEventListener("toggle",()=>{if(el("report-details").open)loadFullReport();});
 function confirmAction(action,text){pendingAction=action;el("confirmation-text").textContent=text;el("confirmation").hidden=false;el("confirm-yes").focus();}
-el("read-status").addEventListener("click",()=>{liveEnabled=!liveEnabled;if(liveEnabled)refreshDisplay();else{pauseDisplay();el("live-status").textContent="实时显示已暂停 · 保留上次读数";}controls();});
+el("read-status").addEventListener("click",()=>{liveEnabled=!liveEnabled;if(liveEnabled){decoration.resume();refreshDisplay();}else{pauseDisplay();el("live-status").textContent="实时显示已暂停 · 保留上次读数";}controls();});
 el("read-targets").addEventListener("click",()=>run({kind:"targets"}));
 el("search").addEventListener("input",renderRows);
 el("sort").addEventListener("click",async()=>{descending=!descending;el("sort").textContent=descending?"工作集 ↓":"工作集 ↑";renderRows();try{applyState(await api("/api/settings",{...settings,descending}));}catch(exc){error(exc.message);}});

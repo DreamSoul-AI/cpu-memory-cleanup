@@ -96,6 +96,30 @@ fn cleanup_records_actual_snapshots_once_and_review_has_no_calls() {
     assert_eq!(review.mode, "review");
     assert_ne!(review.run_id, report.run_id);
     assert_eq!(review.samples, report.samples);
+    assert_eq!(
+        review.metadata["timing"]["scope"],
+        report.metadata["timing"]["scope"]
+    );
+    for (stage, value) in report.metadata["timing"]["stages_ms"].as_object().unwrap() {
+        assert!(
+            (review.metadata["timing"]["stages_ms"][stage]
+                .as_f64()
+                .unwrap()
+                - value.as_f64().unwrap())
+            .abs()
+                < 1e-8
+        );
+    }
+    assert!(
+        report.metadata["timing"]["stages_ms"]["record_final"]
+            .as_f64()
+            .is_some()
+    );
+    assert!(
+        std::path::Path::new(report.output_dir.as_ref().unwrap())
+            .join("timing.json")
+            .exists()
+    );
     assert_eq!(system.actions.load(Ordering::SeqCst), 1);
     assert_eq!(system.reads.load(Ordering::SeqCst), 2);
     std::fs::remove_dir_all(directory).unwrap();

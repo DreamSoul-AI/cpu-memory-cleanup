@@ -463,8 +463,8 @@ fn handle(mut request: Request, state: &Arc<State>) {
                 include_bytes!("web_assets/app.js").as_slice(),
                 "text/javascript; charset=utf-8",
             )),
-            "/cleanup-effect.js" => Some((
-                include_bytes!("web_assets/cleanup-effect.js").as_slice(),
+            "/memory-display.js" => Some((
+                include_bytes!("web_assets/memory-display.js").as_slice(),
                 "text/javascript; charset=utf-8",
             )),
             "/styles.css" => Some((
