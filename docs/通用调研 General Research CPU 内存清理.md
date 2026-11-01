@@ -601,3 +601,36 @@ flowchart LR
 ```
 
 G0/P1已有实现，分段计时与工作集证据核验已完成受控实现，F1尚未实现，组合策略尚未选定。默认按钮暂时维持现状，不自动从定向失败回退为全局操作，也不通过放宽保护、重复派发或改变动效来制造“更快”的结果。具体任务、依赖与验收见 [开发计划第十二章](<开发计划 Development Plan CPU 内存清理.md#十二底层清理策略的下一轮任务>)。
+
+## （六）原生调用瓶颈后的优化取舍
+### 1. 现有命令是否有更快的调用方式
+四款固定版本的全局工作集分支均发送一个 MemoryEmptyWorkingSets 命令。WinMemClean 明确传入32位命令及其长度，本仓库同样发送信息类80、命令2、4字节载荷。在已读调用中没有“清理速度”或“强度”参数，也没有依靠重复派发、逐页延时或并发全局调用加速的证据。[WinMemClean 命令封装](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/nt.rs#L140)、[本仓库原生派发](<../src/cpu_memory_cleanup/system/platforms/windows.py>)
+
+System Informer 将选中的多种命令交给工作线程，但线程内部仍逐项调用回调。这解决界面等待问题，不证明一个全局命令变快。WinMemoryCleaner 与 WinMemClean 在配置排除项时才枚举并逐进程整理，是处理范围变化，不是同一全局算法的加速参数。[System Informer 命令线程](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L478)、[WinMemoryCleaner 范围分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710)、[WinMemClean 逐进程循环](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs#L61)
+
+Microsoft 另提供 SetProcessWorkingSetSizeEx 的两个 SIZE_T(-1) 参数来尽可能移出指定进程工作集中的页，EmptyWorkingSet 也可完成这一目的。文档没有给出前者更快的保证，不因换函数名就建立一条新的优先路线。[Microsoft 目标工作集接口](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsizeex)
+
+结合本次3.324秒原生、3.444秒总计的单次证据，推断只优化原生之外的全部开销，理论上也只涉及约0.120秒，且其中含本次显式核验。故暂不重写语言、删除写盘或常驻特权来处理这个瓶颈。这个边界只针对该次测量，不是所有负载的性能上限。
+
+### 2. 优先验证独立文件缓存整理，暂不默认叠加
+同类真正扩大的处理对象是系统文件缓存等区域。Mem Reduct 在工作集后单独裁剪文件缓存，WinMemoryCleaner 的文件缓存分支先调用 NT 接口，再调用公开接口。源码说明存在这种组合，不证明重复调用必要，也不证明组合总耗时更短。[Mem Reduct 两个独立分支](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L390)、[WinMemoryCleaner 缓存分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L662)
+
+F1 的候选规格采用公开 SetSystemFileCacheSize：两个参数按当前进程指针宽度传 SIZE_T(-1)，Flags=0，请求一次缓存整理。只临时启用调用所需的 SeIncreaseQuotaPrivilege 并恢复。不得将 Flags=0解释为主动关闭缓存限制，也不写长期硬上限，不先后调用 NT 与公开接口来重复完成同一候选。[Microsoft 文件缓存接口](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setsystemfilecachesize)
+
+F1 单独处理系统文件缓存，不能标成已整理所有应用工作集。它是补充作用范围的候选，不是已找到的 G0 加速器。先比较 F1 单独与既有 G0、P1，只有单项有价值才登记 G0→F1 或 F1→G0 的组合实验。将 F1 提前可能改变首次下降时机，但仍需等待后续 G0，不能据此宣称总耗时降低。组合必须有中间快照和逐步骤计时，不把多个非同步差额相加。
+
+缓存测量要区分实际驻留与容量限制。GetSystemFileCacheSize 返回最小/最大限制及启用标志，不返回当前实际驻留字节。PERFORMANCE_INFORMATION.SystemCache 又含 Standby，不能直接当成额外可释放容量。先保留前后系统可用量及缓存字段的原义，尚无可靠驻留口径时将“文件缓存独占释放量”保留未知，不靠相减拼出指标。[Microsoft 缓存限制查询](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-getsystemfilecachesize)、[Microsoft 系统计数定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information)
+
+System Informer 的文件缓存成功消息使用调用前取得的 cacheInfo.CurrentSize，没有在该函数内用调用后驻留量求差。本项目不将这样的调用前容量直接显示为实际释放量，只复用可核实的动作与测量职责。[System Informer 缓存消息路径](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L386)
+
+### 3. 采用顺序与判断标准
+接下来先做 F1 的独立、显式候选接入及假接口验证，保留当前 G0 默认。并行整理全部进程、循环全局整理、清除完整 Standby、强制写回 Modified 或长期压低缓存上限均不作为本轮默认提速方案。Standby 已计入 Available，仅把它转成 Free 不构成按 Total−Available 计算的占用下降。
+
+P1 继续服务明确选中的程序，比较时列出目标数量、覆盖及跳过，不用较小范围的短耗时声称完成与 G0 相同的工作。真实比较要同时检查首次观测下降、动作总时长、固定窗口净变化和应用恢复响应。单次容量增加不等于提速。未来若仍需解释 G0 内部等待，再单独设计系统跟踪，不能从3.324秒反推出磁盘写回、锁或驱动的具体占比。
+
+## （七）本机360软件小助手的可见范围
+本机安装文件的版本资源确认 SoftManagerLite.exe 为“360软件小助手”，版本3, 1, 0, 1075，配套 SoftMgrLiteBase.dll 为1, 0, 0, 1100。针对已定位安装目录查找常见源码及调试符号扩展，未发现对应源码或 PDB，不能把已安装软件称为源码仓库。
+
+对上述两份文件仅离线解析 PE 头、普通/延迟导入及可见符号字符串，均为x86 PE32，CLR目录为空。在这两份文件的已解析导入及选定 ASCII 符号检查中，未发现 EmptyWorkingSet、NtSetSystemInformation、SetSystemFileCacheSize 等直接线索，发现 GetProcAddress 与 DeviceIoControl。它们不能证明或排除经动态加载、其他模块或服务完成清理，更不能证明内存清理由驱动实现。
+
+因此目前能检查安装程序和接口线索，尚不能读到原始源码、确认绿色按钮归属、还原其动画算法或认定其清理方法与本项目不同。不加载或运行这些文件，不附加进程、不点击清理。文件指纹、方法及范围见 [本轮只读运行记录](<运行记录 Run Record/2026-11-02 原生策略复核与360安装文件检查.md>)。开源方案继续作为可复核的工程依据，360机制保留未知，不阻塞候选规格与离线开发。
