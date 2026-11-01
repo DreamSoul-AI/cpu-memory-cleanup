@@ -7,6 +7,7 @@ description = "Native memory cleanup library, CLI tools and localhost workbench"
 license = "MIT"
 repository = "https://github.com/DreamSoul-AI/cpu-memory-cleanup"
 readme = "README.md"
+include = ["src/**/*.rs", "src/interaction/web_assets/*", "Cargo.toml", "Cargo.lock", "LICENSE", "README.md"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

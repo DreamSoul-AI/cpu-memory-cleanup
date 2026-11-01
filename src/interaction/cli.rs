@@ -11,13 +11,72 @@ use std::{
 };
 
 pub fn catalog() -> Value {
-    json!({"tool_schema_version":1,"implementation":"rust","version":crate::VERSION,"tools":[
-        {"name":"memory_status","confirmation_required":false},
-        {"name":"memory_targets","confirmation_required":false},
-        {"name":"memory_cleanup","confirmation_required":true},
-        {"name":"memory_process_cleanup","confirmation_required":true,"required":["pid","created_at"]},
-        {"name":"memory_batch_cleanup","confirmation_required":true,"required":["request_file"]},
-        {"name":"memory_result","confirmation_required":false,"required":["run_dir"]}]})
+    let definitions = [
+        (
+            "memory_status",
+            "读取当前真实内存容量",
+            false,
+            json!({}),
+            json!([]),
+            json!([]),
+        ),
+        (
+            "memory_targets",
+            "发现可访问进程及创建身份，供明确选择",
+            false,
+            json!({}),
+            json!([]),
+            json!([]),
+        ),
+        (
+            "memory_cleanup",
+            "执行一轮全局工作集整理，不结束进程",
+            true,
+            json!({}),
+            json!([]),
+            json!(["--confirm"]),
+        ),
+        (
+            "memory_process_cleanup",
+            "仅整理选定身份的进程工作集",
+            true,
+            json!({"pid":{"type":"integer","minimum":1},"created_at":{"type":"string","minLength":1}}),
+            json!(["pid", "created_at"]),
+            json!([
+                "--pid",
+                "{pid}",
+                "--created-at",
+                "{created_at}",
+                "--confirm"
+            ]),
+        ),
+        (
+            "memory_batch_cleanup",
+            "按请求文件整理明确目标并应用保护规则",
+            true,
+            json!({"request_file":{"type":"string","minLength":1,"description":"UTF-8 JSON: targets为memory_targets返回的目标对象数组，protections为可选保护规则数组"}}),
+            json!(["request_file"]),
+            json!(["--request-file", "{request_file}", "--confirm"]),
+        ),
+        (
+            "memory_result",
+            "只读回看已封存记录，不重放动作",
+            false,
+            json!({"run_dir":{"type":"string","minLength":1}}),
+            json!(["run_dir"]),
+            json!(["--run-dir", "{run_dir}"]),
+        ),
+    ];
+    let tools: Vec<Value> = definitions.into_iter().map(|(name, description, confirm, properties, required, args)| {
+        let mut argv = vec![json!("--tool"), json!(name)];
+        argv.extend(args.as_array().expect("static arguments").iter().cloned());
+        json!({"name":name,"description":description,"confirmation_required":confirm,
+            "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
+            "command":{"executable":"cpu-memory-cleanup","args":argv}})
+    }).collect();
+    json!({"tool_schema_version":1,"implementation":"rust","version":crate::VERSION,
+        "output":"one JSON report on stdout","exit_codes":{"0":"完整成功","1":"partial/failed/unknown/cancelled，原始事实在JSON中","2":"参数或入口错误，原因在stderr"},
+        "maintenance_output_option":["--output-dir","{directory}"],"tools":tools})
 }
 pub fn main(args: Vec<String>) -> i32 {
     match execute(args) {
