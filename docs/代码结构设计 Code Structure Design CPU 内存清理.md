@@ -404,7 +404,7 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 
 - web_assets/index.html：主圆环有模式说明，另设实际百分比与读取时间，保留容量、实际横条和结果
 - web_assets/app.js：持续请求/api/display，缓存原始有效值。实际区域总是更新，主圆环按模式分派渲染。收到业务报告先present，再通知动效成功/失败，不await动画，不按finally盲目通知成功
-- web_assets/cleanup-effect.js：纯呈现对象，仅接收绘制回调、最新比例通知及业务成功通知。start/tick管理三秒线性归零，finish只标记成功，回弹开始锁定最近有效目标，失败/关闭只清理自身。不能持有API或报告发布回调
+- web_assets/cleanup-effect.js：纯呈现对象，仅接收绘制回调、最新比例通知及正常业务终态。start/tick管理三秒线性归零，finish开启第十九章的有界读数观察，回弹接收最新值，失败/关闭只清理自身。不能持有API或报告发布回调
 - interaction/web.py：主工作集仍调用现有memory_cleanup，但不再传旧网页固定后续观察参数observation_seconds=3，使用原公共默认即时前后快照和安全收尾。持续读取继续由独立显示端点执行。Package、工具及桌面参数不变
 - 测试镜像：JS可控时钟验证线性中点、两种完成次序、实际区域与动画数值分离；HTTP验证单次调用、结果与显示通道；内置浏览器使用禁止真实DLL的变化数据及延迟合成任务验收
 
