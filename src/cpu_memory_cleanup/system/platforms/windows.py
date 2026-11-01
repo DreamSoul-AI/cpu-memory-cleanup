@@ -342,7 +342,10 @@ def _read_processes(kernel, psapi, errors, pending_handles, unknown_handles):
 class WindowsBackend:
     """只保存接入参数；原生能力仅在显式打开会话后取得。"""
 
-    def __init__(self, dll_loader=None, now=None):
+    def __init__(self, dll_loader=None, now=None, *, process_working_set_method="EmptyWorkingSet"):
+        if process_working_set_method not in ("EmptyWorkingSet", "SetProcessWorkingSetSize"):
+            raise ValueError("未知单目标工作集接口")
+        self.process_working_set_method = process_working_set_method
         self._dll = _load_dll if dll_loader is None else dll_loader
         self._now = now or (lambda: datetime.now(timezone.utc).isoformat())
         self._memory_info = None
@@ -583,8 +586,10 @@ class _Operation:
             result["lock_acquired"] = True
             if self.request.scope == "process":
                 from .windows_process import TargetSession
-                self.target_session = TargetSession(self.backend._dll, self.request.target)
+                self.target_session = TargetSession(self.backend._dll, self.request.target,
+                    method=self.backend.process_working_set_method)
                 self.target_session.verify()
+                result["native_method"] = self.target_session.method
                 result["privilege_available"] = True
                 return dict(result)
             token = _open_token(self.kernel, self.advapi, TOKEN_QUERY, self.tokens)

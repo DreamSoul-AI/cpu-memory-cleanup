@@ -28,6 +28,59 @@ class ProcessTests(unittest.TestCase):
             capabilities=api.Capabilities("synthetic", "available", ("working-set",), scopes=("system", "process")))
         self.target = api.ProcessTarget(11, str((1 << 40) + 11), "example.exe")
 
+    def test_candidate_uses_pointer_width_minus_one_and_same_package_records(self):
+        import ctypes
+        import json
+        from pathlib import Path
+        candidate_calls = []
+        self.fake.kernel.SetProcessWorkingSetSize = Function(lambda *args: candidate_calls.append(args) or True)
+        backend = windows.WindowsBackend(self.fake.load, now=FakeRuntime().now,
+            process_working_set_method="SetProcessWorkingSetSize")
+        app = api.create_application(reader=backend, maintainer=backend, runtime=FakeRuntime(), capabilities=self.app.capabilities)
+        self.addCleanup(app.shutdown)
+        with tempfile.TemporaryDirectory() as directory:
+            report = app.memory_process_cleanup(self.target, directory, confirmed=True, confirmation_source="synthetic")
+            self.assertEqual(report.completion, "success", report.errors)
+            intent = json.loads((Path(report.output_dir) / "operation.jsonl").read_text(encoding="utf-8").splitlines()[0])
+            self.assertEqual(intent["native_method"], "SetProcessWorkingSetSize")
+            replay = api.create_application(offline=True).memory_result(report.output_dir)
+            self.assertEqual(replay.action, report.action)
+        self.assertEqual(candidate_calls, [(11, ctypes.c_size_t(-1).value, ctypes.c_size_t(-1).value)])
+        self.assertEqual(self.fake.kernel.SetProcessWorkingSetSize.argtypes, [windows.w.HANDLE, ctypes.c_size_t, ctypes.c_size_t])
+        self.assertEqual(self.actions, [])
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_candidate_identity_change_prevents_native_dispatch(self):
+        self.backend.process_working_set_method = "SetProcessWorkingSetSize"
+        self.fake.kernel.SetProcessWorkingSetSize = Function(lambda *_: self.fail("身份变化不得整理"))
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_process_cleanup(api.ProcessTarget(11, "1"), directory,
+                confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(report.action["attempted"], False)
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_candidate_failure_is_recorded_without_fallback(self):
+        self.backend.process_working_set_method = "SetProcessWorkingSetSize"
+        calls = []
+        self.fake.kernel.SetProcessWorkingSetSize = Function(lambda *args: calls.append(args) or False)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_process_cleanup(self.target, directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(report.action["call_outcome"], "failure")
+        self.assertTrue(report.action["errors"])
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.actions, [])
+        self.assertEqual(self.fake.nt_calls, [])
+
+    def test_candidate_binding_supports_simulated_32_bit_size_t(self):
+        import ctypes
+        calls = []
+        self.backend.process_working_set_method = "SetProcessWorkingSetSize"
+        self.fake.kernel.SetProcessWorkingSetSize = Function(lambda *args: calls.append(args) or True)
+        with tempfile.TemporaryDirectory() as directory, patch.object(windows.c, "c_size_t", ctypes.c_uint32):
+            report = self.app.memory_process_cleanup(self.target, directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(report.completion, "success", report.errors)
+        self.assertEqual(calls, [(11, 0xffffffff, 0xffffffff)])
+
     def test_native_timing_excludes_target_identity_query(self):
         clock = FakeMonotonic()
         self.app._monotonic = clock

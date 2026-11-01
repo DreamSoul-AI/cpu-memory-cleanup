@@ -619,6 +619,7 @@ class Application:
                 finite_number((before.metrics.get(block) or {}).get(key), f"{block}.{key}")
             journal.append("operation", {"record_type": "intent", "mechanism": request.mechanism,
                                          "scope": request.scope, "confirmation_source": request.confirmation_source,
+                                         **({"native_method": preflight["native_method"]} if "native_method" in preflight else {}),
                                          **({"target": report.metadata["header"]["target"]} if request.scope == "process" else {})})
             with self._lock:
                 accepted_cancel = self._cancel.is_set()

@@ -32,7 +32,10 @@ def checked(value):
 
 class TargetSession:
     """唯一拥有目标句柄；关闭结果未知时不重复关闭。"""
-    def __init__(self, loader, target, *, writable=True):
+    def __init__(self, loader, target, *, writable=True, method="EmptyWorkingSet"):
+        if method not in ("EmptyWorkingSet", "SetProcessWorkingSetSize"):
+            raise ValueError("未知单目标工作集接口")
+        self.method = method
         self.kernel, self.psapi = loader("kernel32.dll"), loader("psapi.dll")
         self.target, self.handle, self.close_attempted = target, None, False
         self.consumed = False
@@ -64,12 +67,17 @@ class TargetSession:
         with timings.measure("target_verify") if timings is not None else nullcontext():
             self.verify()
         with timings.measure("native_call") if timings is not None else nullcontext():
-            ok = bind(self.psapi, "EmptyWorkingSet", [w.HANDLE], w.BOOL)(self.handle)
+            if self.method == "SetProcessWorkingSetSize":
+                flush = c.c_size_t(-1).value
+                ok = bind(self.kernel, self.method, [w.HANDLE, c.c_size_t, c.c_size_t], w.BOOL)(
+                    self.handle, flush, flush)
+            else:
+                ok = bind(self.psapi, self.method, [w.HANDLE], w.BOOL)(self.handle)
         if timings is not None:
             timings.mark("native_returned")
         return {"attempted": True, "call_outcome": "success" if ok else "failure",
                 "status": 0 if ok else c.get_last_error(), "privilege_restored": True,
-                "errors": [] if ok else ["目标工作集整理失败"]}
+                "errors": [] if ok else ["目标工作集整理失败"], "native_method": self.method}
 
     def close(self):
         if self.handle is None:

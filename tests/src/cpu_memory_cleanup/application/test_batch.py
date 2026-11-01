@@ -11,6 +11,49 @@ from ..system.platforms import test_windows_process as native
 class BatchTests(unittest.TestCase):
     setUp = native.ProcessTests.setUp
 
+    def test_batch_comparison_separates_native_cost_and_rebuilds_on_replay(self):
+        from tests.fixtures import FakeMonotonic
+        clock = FakeMonotonic()
+        self.app._monotonic = clock
+        self.fake.psapi.EmptyWorkingSet = native.Function(lambda handle: clock.advance_ms(80) or self.actions.append(handle) or True)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_batch_cleanup([self.target, api.ProcessTarget(12, str((1 << 40) + 12))],
+                directory, protections=[{"pid": 12, "created_at": str((1 << 40) + 12)}],
+                confirmed=True, confirmation_source="synthetic")
+            summary = report.analysis["comparison"]
+            self.assertEqual((summary["selected_count"], summary["skipped_count"], summary["confirmed_calls"]), (2, 1, 1))
+            self.assertAlmostEqual(summary["native_call_ms"], 80)
+            self.assertGreaterEqual(summary["batch_wall_ms"], summary["native_call_ms"])
+            self.assertIsNone(summary["system_released_bytes"])
+            replay = api.create_application(offline=True).memory_result(report.output_dir)
+            self.assertEqual(replay.analysis["comparison"], summary)
+        self.assertEqual(self.actions, [11])
+
+    def test_legacy_batch_has_unknown_wall_time_and_does_not_replay_actions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_batch_cleanup([self.target], directory, confirmed=True, confirmation_source="synthetic")
+            (Path(report.output_dir) / "diagnostics.json").unlink()
+            replay = api.create_application(offline=True).memory_result(report.output_dir)
+            self.assertEqual(replay.completion, "success", replay.errors)
+            self.assertIsNone(replay.analysis["comparison"]["batch_wall_ms"])
+        self.assertEqual(self.actions, [11])
+
+    def test_batch_native_attachment_failure_preserves_completed_business(self):
+        from unittest.mock import patch
+        original = self.app.records.write_diagnostics
+        def save(path, value):
+            if value.get("kind") == "batch":
+                raise OSError("synthetic-sidecar-failure")
+            return original(path, value)
+        with tempfile.TemporaryDirectory() as directory, patch.object(self.app.records, "write_diagnostics", side_effect=save):
+            report = self.app.memory_batch_cleanup([self.target], directory, confirmed=True, confirmation_source="synthetic")
+            self.assertEqual(report.completion, "success", report.errors)
+            self.assertEqual(report.metadata["diagnostics_errors"][0]["type"], "OSError")
+            replay = api.create_application(offline=True).memory_result(report.output_dir)
+            self.assertEqual(replay.completion, "success", replay.errors)
+            self.assertIsNone(replay.analysis["comparison"]["batch_wall_ms"])
+        self.assertEqual(self.actions, [11])
+
     def test_batch_skips_protection_and_replays_only_saved_child(self):
         with tempfile.TemporaryDirectory() as directory:
             report = self.app.memory_batch_cleanup([self.target, api.ProcessTarget(12, str((1 << 40) + 12))],

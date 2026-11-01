@@ -151,3 +151,89 @@ def diagnostics(samples, header, *, timing=None, working_sets=None, source="live
                              "timeline": memory_timeline(samples, header, threshold_bytes=threshold_bytes),
                              "native_call_ms": sum(native) if native and all(x is not None for x in native) else None,
                              "performance_verdict": "not_evaluated"}}
+
+
+def child_evidence(report):
+    """从原子运行提取比较所需证据，原子目录仍是权威原件。"""
+    value = report.metadata.get("diagnostics") or {}
+    timing = value.get("timing") or {}
+    stages = timing.get("stages") or []
+    verify = [s.get("duration_ms") for s in stages if s.get("name") == "target_verify"]
+    return {"native_method": report.action.get("native_method"),
+            "native_call_ms": (value.get("verification") or {}).get("native_call_ms"),
+            "target_verify_ms": sum(verify) if verify and all(x is not None for x in verify) else None,
+            "business_ms": timing.get("elapsed_ms"),
+            "physical_window": [{"run_id": s.run_id, "timestamp": s.timestamp,
+                "available_bytes": _number((s.metrics.get("physical") or {}).get("available_bytes"))}
+                for s in ([report.samples[0], report.samples[-1]] if len(report.samples) >= 2 else report.samples)]}
+
+
+def observer_summary(trace, *, threshold_bytes=None):
+    """只解释观察器自身单调时间轴，不把读数时刻当作准确降页时刻。"""
+    if not isinstance(trace, dict) or trace.get("version") != 1 or trace.get("basis") != "observer_monotonic":
+        raise ValueError("未知观察窗口格式")
+    if threshold_bytes is not None:
+        finite_number(threshold_bytes, "threshold_bytes", minimum=1)
+    rows = trace.get("samples")
+    if not isinstance(rows, list):
+        raise ValueError("观察窗口缺少样本列表")
+    values, offsets = [], []
+    for row in rows:
+        sample = row.get("sample") or {}
+        values.append(_number(((sample.get("metrics") or {}).get("physical") or {}).get("available_bytes")))
+        offsets.append(_number(row.get("observed_offset_ms")))
+    ordered = bool(offsets) and all(x is not None for x in offsets) and all(b >= a for a, b in zip(offsets, offsets[1:]))
+    events = {e["name"]: _number(e.get("offset_ms")) for e in trace.get("events", [])}
+    start, end = events.get("action_started"), events.get("action_finished")
+    a, b = (values[0], values[-1]) if values else (None, None)
+    gain = next((i for i, x in enumerate(values[1:], 1) if a is not None and x is not None and x > a), None)
+    significant = next((i for i, x in enumerate(values[1:], 1) if a is not None and x is not None
+                        and threshold_bytes is not None and x - a >= threshold_bytes), None)
+    peak = max((x for x in values if x is not None), default=None)
+    phase = "unknown"
+    if gain is not None and ordered and start is not None and end is not None and end >= start:
+        phase = "before_action" if offsets[gain] < start else "during_action" if offsets[gain] <= end else "after_action"
+    return {"sample_count": len(rows), "valid_physical_samples": sum(x is not None for x in values),
+            "time_order_valid": ordered, "action_started_ms": start, "action_finished_ms": end,
+            "available_delta_bytes": b - a if a is not None and b is not None else None,
+            "peak_observed_available_bytes": peak,
+            "rebound_used_bytes": peak - b if peak is not None and b is not None else None,
+            "first_observed_gain_ms": offsets[gain] if gain is not None and ordered else None,
+            "first_observed_gain_phase": phase,
+            "first_significant_gain_ms": offsets[significant] if significant is not None and ordered else None,
+            "significance_threshold_bytes": threshold_bytes,
+            "exact_drop_time_known": False, "system_released_bytes": None,
+            "performance_verdict": "not_evaluated"}
+
+
+def batch_summary(items, *, selected_count, timing=None):
+    """逐项调用成本与批次墙钟分列，不累加目标工作集差额。"""
+    confirmed = [i for i in items if i.get("action", {}).get("attempted") is True]
+    unknown = [i for i in items if i.get("action", {}).get("call_outcome") == "unknown"]
+    unresolved = max(0, selected_count - len(items))
+    times = [(i.get("comparison_evidence") or {}).get("native_call_ms") for i in confirmed]
+    verification = [(i.get("comparison_evidence") or {}).get("target_verify_ms") for i in confirmed]
+    windows = [w for i in items for w in (i.get("comparison_evidence") or {}).get("physical_window", [])]
+    first, last = (windows[0], windows[-1]) if len(windows) >= 2 else (None, None)
+    ordered = bool(first and last and _stamp(first["timestamp"]) and _stamp(last["timestamp"])
+                   and _stamp(last["timestamp"]) >= _stamp(first["timestamp"]))
+    a, b = (first.get("available_bytes"), last.get("available_bytes")) if ordered else (None, None)
+    return {"selected_count": selected_count, "recorded_count": len(items),
+            "unresolved_items_count": unresolved,
+            "skipped_count": sum(i.get("status") == "skipped" for i in items),
+            "not_started_count": sum(i.get("status") == "not_started" for i in items),
+            "rejected_before_call_count": sum(i.get("status") not in ("skipped", "not_started")
+                                              and i.get("action", {}).get("attempted") is False for i in items),
+            "confirmed_calls": len(confirmed), "unknown_calls": len(unknown),
+            "successful_calls": sum(i["action"].get("call_outcome") == "success" for i in confirmed),
+            "native_methods": sorted({(i.get("comparison_evidence") or {}).get("native_method") for i in confirmed
+                                      if isinstance((i.get("comparison_evidence") or {}).get("native_method"), str)}),
+            "failed_calls": sum(i["action"].get("call_outcome") == "failure" for i in confirmed),
+            "native_timed_count": sum(t is not None for t in times),
+            "native_call_ms": sum(times) if not unknown and not unresolved and all(t is not None for t in times) else None,
+            "target_verify_ms": sum(verification) if not unknown and not unresolved and all(t is not None for t in verification) else None,
+            "batch_wall_ms": (timing or {}).get("elapsed_ms"),
+            "wall_excluded": (timing or {}).get("excluded"),
+            "physical_window": {"first": first, "last": last, "time_order_valid": ordered,
+                "available_delta_bytes": b - a if a is not None and b is not None else None},
+            "system_released_bytes": None, "performance_verdict": "not_evaluated"}

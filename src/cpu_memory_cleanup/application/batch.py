@@ -3,14 +3,16 @@
 from dataclasses import asdict
 import threading
 
-from ..contracts import ProcessTarget
+from ..contracts import ProcessTarget, StageTimings
 from .targets import plan_targets
+from . import verification
 
 
 def execute(app, targets, output_dir, *, protections=(), confirmed=False, confirmation_source="", cancel_event=None):
     report = app._report("batch")
     journal = None
     admitted = False
+    timings = StageTimings(app._monotonic)
     try:
         if confirmed is not True or not isinstance(confirmation_source, str) or not confirmation_source.strip():
             raise ValueError("批次必须有明确确认及来源")
@@ -41,7 +43,8 @@ def execute(app, targets, output_dir, *, protections=(), confirmed=False, confir
                     confirmed=True, confirmation_source=confirmation_source, cancel_event=app._batch_cancel)
                 item.update(status=child.completion, reason="", run_id=child.run_id,
                             action=child.action, errors=child.errors, analysis=child.analysis,
-                            has_record=child.output_dir is not None)
+                            has_record=child.output_dir is not None,
+                            comparison_evidence=verification.child_evidence(child))
             report.metadata["items"].append(item)
             journal.append({"record_type": "item_result", "item": item})
         items = report.metadata["items"]
@@ -65,6 +68,18 @@ def execute(app, targets, output_dir, *, protections=(), confirmed=False, confir
         if admitted:
             with app._lock:
                 app._batch_active, app._batch_thread = False, None
+        if report.metadata.get("header"):
+            try:
+                timings.mark("batch_closed")
+                timing = timings.snapshot()
+                value = {"version": 1, "kind": "batch", "run_id": report.run_id, "source": "live", "timing": timing}
+                value["comparison"] = verification.batch_summary(report.metadata["items"],
+                    selected_count=len(report.metadata["header"]["targets"]), timing=timing)
+                report.analysis["comparison"] = value["comparison"]
+                report.metadata["diagnostics"] = value
+                app.records.write_diagnostics(report.output_dir, value)
+            except Exception as error:
+                report.metadata["diagnostics_errors"] = [{"type": type(error).__name__, "message": str(error)}]
         report.phase = "finished"
     return report
 
@@ -87,7 +102,9 @@ def review(app, directory):
                     raise ValueError("批次意图顺序无效")
                 pending = len(items)
             elif kind == "item_result":
-                item = record["item"]
+                item = dict(record["item"])
+                # 摘要只从已核对的原子运行重建，不信任索引中的派生证据。
+                item.pop("comparison_evidence", None)
                 index = len(items)
                 if index >= len(planned) or item.get("index") != index or item.get("target") != planned[index]["target"]:
                     raise ValueError("批次目标或顺序无效")
@@ -110,7 +127,9 @@ def review(app, directory):
                             raise ValueError("子记录与批次动作不一致")
                         if child.completion != "success":
                             report.errors.append({"message": "子运行未完整成功", "run_id": child_id})
+                        item["comparison_evidence"] = verification.child_evidence(child)
                     else:
+                        item.pop("comparison_evidence", None)
                         report.errors.append({"message": "子运行没有可回看记录", "run_id": child_id})
                 items.append(item)
                 pending = None
@@ -127,6 +146,23 @@ def review(app, directory):
         if not ended:
             report.errors.append({"message": "批次未封存，未完成动作不得自动重放"})
         report.output_dir = str(directory)
+        timing = None
+        try:
+            saved = app.records.read_diagnostics(directory)
+            if saved is not None:
+                verification.validate_attachment(saved, header["run_id"])
+                if saved.get("kind") != "batch":
+                    raise ValueError("批次诊断类型无效")
+                timing = saved.get("timing")
+                report.metadata["diagnostics"] = {**saved, "source": "replay"}
+        except Exception as error:
+            report.metadata["diagnostics_errors"] = [{"type": type(error).__name__, "message": str(error)}]
+        report.analysis = {"mode": "batch-cleanup", "counts": {s: sum(i["status"] == s for i in items)
+            for s in sorted({i["status"] for i in items})},
+            "comparison": verification.batch_summary(items, selected_count=len(planned), timing=timing),
+            "caveat": "逐项工作集变化不相加称为系统释放量或提速"}
+        if "diagnostics" in report.metadata:
+            report.metadata["diagnostics"]["comparison"] = report.analysis["comparison"]
     except Exception as error:
         report.errors.append({"phase": "batch_review", "type": type(error).__name__, "message": str(error)})
         report.completion = "failed"

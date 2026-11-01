@@ -258,6 +258,9 @@
         "ProcessTests.test_target_cleanup_and_offline_replay_keep_identity_and_single_call": {
           "level": "e2e"
         },
+        "ProcessTests.test_candidate_uses_pointer_width_minus_one_and_same_package_records": {
+          "level": "e2e"
+        },
         "ProcessTests.test_cli_target_journey_preserves_scope_and_replays_without_actions": {
           "level": "e2e"
         },

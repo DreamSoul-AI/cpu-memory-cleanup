@@ -530,6 +530,20 @@
         "module_memory"
       ],
       "level": "unit"
+    },
+    "test_experiments.py": {
+      "target": "src/cpu_memory_cleanup/application/experiments.py",
+      "tags": ["offline", "module_memory"],
+      "level": "unit",
+      "cost_class": "c1",
+      "cases": {
+        "ObserverTests.test_sampler_observes_changes_while_caller_is_busy": {
+          "level": "integration"
+        },
+        "LoadTests.test_module_load_child_exits_naturally_after_readback": {
+          "level": "e2e"
+        }
+      }
     }
   }
 }

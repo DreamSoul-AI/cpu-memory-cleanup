@@ -16,6 +16,42 @@ def snapshot(rows, errors=()):
 
 
 class VerificationTests(unittest.TestCase):
+    def test_observer_classifies_in_call_drop_and_later_rebound(self):
+        from cpu_memory_cleanup.application.verification import observer_summary
+        trace = {"version": 1, "basis": "observer_monotonic", "events": [
+            {"name": "action_started", "offset_ms": 10}, {"name": "action_finished", "offset_ms": 200}],
+            "samples": [{"observed_offset_ms": ms, "sample": {"metrics": {"physical": {"available_bytes": value}}}}
+                        for ms, value in [(0, 40), (100, 70), (250, 60)]]}
+        result = observer_summary(trace)
+        self.assertEqual(result["first_observed_gain_phase"], "during_action")
+        self.assertEqual(result["rebound_used_bytes"], 10)
+        self.assertIsNone(result["first_significant_gain_ms"])
+        self.assertFalse(result["exact_drop_time_known"])
+
+    def test_observer_distinguishes_post_call_drop_and_unknown_baseline(self):
+        from cpu_memory_cleanup.application.verification import observer_summary
+        trace = {"version": 1, "basis": "observer_monotonic", "events": [
+            {"name": "action_started", "offset_ms": 10}, {"name": "action_finished", "offset_ms": 50}],
+            "samples": [{"observed_offset_ms": ms, "sample": {"metrics": {"physical": {"available_bytes": value}}}}
+                        for ms, value in [(0, 40), (100, 70)]]}
+        self.assertEqual(observer_summary(trace)["first_observed_gain_phase"], "after_action")
+        trace["samples"][0]["sample"] = None
+        self.assertIsNone(observer_summary(trace)["available_delta_bytes"])
+
+    def test_batch_missing_native_timing_is_not_zero_or_parent_duration(self):
+        from cpu_memory_cleanup.application.verification import batch_summary
+        items = [{"status": "success", "action": {"attempted": True, "call_outcome": "success"},
+                  "comparison_evidence": {"business_ms": 80, "native_call_ms": None}}]
+        result = batch_summary(items, selected_count=1, timing={"elapsed_ms": 100})
+        self.assertIsNone(result["native_call_ms"])
+        self.assertEqual(result["native_timed_count"], 0)
+        self.assertEqual(result["batch_wall_ms"], 100)
+
+    def test_unresolved_batch_items_cannot_be_reported_as_zero_native_time(self):
+        from cpu_memory_cleanup.application.verification import batch_summary
+        result = batch_summary([], selected_count=1)
+        self.assertEqual(result["unresolved_items_count"], 1)
+        self.assertIsNone(result["native_call_ms"])
     def test_reused_pid_is_appeared_and_disappeared_not_a_reduction(self):
         a = snapshot([(1, "100", 800), (2, "200", 500)])
         b = snapshot([(1, "101", 10), (2, "200", 300)])
