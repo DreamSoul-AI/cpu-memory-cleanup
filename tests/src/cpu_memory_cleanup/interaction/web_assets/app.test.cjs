@@ -19,10 +19,10 @@ function page(reduced = false) {
     getElementById(id){return elements[id]??=element();},createElement:element,addEventListener(){}},
     window:{addEventListener(){}}, matchMedia:()=>({matches:reduced}),performance:{now:()=>clock},
     requestAnimationFrame(fn){frames.set(++next,fn);return next;},cancelAnimationFrame(id){frames.delete(id);},
-    setTimeout(){return 0;},clearTimeout(){},fetch:()=>new Promise(()=>{})});
+    AbortSignal,setTimeout(){return 0;},clearTimeout(){},fetch:()=>new Promise(()=>{})});
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../../../src/cpu_memory_cleanup/interaction/web_assets/cleanup-effect.js"),"utf8"),context);
   vm.runInContext(source,context);
-  return {elements,run:s=>vm.runInContext(s,context),tick(time){clock=time;const jobs=[...frames.values()];frames.clear();jobs.forEach(fn=>fn(time));},frames};
+  return {elements,run:s=>vm.runInContext(s,context),tick(time){clock=time;for(const id of [...frames.keys()]){const fn=frames.get(id);frames.delete(id);if(fn)fn(time);}},frames};
 }
 const snapshot = available => `({samples:[{metrics:{physical:{total_bytes:100,available_bytes:${available}},commit:{used_bytes:10,limit_bytes:200}}}]})`;
 
@@ -97,7 +97,7 @@ test('decoration enabled or disabled leaves action, report and live values equiv
     p.run(`memory(${snapshot(70)})`);p.tick(400);
     assert.equal(p.elements['actual-percent'].textContent,'30%');
     if(!enabled)assert.equal(p.elements.percent.textContent,'30%');
-    else assert.equal(p.elements['gauge-label'].textContent,'正在整理');
+    else assert.equal(p.elements['gauge-label'].textContent,'整理已结束 · 归零动效');
     results.push(p.run('JSON.stringify([actionCount,original])'));
   }
   assert.equal(results[0],results[1]);
@@ -113,26 +113,16 @@ test('decoration failure cannot fail the business request',async()=>{
 });
 
 
-test('linear circle waits for business and new quiet readings then retargets continuously',()=>{
- const p=page();p.run(`memory(${snapshot(60)});decoration.start(40)`);
- p.tick(1500);assert.equal(p.elements.percent.textContent,'20%');
- p.run(`memory(${snapshot(70)})`);p.tick(3000);
- assert.equal(p.elements.percent.textContent,'0%');
- assert.equal(p.elements['actual-percent'].textContent,'30%');
- assert.equal(p.run('decoration.phase'),'waiting');
- p.tick(10000);assert.equal(p.run('decoration.phase'),'waiting');
- p.run('decoration.finish(30)');
- for(const [time,available] of [[11000,66],[12000,66.2],[13000,66.4]]){
-   p.tick(time);p.run(`memory(${snapshot(available)})`);p.tick(time);
- }
- assert.equal(p.run('decoration.phase'),'returning');
- assert.ok(Math.abs(p.run('decoration.target')-33.6)<1e-9);
- p.tick(13600);const before=p.run('decoration.value');
- p.run(`memory(${snapshot(70)})`);
- assert.equal(p.run('decoration.value'),before);
- assert.equal(p.run('decoration.target'),30);
- p.tick(14200);assert.equal(p.run('decoration.phase'),null);
- assert.equal(p.elements['actual-percent'].textContent,'30%');
+test('descent requests one fresh reading at zero then rebounds immediately',async()=>{
+ const p=page();p.run(`memory(${snapshot(60)});var refreshCount=0;decoration.refresh=async()=>{refreshCount++;return 25};decoration.start(40)`);
+ p.tick(375);assert.equal(p.elements.percent.textContent,'20%');
+ assert.equal(p.run('refreshCount'),0);
+ p.tick(750);assert.equal(p.elements.percent.textContent,'0%');
+ await p.run('Promise.resolve()');await p.run('Promise.resolve()');
+ assert.equal(p.run('refreshCount'),1);assert.equal(p.run('decoration.phase'),'returning');
+ p.run(`memory(${snapshot(75)})`);p.tick(900);
+ assert.equal(p.elements.percent.textContent,'13%');
+ p.tick(1050);assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'25%');
 });
 test('failed report never supplies successful rebound signal',async()=>{
  const p=page();p.elements['decoration-enabled'].checked=true;
@@ -160,11 +150,8 @@ test('known limited sweep ends normally while keeping raw failures in details',a
  assert.match(p.elements.report.textContent,/"status": 5/);
  assert.equal(p.run('requests'),1);
  assert.equal(p.elements['global-clean'].disabled,false);
- for(const [time,available] of [[1000,70],[2000,70.1],[3000,70.2]]){
-   p.tick(time);p.run(`memory(${snapshot(available)})`);p.tick(time);
- }
- assert.equal(p.run('decoration.phase'),'returning');
- p.tick(4200);assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.run('decoration.phase'),'emptying');
+ p.run('decoration.stop()');
 });
 
 test('unknown result keeps the error and never receives limited completion treatment',async()=>{
@@ -179,54 +166,52 @@ test('unknown result keeps the error and never receives limited completion treat
  assert.equal(p.run('decoration.phase'),null);
 });
 
-test('early result is immediate while post-return decline holds the circle at zero',async()=>{
+test('business finishes before descent and zero triggers only a readonly refresh',async()=>{
  const p=page();p.elements['decoration-enabled'].checked=true;
- await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
-  api=async path=>path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'已完成',note:'原报告',context:'记录'}};
-  memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
- assert.equal(p.elements['recent-title'].textContent,'已完成');
+ p.run(`token='session';readingSupported=true;supportedMethods=['working-set'];el('method').value='working-set';
+  var complete,requests=[];var pending=new Promise(resolve=>complete=resolve);
+  api=async (path,body,options)=>{requests.push(path);if(path==='/api/action')return {id:'one'};if(path==='/api/display')return {completion:'success',...${snapshot(75)}};return pending;};
+  memory(${snapshot(60)});var running=run({kind:'cleanup',mechanism:'working-set'});`);
+ await p.run('Promise.resolve()');p.tick(5000);
+ assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'40%');
+ assert.equal(p.elements['global-clean'].disabled,true);
+ p.run(`complete({kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'真实结果',note:'原报告',context:'记录'}})`);
+ await p.run('running');
+ assert.equal(p.elements['recent-title'].textContent,'真实结果');assert.equal(p.elements['global-clean'].disabled,false);
  assert.equal(p.run('decoration.phase'),'emptying');
- p.tick(1500);assert.equal(p.elements.percent.textContent,'20%');
- p.run(`memory(${snapshot(70)})`);p.tick(3000);
- assert.equal(p.elements.percent.textContent,'0%');
- assert.equal(p.run('decoration.phase'),'observing');
- for(const [time,available] of [[3500,74],[4500,76],[5500,76.2]]){
-   p.tick(time);p.run(`memory(${snapshot(available)})`);p.tick(time);
-   assert.equal(p.run('decoration.phase'),'observing');
-   assert.equal(p.elements.percent.textContent,'0%');
- }
- p.tick(6500);p.run(`memory(${snapshot(76.3)})`);p.tick(6500);
+ p.tick(5375);assert.equal(p.elements.percent.textContent,'20%');
+ assert.equal(p.run('requests.filter(path=>path==="/api/display").length'),0);
+ p.tick(5750);await p.run('Promise.resolve()');await p.run('Promise.resolve()');await p.run('Promise.resolve()');
  assert.equal(p.run('decoration.phase'),'returning');
- assert.ok(Math.abs(p.run('decoration.target')-23.7)<1e-9);
- p.tick(7700);assert.equal(p.elements.percent.textContent,'24%');
- assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.run('requests.filter(path=>path==="/api/display").length'),1);
+ assert.equal(p.run('requests.filter(path=>path==="/api/action").length'),1);
+ p.tick(6050);assert.equal(p.elements.percent.textContent,'25%');assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.elements['recent-title'].textContent,'真实结果');
 });
 
-test('continuous changes have a bounded observation rather than endless zero',()=>{
- const p=page();p.run(`memory(${snapshot(60)});decoration.start(40);decoration.finish(40)`);
- for(let t=1000;t<=8000;t+=1000){p.tick(t);p.run(`memory(${snapshot(30+t/1000*3)})`);p.tick(t);}
- assert.equal(p.run('decoration.phase'),'returning');
- assert.equal(p.run('decoration.settleReason'),'time_limit');
- p.tick(9200);assert.equal(p.run('decoration.phase'),null);
- assert.equal(p.elements.percent.textContent,'46%');
+test('changing live readings do not add a stability wait before rebound',async()=>{
+ const p=page();p.run(`memory(${snapshot(60)});decoration.refresh=async()=>20;decoration.start(40)`);
+ p.tick(250);p.run(`memory(${snapshot(70)})`);
+ p.tick(500);p.run(`memory(${snapshot(75)})`);
+ p.tick(750);await p.run('Promise.resolve()');await p.run('Promise.resolve()');
+ assert.equal(p.run('decoration.phase'),'returning');assert.equal(p.run('decoration.target'),20);
+ p.tick(1050);assert.equal(p.run('decoration.phase'),null);
 });
 
-test('missing new readings exits the process display without waiting indefinitely',()=>{
- const p=page();p.run(`memory(${snapshot(60)});decoration.start(40);decoration.finish(40)`);
- p.tick(3000);assert.equal(p.run('decoration.phase'),'observing');
- p.tick(8000);assert.equal(p.run('decoration.phase'),null);
- assert.equal(p.run('decoration.settleReason'),'no_new_reading');
- assert.equal(p.elements.percent.textContent,'40%');
+test('refresh failure preserves completed report and last actual value',async()=>{
+ const p=page();p.run(`token='session';readingSupported=true;memory(${snapshot(60)});
+ el('recent-title').textContent='已整理';api=async()=>{throw new Error('timeout')};decoration.start(40)`);
+ p.tick(750);for(let i=0;i<5;i++)await p.run('Promise.resolve()');
+ assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'40%');
+ assert.equal(p.elements['recent-title'].textContent,'已整理');assert.match(p.elements['live-status'].textContent,/timeout/);
 });
 
-test('duplicate sample keys do not establish a quiet window',()=>{
- const p=page();p.run(`memory(${snapshot(60)});decoration.start(40);decoration.finish(40)`);
- for(let t=1000;t<=3000;t+=1000){p.tick(t);p.run('decoration.track(30,"same")');p.tick(t);}
- assert.equal(p.run('decoration.phase'),'observing');
- assert.equal(p.run('decoration.readings.length'),1);
- p.tick(4000);p.run('decoration.track(30,"new-1")');p.tick(4000);
- p.tick(5000);p.run('decoration.track(30,"new-2")');p.tick(5000);
- assert.equal(p.run('decoration.phase'),'returning');
+test('late refresh from an old cycle cannot finish a new animation',async()=>{
+ const p=page();p.run(`memory(${snapshot(60)});var release;decoration.refresh=()=>new Promise(resolve=>release=resolve);decoration.start(40)`);
+ p.tick(750);await p.run('Promise.resolve()');
+ p.run('decoration.start(30);release(10)');for(let i=0;i<3;i++)await p.run('Promise.resolve()');
+ assert.equal(p.run('decoration.phase'),'emptying');assert.equal(p.run('decoration.origin'),30);
+ p.tick(1125);assert.equal(p.elements.percent.textContent,'15%');
 });
 
 test('older response cannot replace a newer physical sample',()=>{
@@ -237,4 +222,15 @@ test('older response cannot replace a newer physical sample',()=>{
  assert.equal(p.elements['actual-percent'].textContent,'60%');
  p.run(`memory(${report(75,'11')})`);p.tick(800);
  assert.equal(p.elements['actual-percent'].textContent,'25%');
+});
+
+
+test('reduced motion skips visual workflow and extra display request',async()=>{
+ const p=page(true);p.elements['decoration-enabled'].checked=true;
+ await p.run(`token='session';readingSupported=true;supportedMethods=['working-set'];el('method').value='working-set';var paths=[];
+ api=async path=>{paths.push(path);return path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'已完成',note:'结果',context:'记录'}};};
+ memory(${snapshot(60)});run({kind:'cleanup',mechanism:'working-set'});`);
+ p.tick(5000);assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.run('paths.includes("/api/display")'),false);
+ assert.equal(p.elements['recent-title'].textContent,'已完成');
 });

@@ -8,15 +8,17 @@ function paintGauge(value,label){
   el("gauge-label").textContent=label;
 }
 const decoration=typeof CleanupEffect==="function"?new CleanupEffect((value,phase)=>{
-  if(phase==="idle")paintGauge(occupancy(latestMemory),"物理内存占用");
-  else paintGauge(value,{emptying:"正在整理",waiting:"等待整理结束",observing:"读数更新中",returning:"回到当前占用"}[phase]);
-}):null;
+  if(phase==="idle"){
+    if(animation!==null)cancelAnimationFrame(animation);animation=null;
+    if(latestMemory)paintMemory(latestMemory);else paintGauge(null,"物理内存占用");
+  }
+  else paintGauge(value,{emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用"}[phase]);
+},refreshForRebound):null;
 let latestMemory=null,latestMemoryAt=null;
 function notifyDecoration(kind){
   try{
     if(!decoration)return;
-    if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start(occupancy(latestMemory));
-    else if(kind==="finish")decoration.finish(occupancy(latestMemory));
+    if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start(occupancy(shownMemory||latestMemory));
     else if(kind==="stop")decoration.stop();
   }catch(_){paintGauge(occupancy(latestMemory),"物理内存占用");}
 }
@@ -54,8 +56,8 @@ function controls() {
   el("cancel").disabled = !busy || stopped;
   el("replay").disabled = busy || stopped || !lastSaved;
 }
-async function api(path, body) {
-  const response = await fetch(path, {method: body === undefined ? "GET" : "POST",
+async function api(path, body, options={}) {
+  const response = await fetch(path, {...options,method: body === undefined ? "GET" : "POST",
     headers: {"X-Session-Token":token, ...(body === undefined ? {} : {"Content-Type":"application/json"})},
     ...(body === undefined ? {} : {body:JSON.stringify(body)})});
   const data = await response.json();
@@ -119,7 +121,7 @@ function memory(report){
   if(Number.isFinite(sampleAt)&&latestMemoryAt!=null&&sampleAt<latestMemoryAt)return;
   if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
   const target={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
-  latestMemory=target;decoration?.track(occupancy(target),Number.isFinite(sampleAt)?sampleAt:null);
+  latestMemory=target;
   if(animation!==null)cancelAnimationFrame(animation);
   animation=null;
   if(!shownMemory||reducedMotion.matches||target.available==null){paintMemory(target);return;}
@@ -146,6 +148,19 @@ async function refreshDisplay(){
     el("live-status").textContent=`后台持续读取 · ${stamp?new Date(stamp).toLocaleTimeString():"刚刚更新"}`;
   }catch(exc){el("live-status").textContent=`显示暂未更新，保留上次读数 · ${exc.message}`;}
   finally{displayInFlight=false;if(liveEnabled&&!document.hidden&&!stopped)displayTimer=setTimeout(refreshDisplay,1000);}
+}
+async function refreshForRebound(){
+  if(document.hidden||stopped||!token||!readingSupported)return null;
+  try{
+    const report=await api("/api/display",{},{signal:AbortSignal.timeout(2500)});
+    if(document.hidden||stopped)return null;
+    const sample=report.samples?.at(-1),physical=sample?.metrics?.physical;
+    if(report.completion!=="success"||occupancy({total:physical?.total_bytes,available:physical?.available_bytes})==null)
+      throw new Error(report.errors?.map(item=>item.message).join("；")||"整理后内存读数不完整");
+    memory(report);
+    el("live-status").textContent=`${liveEnabled?"后台持续读取":"整理后单次刷新"} · ${new Date(sample.timestamp).toLocaleTimeString()}`;
+    return occupancy(latestMemory);
+  }catch(exc){el("live-status").textContent=`整理后读数未更新，保留上次有效值 · ${exc.message}`;return null;}
 }
 function pauseDisplay(){
   clearTimeout(displayTimer);if(animation!==null)cancelAnimationFrame(animation);animation=null;
@@ -185,7 +200,7 @@ function present(job){
 }
 async function run(action){
   if(busy||stopped)return;error("");busy=true;cleaning=action.kind==="cleanup"||action.kind==="batch";controls();renderRows();
-  if(action.kind==="cleanup" && action.mechanism==="working-set")notifyDecoration("start");
+  notifyDecoration("stop");
   el("job-status").textContent="正在提交本次请求…";
   try{
     const accepted=await api("/api/action",action);currentJob=accepted.id;
@@ -196,7 +211,7 @@ async function run(action){
         if(job.state==="error")throw new Error(job.error);
         present(job);
         const completed=job.report.completion==="success" || job.presentation?.limited===true;
-        if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(completed?"finish":"stop");
+        if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(completed?"start":"stop");
         el("job-status").textContent=job.presentation?.limited ? "本次整理已结束 · 部分目标未处理" :
           job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;
         break;
