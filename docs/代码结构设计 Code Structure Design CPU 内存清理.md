@@ -456,3 +456,13 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 - 测试：在windows_process镜像补逐项行为、原生计时与Package回看，在operating_system镜像核对正式装配；既有API/HTTP/桌面旅程用于验证调用合同
 
 结果使用原system范围动作记录，mechanism仍working-set，native_method明确SetProcessWorkingSetSize；process_sweep给出覆盖与逐项结果。一次用户请求只运行一轮枚举，不声称只调用一个目标；单目标与全局范围继续区分。阶段计时以每次实际原生调用为准，不把枚举及打开/关闭句柄计入原生时间。
+
+# 十九、读数观察与网页反馈收敛
+承接 [架构第十七章](<架构设计 Architecture Design CPU 内存清理.md#十七业务完成与显示收束分离>)，只改现有网页交互资源，不增加层或后台策略。
+
+- web_assets/cleanup-effect.js：在业务结束后维护最多3份新样本的有限观察，3秒最短、8秒上限、2秒跨度和0.75个百分点范围；归零仍3秒，回弹仍1.2秒，途中从当前绘制值重定向到新值。观察和动效只持有比例、样本标识与时钟，不拥有维护/报告/控件调度
+- web_assets/app.js：memory按样本UTC拒绝旧值，只有真实样本到达才track，插值绘制不推进观察；任务返回先present，再通知finish。业务忙碌与动效阶段分开。主区采用简短结果，详细数量/前后值继续保留在展开区
+- web_assets/index.html及styles.css：原绿色按钮和真实指标保留，动效设置移入详情，收敛主区域提示和间距，不改页面协议或Package入口
+- 测试保持现有web_assets/app.test.cjs，可控单调时钟与独立样本时刻验证观察及接回；既有HTTP/Package测试确认网页装饰不改变原动作和记录
+
+用户提供的360静态截图仅作为流程/信息密度参考，不能据此宣称获取了第三方精确动画参数。真实系统接入、desktop及其他前端保持原状，本轮不得执行新真实清理。

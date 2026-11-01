@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../../../../../src/cpu_memory_cleanup/interaction/web_assets/app.js'), 'utf8');
 
 function page(reduced = false) {
-  const elements = {}, frames = new Map(); let next = 0;
+  const elements = {}, frames = new Map(); let next = 0,clock=0;
   function element() {
     return {value:'', textContent:'', hidden:true, handlers:{}, attrs:{}, children:[],
       style:{setProperty(k,v){this[k]=v;}}, classes:new Set(),
@@ -17,12 +17,12 @@ function page(reduced = false) {
   }
   const context = vm.createContext({document:{hidden:false,body:{style:{}},
     getElementById(id){return elements[id]??=element();},createElement:element,addEventListener(){}},
-    window:{addEventListener(){}}, matchMedia:()=>({matches:reduced}),performance:{now:()=>0},
+    window:{addEventListener(){}}, matchMedia:()=>({matches:reduced}),performance:{now:()=>clock},
     requestAnimationFrame(fn){frames.set(++next,fn);return next;},cancelAnimationFrame(id){frames.delete(id);},
     setTimeout(){return 0;},clearTimeout(){},fetch:()=>new Promise(()=>{})});
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../../../src/cpu_memory_cleanup/interaction/web_assets/cleanup-effect.js"),"utf8"),context);
   vm.runInContext(source,context);
-  return {elements,run:s=>vm.runInContext(s,context),tick(time){const jobs=[...frames.values()];frames.clear();jobs.forEach(fn=>fn(time));},frames};
+  return {elements,run:s=>vm.runInContext(s,context),tick(time){clock=time;const jobs=[...frames.values()];frames.clear();jobs.forEach(fn=>fn(time));},frames};
 }
 const snapshot = available => `({samples:[{metrics:{physical:{total_bytes:100,available_bytes:${available}},commit:{used_bytes:10,limit_bytes:200}}}]})`;
 
@@ -76,7 +76,7 @@ test('without effect, live occupancy continues updating during cleanup',()=>{
   assert.equal(p.elements.percent.textContent,'30%');
   assert.equal(p.elements.gauge.style['--usage'],'108deg');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'30');
-  p.run(`memory(${snapshot(50)})`);p.tick(400);
+  p.run(`memory(${snapshot(50)})`);p.tick(800);
   assert.equal(p.elements.percent.textContent,'50%');
   assert.equal(p.elements.gauge.style['--usage'],'180deg');
   assert.equal(p.elements.meter.attrs['aria-valuenow'],'50');
@@ -97,7 +97,7 @@ test('decoration enabled or disabled leaves action, report and live values equiv
     p.run(`memory(${snapshot(70)})`);p.tick(400);
     assert.equal(p.elements['actual-percent'].textContent,'30%');
     if(!enabled)assert.equal(p.elements.percent.textContent,'30%');
-    else assert.match(p.elements['gauge-label'].textContent,/动效/);
+    else assert.equal(p.elements['gauge-label'].textContent,'正在整理');
     results.push(p.run('JSON.stringify([actionCount,original])'));
   }
   assert.equal(results[0],results[1]);
@@ -113,7 +113,7 @@ test('decoration failure cannot fail the business request',async()=>{
 });
 
 
-test('linear circle waits for actual completion and freezes its latest rebound target',()=>{
+test('linear circle waits for business and new quiet readings then retargets continuously',()=>{
  const p=page();p.run(`memory(${snapshot(60)});decoration.start(40)`);
  p.tick(1500);assert.equal(p.elements.percent.textContent,'20%');
  p.run(`memory(${snapshot(70)})`);p.tick(3000);
@@ -121,12 +121,18 @@ test('linear circle waits for actual completion and freezes its latest rebound t
  assert.equal(p.elements['actual-percent'].textContent,'30%');
  assert.equal(p.run('decoration.phase'),'waiting');
  p.tick(10000);assert.equal(p.run('decoration.phase'),'waiting');
- p.run('decoration.finish(30)');p.run(`memory(${snapshot(65)})`);p.tick(11000);
- assert.equal(p.run('decoration.target'),35);
- p.run(`memory(${snapshot(50)})`);p.tick(11600);
- assert.equal(p.run('decoration.target'),35);
- p.tick(12200);assert.equal(p.run('decoration.phase'),null);
- assert.equal(p.elements['actual-percent'].textContent,'50%');
+ p.run('decoration.finish(30)');
+ for(const [time,available] of [[11000,66],[12000,66.2],[13000,66.4]]){
+   p.tick(time);p.run(`memory(${snapshot(available)})`);p.tick(time);
+ }
+ assert.equal(p.run('decoration.phase'),'returning');
+ assert.ok(Math.abs(p.run('decoration.target')-33.6)<1e-9);
+ p.tick(13600);const before=p.run('decoration.value');
+ p.run(`memory(${snapshot(70)})`);
+ assert.equal(p.run('decoration.value'),before);
+ assert.equal(p.run('decoration.target'),30);
+ p.tick(14200);assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.elements['actual-percent'].textContent,'30%');
 });
 test('failed report never supplies successful rebound signal',async()=>{
  const p=page();p.elements['decoration-enabled'].checked=true;
@@ -154,7 +160,10 @@ test('known limited sweep ends normally while keeping raw failures in details',a
  assert.match(p.elements.report.textContent,/"status": 5/);
  assert.equal(p.run('requests'),1);
  assert.equal(p.elements['global-clean'].disabled,false);
- p.tick(3000);assert.equal(p.run('decoration.phase'),'returning');
+ for(const [time,available] of [[1000,70],[2000,70.1],[3000,70.2]]){
+   p.tick(time);p.run(`memory(${snapshot(available)})`);p.tick(time);
+ }
+ assert.equal(p.run('decoration.phase'),'returning');
  p.tick(4200);assert.equal(p.run('decoration.phase'),null);
 });
 
@@ -170,7 +179,7 @@ test('unknown result keeps the error and never receives limited completion treat
  assert.equal(p.run('decoration.phase'),null);
 });
 
-test('early completion publishes result immediately but still finishes the linear descent',async()=>{
+test('early result is immediate while post-return decline holds the circle at zero',async()=>{
  const p=page();p.elements['decoration-enabled'].checked=true;
  await p.run(`token='session';supportedMethods=['working-set'];el('method').value='working-set';
   api=async path=>path==='/api/action'?{id:'one'}:{kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'已完成',note:'原报告',context:'记录'}};
@@ -180,8 +189,52 @@ test('early completion publishes result immediately but still finishes the linea
  p.tick(1500);assert.equal(p.elements.percent.textContent,'20%');
  p.run(`memory(${snapshot(70)})`);p.tick(3000);
  assert.equal(p.elements.percent.textContent,'0%');
- assert.equal(p.run('decoration.target'),30);
+ assert.equal(p.run('decoration.phase'),'observing');
+ for(const [time,available] of [[3500,74],[4500,76],[5500,76.2]]){
+   p.tick(time);p.run(`memory(${snapshot(available)})`);p.tick(time);
+   assert.equal(p.run('decoration.phase'),'observing');
+   assert.equal(p.elements.percent.textContent,'0%');
+ }
+ p.tick(6500);p.run(`memory(${snapshot(76.3)})`);p.tick(6500);
  assert.equal(p.run('decoration.phase'),'returning');
- p.tick(4200);assert.equal(p.elements.percent.textContent,'30%');
+ assert.ok(Math.abs(p.run('decoration.target')-23.7)<1e-9);
+ p.tick(7700);assert.equal(p.elements.percent.textContent,'24%');
  assert.equal(p.run('decoration.phase'),null);
+});
+
+test('continuous changes have a bounded observation rather than endless zero',()=>{
+ const p=page();p.run(`memory(${snapshot(60)});decoration.start(40);decoration.finish(40)`);
+ for(let t=1000;t<=8000;t+=1000){p.tick(t);p.run(`memory(${snapshot(30+t/1000*3)})`);p.tick(t);}
+ assert.equal(p.run('decoration.phase'),'returning');
+ assert.equal(p.run('decoration.settleReason'),'time_limit');
+ p.tick(9200);assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.elements.percent.textContent,'46%');
+});
+
+test('missing new readings exits the process display without waiting indefinitely',()=>{
+ const p=page();p.run(`memory(${snapshot(60)});decoration.start(40);decoration.finish(40)`);
+ p.tick(3000);assert.equal(p.run('decoration.phase'),'observing');
+ p.tick(8000);assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.run('decoration.settleReason'),'no_new_reading');
+ assert.equal(p.elements.percent.textContent,'40%');
+});
+
+test('duplicate sample keys do not establish a quiet window',()=>{
+ const p=page();p.run(`memory(${snapshot(60)});decoration.start(40);decoration.finish(40)`);
+ for(let t=1000;t<=3000;t+=1000){p.tick(t);p.run('decoration.track(30,"same")');p.tick(t);}
+ assert.equal(p.run('decoration.phase'),'observing');
+ assert.equal(p.run('decoration.readings.length'),1);
+ p.tick(4000);p.run('decoration.track(30,"new-1")');p.tick(4000);
+ p.tick(5000);p.run('decoration.track(30,"new-2")');p.tick(5000);
+ assert.equal(p.run('decoration.phase'),'returning');
+});
+
+test('older response cannot replace a newer physical sample',()=>{
+ const p=page();
+ const report=(available,stamp)=>`({samples:[{timestamp:'2026-11-02T00:00:${stamp}+00:00',metrics:{physical:{total_bytes:100,available_bytes:${available}}}}]})`;
+ p.run(`memory(${report(40,'10')})`);
+ p.run(`memory(${report(80,'09')})`);p.tick(400);
+ assert.equal(p.elements['actual-percent'].textContent,'60%');
+ p.run(`memory(${report(75,'11')})`);p.tick(800);
+ assert.equal(p.elements['actual-percent'].textContent,'25%');
 });

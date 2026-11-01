@@ -18,8 +18,7 @@
         <div class="metric"><span>实际占用 · 持续读取</span><strong id="actual-percent">尚未读取</strong></div>
         <div class="metric"><span>可用 / 总量</span><strong id="capacity">尚未读取</strong></div>
         <button id="global-clean" class="primary">✦ 一键整理工作集</button>
-        <label class="hint"><input id="decoration-enabled" type="checkbox" checked> 整理过程动效（主圆环）</label>
-        <p class="hint">全局范围，不支持应用排除。页面驻留减少不代表业务对象被释放，也不保证提速。</p>
+        <p class="hint">整理可访问进程的工作集，重新使用应用时占用可能回升。</p>
         <div class="connection"><span class="dot"></span><span id="job-status" role="status" aria-live="polite">本地就绪 · 点击才执行</span><button id="cancel" class="quiet" disabled>停止后续动作</button></div>
         <p id="error" class="error" role="alert" hidden></p>
         <section class="recent" aria-label="最近一次整理" aria-live="polite"><span class="eyebrow">最近一次整理</span><h2 id="recent-title">尚未整理</h2><p id="recent-note">轻点绿色按钮整理一次工作集。</p><small id="recent-context">结果与实时读数分别保留</small></section>
@@ -27,6 +26,7 @@
     </div>
     <section id="confirmation" class="card confirmation" hidden aria-labelledby="confirmation-title"><div><p class="eyebrow">本次明确确认</p><h2 id="confirmation-title">确认操作范围</h2><p id="confirmation-text"></p><p class="hint">已经派发的动作无法撤销；取消只阻止后续动作。</p></div><div class="confirm-actions"><button id="confirm-no" class="quiet">返回</button><button id="confirm-yes" class="primary">确认本次操作</button></div></section>
     <details class="more" id="more"><summary>详情与设置 <span>进程范围 · 整理设置 · 运行详情</span></summary>
+      <label class="hint effect-setting"><input id="decoration-enabled" type="checkbox" checked> 显示整理过程动效</label>
       <section class="card targets" aria-labelledby="targets-title">
         <div class="card-heading"><div><p class="eyebrow">选择处理对象</p><h2 id="targets-title">只整理你选中的进程</h2></div><button id="read-targets" class="secondary">读取进程列表</button></div>
         <div class="filters"><label>查找 <input id="search" type="search" placeholder="程序名或 PID" autocomplete="off"></label><span id="selection-count">未读取列表</span></div>

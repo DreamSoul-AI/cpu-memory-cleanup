@@ -9,9 +9,9 @@ function paintGauge(value,label){
 }
 const decoration=typeof CleanupEffect==="function"?new CleanupEffect((value,phase)=>{
   if(phase==="idle")paintGauge(occupancy(latestMemory),"物理内存占用");
-  else paintGauge(value,{emptying:"整理动效 · 匀速归零",waiting:"整理动效 · 等待本次调用完成",returning:"整理动效 · 回到实测值"}[phase]);
+  else paintGauge(value,{emptying:"正在整理",waiting:"等待整理结束",observing:"读数更新中",returning:"回到当前占用"}[phase]);
 }):null;
-let latestMemory=null;
+let latestMemory=null,latestMemoryAt=null;
 function notifyDecoration(kind){
   try{
     if(!decoration)return;
@@ -115,8 +115,11 @@ function paintMemory(value){
 function memory(report){
   const sample=report.samples?.at(-1);if(!sample)return;
   const physical=sample.metrics.physical,commit=sample.metrics.commit;if(!physical)return;
+  const sampleAt=Date.parse(sample.timestamp);
+  if(Number.isFinite(sampleAt)&&latestMemoryAt!=null&&sampleAt<latestMemoryAt)return;
+  if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
   const target={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
-  latestMemory=target;decoration?.track(occupancy(target));
+  latestMemory=target;decoration?.track(occupancy(target),Number.isFinite(sampleAt)?sampleAt:null);
   if(animation!==null)cancelAnimationFrame(animation);
   animation=null;
   if(!shownMemory||reducedMotion.matches||target.available==null){paintMemory(target);return;}
@@ -159,7 +162,12 @@ function present(job){
   }
   if(job.kind==="status"){if(report.completion!=="success")error(JSON.stringify(report.errors.concat(report.samples.at(-1)?.errors||[])));return;}
   const feedback=job.presentation;
-  if(feedback){el("recent-title").textContent=feedback.title;el("recent-note").textContent=feedback.note;el("recent-context").textContent=feedback.context;}
+  if(feedback){
+    el("recent-title").textContent=feedback.title;
+    const sweep=report.action?.process_sweep;
+    el("recent-note").textContent=sweep?`已整理${sweep.successful_count}个进程 · ${sweep.skipped_count+sweep.failed_count}个未处理，详情可查看原因。`:feedback.note;
+    el("recent-context").textContent=feedback.context;
+  }
   el("result-items").replaceChildren();
   const action=report.action||{};
   if(report.errors?.length && !feedback?.limited) error(report.errors.map(item=>item.message||item.type||"未知错误").join("；"));
