@@ -35,3 +35,12 @@ test('reduced motion uses observed values without a visual workflow',()=>{
   const p=display(true);p.model.update(20);p.model.update(70);p.model.start();
   assert.equal(p.model.value,70);assert.equal(p.model.phase,null);assert.equal(p.frames.size,0);
 });
+test('background readings cannot move the zero display while its one readonly refresh is pending',async()=>{
+  const p=display();let release;let requests=0;
+  p.model.refresh=()=>{requests++;return new Promise(resolve=>release=resolve);};
+  p.model.update(40);p.model.start();p.tick(750);await Promise.resolve();
+  p.model.update(65);p.tick(900);
+  assert.equal(p.model.value,0);assert.equal(p.model.phase,'refreshing');assert.equal(p.frames.size,0);assert.equal(requests,1);
+  release(20);for(let i=0;i<4;i++)await Promise.resolve();
+  assert.equal(p.model.phase,'returning');assert.equal(p.model.target,20);
+});

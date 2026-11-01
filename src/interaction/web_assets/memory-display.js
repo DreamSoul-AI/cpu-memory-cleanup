@@ -11,7 +11,7 @@ class MemoryDisplay {
     this.actual=value;
     if(this.value==null||this.reduced()){
       this.value=value;if(!this.phase&&!this.suspended)this.render(value,"idle");
-    }else this.schedule();
+    }else if(this.phase!=="refreshing")this.schedule();
   }
   schedule(){if(this.frame==null&&!this.suspended){this.last=performance.now();this.frame=requestAnimationFrame(time=>this.tick(time));}}
   next(){if(this.frame==null&&!this.suspended)this.frame=requestAnimationFrame(time=>this.tick(time));}
