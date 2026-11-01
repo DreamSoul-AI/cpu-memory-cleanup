@@ -8,6 +8,7 @@ from unittest.mock import patch
 from cpu_memory_cleanup import api
 from cpu_memory_cleanup.system.platforms import windows
 from tests.fixtures import FakeRuntime
+from tests.fixtures import FakeMonotonic
 from .test_windows import FakeSystem, Function
 
 
@@ -26,6 +27,29 @@ class ProcessTests(unittest.TestCase):
         self.app = api.create_application(reader=self.backend, maintainer=self.backend, runtime=FakeRuntime(),
             capabilities=api.Capabilities("synthetic", "available", ("working-set",), scopes=("system", "process")))
         self.target = api.ProcessTarget(11, str((1 << 40) + 11), "example.exe")
+
+    def test_native_timing_excludes_target_identity_query(self):
+        clock = FakeMonotonic()
+        self.app._monotonic = clock
+        original_identity = self.fake.kernel.GetProcessTimes.function
+        def identity(*args):
+            clock.advance_ms(30)
+            return original_identity(*args)
+        def native(handle):
+            clock.advance_ms(80)
+            self.actions.append(handle)
+            return True
+        self.fake.psapi.EmptyWorkingSet = Function(native)
+        self.fake.kernel.GetProcessTimes = Function(identity)
+        with tempfile.TemporaryDirectory() as directory:
+            report = self.app.memory_process_cleanup(self.target, directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(report.completion, "success", report.errors)
+        self.assertEqual(self.actions, [11])
+        self.assertEqual(self.fake.nt_calls, [])
+        self.assertAlmostEqual(report.metadata["diagnostics"]["verification"]["native_call_ms"], 80)
+        stages = report.metadata["diagnostics"]["timing"]["stages"]
+        self.assertAlmostEqual(next(row["duration_ms"] for row in stages if row["name"] == "target_verify"), 30)
+        self.assertEqual(report.metadata["diagnostics"]["verification"]["working_sets"]["matched"], 1)
 
     def test_target_cleanup_and_offline_replay_keep_identity_and_single_call(self):
         with tempfile.TemporaryDirectory() as directory:

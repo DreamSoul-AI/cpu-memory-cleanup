@@ -96,6 +96,7 @@ class LocalWebServer(ThreadingHTTPServer):
                 self.jobs.popitem(last=False)
             event = threading.Event()
             self.cancel_event = event
+            accepted_at = time.perf_counter()
 
             def work():
                 try:
@@ -118,6 +119,8 @@ class LocalWebServer(ThreadingHTTPServer):
                     else:
                         report = self.app.memory_result(source_path)
                     result = report.to_dict()
+                    result["metadata"]["web_timing"] = {"accepted_to_report_ms": (time.perf_counter() - accepted_at) * 1000,
+                        "scope": "server_job", "http_delivery_ms": None, "ui_render_ms": None}
                     with self.lock:
                         if kind == "targets":
                             rows = report.samples[0].processes if report.samples else []

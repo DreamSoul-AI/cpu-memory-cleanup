@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+from contextlib import nullcontext
 
 from ..contracts import MAX_FILE_BYTES, MAX_LINE_BYTES, finite_number
 
@@ -18,6 +19,7 @@ class Journal:
         self.directory = None
         self.sealed = False
         self.committed = False
+        self.timings = None
         try:
             if options.get("jsonl_path") is not None:
                 path = Path(options["jsonl_path"])
@@ -45,9 +47,10 @@ class Journal:
         encoded = _json(record) + "\n"
         if len(encoded.encode("utf-8")) > MAX_LINE_BYTES or stream.tell() + len(encoded.encode("utf-8")) > MAX_FILE_BYTES:
             raise ValueError("运行记录超出大小上限")
-        stream.write(encoded)
-        stream.flush()
-        os.fsync(stream.fileno())
+        with self.timings.measure("record_write") if self.timings is not None else nullcontext():
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
 
     def close(self):
         self.sealed = True
@@ -150,6 +153,31 @@ class RunReader:
 
 
 class RecordStore:
+    def write_diagnostics(self, directory, value):
+        path = Path(directory) / "diagnostics.json"
+        temporary = path.with_suffix(".pending")
+        encoded = _json(value).encode("utf-8")
+        if len(encoded) > MAX_FILE_BYTES:
+            raise ValueError("诊断附件超出大小上限")
+        with temporary.open("xb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+
+    def read_diagnostics(self, directory):
+        base = Path(directory)
+        path = (base if base.is_dir() else base.parent) / "diagnostics.json"
+        try:
+            with path.open("rb") as stream:
+                content = stream.read(MAX_FILE_BYTES + 1)
+        except FileNotFoundError:
+            return None
+        if len(content) > MAX_FILE_BYTES:
+            raise ValueError("诊断附件超出大小上限")
+        return json.loads(content, object_pairs_hook=_pairs, parse_float=_number,
+                          parse_constant=lambda text: (_ for _ in ()).throw(ValueError("非有限 JSON 数值")))
+
     def is_batch(self, path):
         value = Path(path)
         return value.is_dir() and (value / "batch.jsonl").exists()

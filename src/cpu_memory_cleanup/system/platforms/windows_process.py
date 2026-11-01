@@ -3,6 +3,7 @@
 import ctypes as c
 from ctypes import wintypes as w
 import ntpath
+from contextlib import nullcontext
 
 from ...contracts import ProcessTarget, ResourceCloseError
 
@@ -59,8 +60,13 @@ class TargetSession:
         if self.consumed or self.close_attempted:
             raise RuntimeError("目标会话仅允许一次派发")
         self.consumed = True
-        self.verify()
-        ok = bind(self.psapi, "EmptyWorkingSet", [w.HANDLE], w.BOOL)(self.handle)
+        timings = getattr(self, "timings", None)
+        with timings.measure("target_verify") if timings is not None else nullcontext():
+            self.verify()
+        with timings.measure("native_call") if timings is not None else nullcontext():
+            ok = bind(self.psapi, "EmptyWorkingSet", [w.HANDLE], w.BOOL)(self.handle)
+        if timings is not None:
+            timings.mark("native_returned")
         return {"attempted": True, "call_outcome": "success" if ok else "failure",
                 "status": 0 if ok else c.get_last_error(), "privilege_restored": True,
                 "errors": [] if ok else ["目标工作集整理失败"]}

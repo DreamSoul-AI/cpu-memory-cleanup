@@ -10,6 +10,75 @@ from tests.fixtures import create_application
 from cpu_memory_cleanup.application import core
 from cpu_memory_cleanup.system import records
 from cpu_memory_cleanup.contracts import ActionRequest, Sample
+from tests.fixtures import ScenarioBackend, FakeMonotonic
+
+
+class VerificationJourneyTests(unittest.TestCase):
+    def test_explicit_working_set_verification_and_replay_are_read_only_after_one_action(self):
+        backend = ScenarioBackend()
+        app = create_application(reader=backend, maintainer=backend)
+        with tempfile.TemporaryDirectory() as directory:
+            report = app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic",
+                                        verify_working_sets=True)
+            self.assertEqual(report.completion, "success", report.errors)
+            evidence = report.metadata["diagnostics"]["verification"]["working_sets"]
+            self.assertEqual(evidence["matched"], 4)
+            self.assertTrue(all(row["status"] == "decreased" for row in evidence["items"]))
+            self.assertIsNone(evidence["system_released_bytes"])
+            self.assertEqual(len(backend.actions), 1)
+            with patch.object(backend, "process_targets", side_effect=AssertionError("replay must not enumerate")), \
+                 patch.object(backend, "read_memory", side_effect=AssertionError("replay must not read")):
+                replay = app.memory_result(report.output_dir)
+            self.assertEqual(replay.completion, "success", replay.errors)
+            self.assertEqual(replay.metadata["diagnostics"]["verification"], report.metadata["diagnostics"]["verification"])
+            self.assertEqual(len(backend.actions), 1)
+
+    def test_default_and_timing_disabled_preserve_action_and_samples_without_enumeration(self):
+        outputs = []
+        for enabled in (True, False):
+            backend = ScenarioBackend()
+            app = create_application(reader=backend, maintainer=backend)
+            with tempfile.TemporaryDirectory() as directory, \
+                 patch.object(backend, "process_targets", side_effect=AssertionError("default must not enumerate")):
+                report = app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic", capture_timings=enabled)
+                self.assertEqual(report.completion, "success", report.errors)
+                self.assertEqual(len(backend.actions), 1)
+                outputs.append((report.action, [row.metrics for row in report.samples]))
+                self.assertEqual(report.metadata["diagnostics"]["timing"] is None, not enabled)
+        self.assertEqual(outputs[0], outputs[1])
+
+    def test_record_cost_is_measured_and_sidecar_failure_does_not_change_native_fact(self):
+        backend = ScenarioBackend()
+        clock = FakeMonotonic()
+        app = create_application(reader=backend, maintainer=backend, monotonic=clock)
+        def sync(_):
+            clock.advance_ms(30)
+        with tempfile.TemporaryDirectory() as directory, patch("cpu_memory_cleanup.system.records.os.fsync", side_effect=sync), \
+             patch.object(app.records, "write_diagnostics", side_effect=OSError("synthetic disk")):
+            report = app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+        self.assertEqual(report.completion, "success")
+        rows = report.metadata["diagnostics"]["timing"]["stages"]
+        writes = [row for row in rows if row["name"] == "record_write"]
+        self.assertTrue(writes)
+        for row in writes:
+            self.assertAlmostEqual(row["duration_ms"], 30)
+        self.assertIsNone(report.metadata["diagnostics"]["verification"]["native_call_ms"])
+        self.assertIn("synthetic disk", report.metadata["diagnostics"]["errors"][0])
+
+    def test_mismatched_sidecar_preserves_original_samples_but_marks_replay_partial(self):
+        backend = ScenarioBackend()
+        app = create_application(reader=backend, maintainer=backend)
+        with tempfile.TemporaryDirectory() as directory:
+            report = app.memory_cleanup(directory, confirmed=True, confirmation_source="synthetic")
+            path = Path(report.output_dir) / "diagnostics.json"
+            value = json.loads(path.read_text(encoding="utf-8"))
+            value["run_id"] = "other"
+            path.write_text(json.dumps(value), encoding="utf-8")
+            replay = app.memory_result(report.output_dir)
+            self.assertEqual(replay.completion, "partial")
+            self.assertEqual(replay.action, report.action)
+            self.assertEqual(replay.samples, report.samples)
+            self.assertEqual(len(backend.actions), 1)
 
 
 class FakeBackend:

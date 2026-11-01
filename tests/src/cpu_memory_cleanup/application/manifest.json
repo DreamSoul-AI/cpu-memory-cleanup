@@ -522,6 +522,14 @@
       ],
       "level": "e2e",
       "cost_class": "c1"
+    },
+    "test_verification.py": {
+      "target": "src/cpu_memory_cleanup/application/verification.py",
+      "tags": [
+        "offline",
+        "module_memory"
+      ],
+      "level": "unit"
     }
   }
 }

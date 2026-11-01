@@ -6,6 +6,18 @@ from cpu_memory_cleanup.system.records import RecordStore
 
 
 class RecordTests(unittest.TestCase):
+    def test_diagnostics_atomic_roundtrip_and_missing_old_attachment(self):
+        self.assertIsNone(self.store.read_diagnostics(self.temp.name))
+        value = {"version": 1, "run_id": "r", "timing": None}
+        self.store.write_diagnostics(self.temp.name, value)
+        self.assertEqual(self.store.read_diagnostics(self.temp.name), value)
+        self.assertFalse((Path(self.temp.name) / "diagnostics.pending").exists())
+
+    def test_diagnostics_reject_nonfinite_serialized_input(self):
+        (Path(self.temp.name) / "diagnostics.json").write_text('{"timing":NaN}', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            self.store.read_diagnostics(self.temp.name)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

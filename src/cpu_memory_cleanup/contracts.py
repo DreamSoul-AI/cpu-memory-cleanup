@@ -1,9 +1,11 @@
 """共享数据与平台合同。导入本模块不取得任何系统资源。"""
 
 from dataclasses import asdict, dataclass, field
+from contextlib import contextmanager
 from datetime import datetime
 import math
 import re
+from time import perf_counter
 from typing import Protocol
 
 SCHEMA_VERSION = 1
@@ -141,6 +143,56 @@ class ActionRequest:
             raise ValueError("process范围仅支持具有完整目标的工作集整理")
         if type(self.confirmed) is not bool or not isinstance(self.confirmation_source, str):
             raise ValueError("维护确认格式无效")
+
+
+class StageTimings:
+    """本次运行的只读计时器。父阶段含子阶段，时钟失败不打断资源恢复。"""
+    def __init__(self, clock=None):
+        self.clock = clock or perf_counter
+        self.errors, self.stages, self.events, self.stack = [], [], [], []
+        self.last = None
+        self.origin = self._read_clock()
+
+    def _read_clock(self):
+        try:
+            value = finite_number(self.clock(), "monotonic")
+            if self.last is not None and value < self.last:
+                raise ValueError("单调时钟回退")
+            self.last = value
+            return value
+        except Exception as error:
+            self.errors.append(f"计时不可用：{type(error).__name__}")
+            return None
+
+    def offset(self):
+        value = self._read_clock()
+        return None if value is None or self.origin is None else (value - self.origin) * 1000
+
+    @contextmanager
+    def measure(self, name):
+        row = {"name": name, "parent": self.stack[-1] if self.stack else None,
+               "start_ms": self.offset(), "end_ms": None, "duration_ms": None, "status": "completed"}
+        self.stages.append(row)
+        self.stack.append(name)
+        try:
+            yield
+        except BaseException:
+            row["status"] = "interrupted"
+            raise
+        finally:
+            row["end_ms"] = self.offset()
+            if row["start_ms"] is not None and row["end_ms"] is not None:
+                row["duration_ms"] = row["end_ms"] - row["start_ms"]
+            self.stack.pop()
+
+    def mark(self, name, utc=None):
+        self.events.append({"name": name, "offset_ms": self.offset(), "utc": utc})
+
+    def snapshot(self):
+        return {"unit": "ms", "basis": "run_monotonic", "elapsed_ms": self.offset(),
+                "stages": [dict(row) for row in self.stages], "events": [dict(row) for row in self.events],
+                "errors": self.errors.copy(),
+                "excluded": ["diagnostics_build", "diagnostics_write", "http_delivery", "ui_render"]}
 
 
 def validate_action(action):

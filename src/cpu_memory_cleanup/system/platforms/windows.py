@@ -7,6 +7,7 @@ import ntpath
 import sys
 import math
 import threading
+from contextlib import nullcontext
 
 from ...contracts import ActionRequest, Sample
 
@@ -542,6 +543,13 @@ class _Operation:
         self._preflight = None
         self._restore_failed = False
         self.target_session = None
+        self._timings = None
+
+    def set_timing(self, timings):
+        self._timings = timings
+
+    def _measure(self, name):
+        return self._timings.measure(name) if self._timings is not None else nullcontext()
 
     def preflight(self):
         if self.closed:
@@ -636,25 +644,30 @@ class _Operation:
             result["errors"].append("维护必须在取得互斥的线程执行")
             return result
         if self.request.scope == "process":
+            self.target_session.timings = self._timings
             return self.target_session.perform_once()
         token, original, luid, adjusted = None, None, None, False
         interruption = None
         try:
-            token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, self.tokens)
-            luid = _privilege_luid(self.advapi)
-            original = _privilege_attributes(self.advapi, token, luid)
-            if original is None or original & SE_PRIVILEGE_REMOVED:
-                raise OSError("当前令牌不持有所需特权")
-            if not original & SE_PRIVILEGE_ENABLED:
-                state = TokenPrivilegesOne(1, (LuidAttributes * 1)(LuidAttributes(luid, SE_PRIVILEGE_ENABLED)))
-                adjusted = True
-                _adjust_privilege(self.advapi, token, state)
-                enabled = _privilege_attributes(self.advapi, token, luid)
-                if enabled is None or not enabled & SE_PRIVILEGE_ENABLED:
-                    raise OSError("无法确认特权启用")
+            with self._measure("permission_acquire"):
+                token = _open_token(self.kernel, self.advapi, TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, self.tokens)
+                luid = _privilege_luid(self.advapi)
+                original = _privilege_attributes(self.advapi, token, luid)
+                if original is None or original & SE_PRIVILEGE_REMOVED:
+                    raise OSError("当前令牌不持有所需特权")
+                if not original & SE_PRIVILEGE_ENABLED:
+                    state = TokenPrivilegesOne(1, (LuidAttributes * 1)(LuidAttributes(luid, SE_PRIVILEGE_ENABLED)))
+                    adjusted = True
+                    _adjust_privilege(self.advapi, token, state)
+                    enabled = _privilege_attributes(self.advapi, token, luid)
+                    if enabled is None or not enabled & SE_PRIVILEGE_ENABLED:
+                        raise OSError("无法确认特权启用")
             command = c.c_int(COMMANDS[self.request.mechanism])
             try:
-                status = self.nt_call(80, c.byref(command), c.sizeof(command))
+                with self._measure("native_call"):
+                    status = self.nt_call(80, c.byref(command), c.sizeof(command))
+                if self._timings is not None:
+                    self._timings.mark("native_returned")
             except Exception as error:
                 result.update(attempted=None, call_outcome="unknown")
                 result["errors"].append("原生调用结果未知: " + _error_text(error))
@@ -671,35 +684,36 @@ class _Operation:
         except BaseException as error:
             interruption = error
         finally:
-            if token is not None:
-                if adjusted:
+            with self._measure("permission_restore"):
+                if token is not None:
+                    if adjusted:
+                        try:
+                            state = TokenPrivilegesOne(1, (LuidAttributes * 1)(LuidAttributes(luid, original)))
+                            _adjust_privilege(self.advapi, token, state)
+                            if _privilege_attributes(self.advapi, token, luid) != original:
+                                raise OSError("原特权状态未恢复")
+                        except BaseException as error:
+                            self._restore_failed = True
+                            result["privilege_restored"] = False
+                            result["errors"].append("特权恢复失败: " + _error_text(error))
+                            if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                                interruption = error
+                    elif original is not None:
+                        try:
+                            if _privilege_attributes(self.advapi, token, luid) != original:
+                                raise OSError("调用后原有特权状态无法确认")
+                        except BaseException as error:
+                            self._restore_failed = True
+                            result["privilege_restored"] = False
+                            result["errors"].append("特权状态核对失败: " + _error_text(error))
+                            if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                                interruption = error
                     try:
-                        state = TokenPrivilegesOne(1, (LuidAttributes * 1)(LuidAttributes(luid, original)))
-                        _adjust_privilege(self.advapi, token, state)
-                        if _privilege_attributes(self.advapi, token, luid) != original:
-                            raise OSError("原特权状态未恢复")
+                        self._close_token(token, result["errors"])
                     except BaseException as error:
-                        self._restore_failed = True
-                        result["privilege_restored"] = False
-                        result["errors"].append("特权恢复失败: " + _error_text(error))
-                        if not isinstance(error, (OSError, AttributeError)) and interruption is None:
+                        result["errors"].append("令牌关闭失败: " + _error_text(error))
+                        if interruption is None:
                             interruption = error
-                elif original is not None:
-                    try:
-                        if _privilege_attributes(self.advapi, token, luid) != original:
-                            raise OSError("调用后原有特权状态无法确认")
-                    except BaseException as error:
-                        self._restore_failed = True
-                        result["privilege_restored"] = False
-                        result["errors"].append("特权状态核对失败: " + _error_text(error))
-                        if not isinstance(error, (OSError, AttributeError)) and interruption is None:
-                            interruption = error
-                try:
-                    self._close_token(token, result["errors"])
-                except BaseException as error:
-                    result["errors"].append("令牌关闭失败: " + _error_text(error))
-                    if interruption is None:
-                        interruption = error
         if interruption is not None:
             raise interruption
         return result

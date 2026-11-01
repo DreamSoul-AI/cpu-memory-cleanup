@@ -12,6 +12,8 @@ from tests.fixtures import create_application
 
 from cpu_memory_cleanup.system.platforms import windows as api
 from cpu_memory_cleanup.contracts import ActionRequest
+from cpu_memory_cleanup.contracts import StageTimings
+from tests.fixtures import FakeMonotonic
 
 
 class Function:
@@ -202,6 +204,69 @@ class FakeSystem:
             c.set_last_error(5)
             return False
         return True
+
+
+class NativeTimingTests(unittest.TestCase):
+    def test_timed_native_exception_keeps_restore_and_unknown_call_fact(self):
+        fake, clock = FakeSystem(), FakeMonotonic()
+        fake.nt_error = OSError("synthetic native interruption")
+        original = fake.ntdll.NtSetSystemInformation.function
+        def native(*args):
+            clock.advance_ms(70)
+            return original(*args)
+        fake.ntdll.NtSetSystemInformation = Function(native)
+        timing = StageTimings(clock)
+        with patch.object(api, "_maintenance_lock", threading.Lock()), \
+             patch.object(api.c, "WinDLL", side_effect=AssertionError("禁止真实DLL"), create=True):
+            op = api.WindowsBackend(fake.load).open_operation(ActionRequest("working-set", confirmed=True, confirmation_source="synthetic"))
+            op.set_timing(timing)
+            try:
+                op.preflight()
+                result = op.perform_once()
+            finally:
+                op.close()
+        self.assertEqual(result["call_outcome"], "unknown")
+        self.assertTrue(result["privilege_restored"])
+        self.assertEqual(fake.attrs, 0)
+        self.assertEqual(len(fake.nt_calls), 1)
+        native_row = next(row for row in timing.stages if row["name"] == "native_call")
+        self.assertEqual(native_row["status"], "interrupted")
+        self.assertAlmostEqual(native_row["duration_ms"], 70)
+        self.assertFalse(any(row["name"] == "native_returned" for row in timing.events))
+
+    def test_global_native_permission_and_restore_costs_are_separate(self):
+        fake, clock = FakeSystem(), FakeMonotonic()
+        adjustments = [40, 60]
+        original_adjust = fake.advapi.AdjustTokenPrivileges.function
+        original_call = fake.ntdll.NtSetSystemInformation.function
+        def adjust(*args):
+            clock.advance_ms(adjustments.pop(0))
+            return original_adjust(*args)
+        def native(*args):
+            clock.advance_ms(200)
+            return original_call(*args)
+        fake.advapi.AdjustTokenPrivileges = Function(adjust)
+        fake.ntdll.NtSetSystemInformation = Function(native)
+        backend = api.WindowsBackend(fake.load)
+        timing = StageTimings(clock)
+        with patch.object(api, "_maintenance_lock", threading.Lock()), \
+             patch.object(api.c, "WinDLL", side_effect=AssertionError("禁止真实DLL"), create=True):
+            op = backend.open_operation(ActionRequest("working-set", confirmed=True, confirmation_source="synthetic"))
+            op.set_timing(timing)
+            try:
+                self.assertTrue(op.preflight()["lock_acquired"])
+                with timing.measure("operation"):
+                    result = op.perform_once()
+            finally:
+                op.close()
+        rows = {r["name"]: r for r in timing.stages}
+        self.assertAlmostEqual(rows["permission_acquire"]["duration_ms"], 40)
+        self.assertAlmostEqual(rows["native_call"]["duration_ms"], 200)
+        self.assertAlmostEqual(rows["permission_restore"]["duration_ms"], 60)
+        self.assertAlmostEqual(rows["operation"]["duration_ms"], 300)
+        self.assertTrue(result["privilege_restored"])
+        self.assertEqual(len(fake.nt_calls), 1)
+        self.assertEqual(fake.attrs, 0)
 
 
 class WindowsTests(unittest.TestCase):

@@ -1,14 +1,16 @@
 """功能流程与业务状态。系统能力由启动装配提供。"""
 
 from datetime import datetime
+from contextlib import nullcontext
+from time import perf_counter
 import json
 import threading
 import uuid
 
 from ..contracts import (ActionRequest, Capabilities, RULE_VERSION, SCHEMA_VERSION, PROGRAM_VERSION,
                          ProcessTarget, ResourceCloseError, MAX_FILE_BYTES, MAX_LINE_BYTES, MAX_SAMPLES, RunReport, Sample,
-                         finite_number, validate_action)
-from . import analysis
+                         finite_number, validate_action, StageTimings)
+from . import analysis, verification
 
 
 class _Cancelled(Exception):
@@ -201,7 +203,7 @@ def _load_run(reader, check_cancel, result):
 
 
 class Application:
-    def __init__(self, reader=None, maintainer=None, *, records=None, runtime=None, capabilities=None, sleep=None, clock=None):
+    def __init__(self, reader=None, maintainer=None, *, records=None, runtime=None, capabilities=None, sleep=None, clock=None, monotonic=None):
         self.reader = reader
         self.maintainer = maintainer
         self.records = records
@@ -209,6 +211,7 @@ class Application:
         self.capabilities = capabilities or Capabilities("unknown", reading="unknown")
         self._clock = clock or (runtime.now if runtime is not None else lambda: None)
         self._sleep = sleep
+        self._monotonic = monotonic or perf_counter
         self._lock = threading.Lock()
         self._cancel = threading.Event()
         self._active = False
@@ -265,11 +268,13 @@ class Application:
         report.phase = "finished"
         return report
 
-    def memory_cleanup(self, output_dir, *, confirmed=False, confirmation_source="", cancel_event=None, observation_seconds=0):
+    def memory_cleanup(self, output_dir, *, confirmed=False, confirmation_source="", cancel_event=None, observation_seconds=0,
+                       capture_timings=True, verify_working_sets=False):
         """明确请求一次工作集整理，使用内存专用前后快照。"""
         request = ActionRequest("working-set", confirmed=confirmed, confirmation_source=confirmation_source)
         return self.maintain(request, output_dir, cancel_event=cancel_event, lightweight=True,
-                             observation_seconds=observation_seconds)
+                             observation_seconds=observation_seconds, capture_timings=capture_timings,
+                             verify_working_sets=verify_working_sets)
 
     def memory_targets(self, *, cancel_event=None):
         """按需发现可读进程，不采集CPU或执行维护。"""
@@ -510,44 +515,86 @@ class Application:
                 raise interruptions[0]
         return report
 
-    def maintain(self, request, output_dir, *, cancel_event=None, lightweight=False, observation_seconds=0):
+    def _working_sets(self):
+        try:
+            rows, errors = self.reader.process_targets()
+            value = {"timestamp": self._clock(), "processes": rows, "errors": errors}
+            verification.working_set_changes(value, value)
+            return value
+        except ResourceCloseError:
+            self._unsafe = True
+            raise
+
+    def _diagnostics(self, report, timings, observations):
+        try:
+            value = verification.diagnostics(report.samples, report.metadata.get("header") or {},
+                timing=timings.snapshot() if timings is not None else None, working_sets=observations)
+            report.metadata["diagnostics"] = value
+            if report.output_dir and callable(getattr(self.records, "write_diagnostics", None)):
+                self.records.write_diagnostics(report.output_dir, value)
+        except Exception as error:
+            report.metadata.setdefault("diagnostics", {}).setdefault("errors", []).append(
+                f"诊断未完整保存：{type(error).__name__}: {error}")
+
+    def maintain(self, request, output_dir, *, cancel_event=None, lightweight=False, observation_seconds=0,
+                 capture_timings=True, verify_working_sets=False):
         report = self._report("maintain")
         if not self._begin(report, cancel_event):
             return report
         journal = session = operation = None
         interruptions = []
+        timings = StageTimings(self._monotonic) if capture_timings is True else None
+        measure = timings.measure if timings is not None else lambda name: nullcontext()
+        observations = {}
+        if timings is not None:
+            timings.mark("application_started")
         try:
-            self._check_cancel()
-            if type(lightweight) is not bool or (lightweight and not callable(getattr(self.reader, "open_memory_observation", None))):
-                raise ValueError("当前接入不支持所需的轻量内存快照")
-            if type(observation_seconds) is not int or not 0 <= observation_seconds <= 5:
-                raise ValueError("后续观察秒数必须为0至5的整数")
-            if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
-                raise ValueError("维护必须有明确确认及来源")
-            if request.scope not in self.capabilities.scopes:
-                raise ValueError("当前接入不提供该维护范围")
-            if request.mechanism not in self.capabilities.mechanisms:
-                raise ValueError("当前操作系统接入不提供该维护机制")
-            if output_dir is None or self.maintainer is None or self.reader is None:
-                raise ValueError("维护必须提供输出目录和接入")
-            if observation_seconds and (not lightweight or request.scope != "system" or request.mechanism != "working-set"):
-                raise ValueError("短时后续观察仅用于轻量系统工作集整理")
-            options = _options({"count": 2 + observation_seconds, "interval": 0, "output_dir": output_dir})
-            report.metadata["header"] = self._header(report, options)
-            report.metadata["header"]["mechanism"] = request.mechanism
-            if observation_seconds:
-                report.metadata["header"]["post_observation_seconds"] = observation_seconds
-                report.metadata["header"]["post_observation_interval_s"] = 1
-            if request.scope == "process":
-                report.metadata["header"].update(schema_version=2, scope="process", target={
-                    "pid": request.target.pid, "created_at": request.target.created_at, "name": request.target.name,
-                    **({"image_path": request.target.image_path} if request.target.image_path else {})})
-            report.metadata["header"]["observation_scope"] = "memory-only" if lightweight else "full"
-            journal = self._journal(report, options)
+            with measure("preparation"):
+                self._check_cancel()
+                if type(capture_timings) is not bool or type(verify_working_sets) is not bool:
+                    raise ValueError("计时与工作集核验选项必须为布尔值")
+                if type(lightweight) is not bool or (lightweight and not callable(getattr(self.reader, "open_memory_observation", None))):
+                    raise ValueError("当前接入不支持所需的轻量内存快照")
+                if type(observation_seconds) is not int or not 0 <= observation_seconds <= 5:
+                    raise ValueError("后续观察秒数必须为0至5的整数")
+                if not isinstance(request, ActionRequest) or not request.confirmed or not request.confirmation_source.strip():
+                    raise ValueError("维护必须有明确确认及来源")
+                if request.scope not in self.capabilities.scopes:
+                    raise ValueError("当前接入不提供该维护范围")
+                if request.mechanism not in self.capabilities.mechanisms:
+                    raise ValueError("当前操作系统接入不提供该维护机制")
+                if output_dir is None or self.maintainer is None or self.reader is None:
+                    raise ValueError("维护必须提供输出目录和接入")
+                if observation_seconds and (not lightweight or request.scope != "system" or request.mechanism != "working-set"):
+                    raise ValueError("短时后续观察仅用于轻量系统工作集整理")
+                if verify_working_sets and (request.scope != "system" or request.mechanism != "working-set"
+                        or not callable(getattr(self.reader, "process_targets", None))):
+                    raise ValueError("全局工作集核验需要显式工作集方式及进程只读能力")
+                options = _options({"count": 2 + observation_seconds, "interval": 0, "output_dir": output_dir})
+                report.metadata["header"] = self._header(report, options)
+                report.metadata["header"]["mechanism"] = request.mechanism
+                if observation_seconds:
+                    report.metadata["header"]["post_observation_seconds"] = observation_seconds
+                    report.metadata["header"]["post_observation_interval_s"] = 1
+                if request.scope == "process":
+                    report.metadata["header"].update(schema_version=2, scope="process", target={
+                        "pid": request.target.pid, "created_at": request.target.created_at, "name": request.target.name,
+                        **({"image_path": request.target.image_path} if request.target.image_path else {})})
+                report.metadata["header"]["observation_scope"] = "memory-only" if lightweight else "full"
+                report.metadata["header"]["verify_working_sets"] = verify_working_sets
+            if timings is not None:
+                timings.mark("header_ready", report.metadata["header"]["started_at"])
+            with measure("record_open"):
+                journal = self._journal(report, options)
+            if hasattr(journal, "timings"):
+                journal.timings = timings
             journal.append("samples", report.metadata["header"])
             operation = self.maintainer.open_operation(request)
+            if timings is not None and callable(getattr(operation, "set_timing", None)):
+                operation.set_timing(timings)
             report.phase = "preflight"
-            preflight = operation.preflight()
+            with measure("preflight"):
+                preflight = operation.preflight()
             report.metadata["preflight"] = preflight
             if not isinstance(preflight, dict) or any(preflight.get(k) is not True for k in
                                                      ("supported", "privilege_available", "lock_acquired")) or preflight.get("scope") != request.scope:
@@ -560,7 +607,11 @@ class Application:
             session = self.reader.open_memory_observation() if lightweight else self.reader.open_observation(with_processes=False, top=10)
             report.phase = "before"
             target_reader = operation.read_target if request.scope == "process" else None
-            before = self._read(session, report, journal, target_reader)
+            with measure("before_snapshot"):
+                before = self._read(session, report, journal, target_reader)
+            if verify_working_sets:
+                with measure("working_sets_before"):
+                    observations["before"] = self._working_sets()
             for block, key in (("physical", "available_bytes"), ("commit", "used_bytes"), ("commit", "limit_bytes")):
                 finite_number((before.metrics.get(block) or {}).get(key), f"{block}.{key}")
             journal.append("operation", {"record_type": "intent", "mechanism": request.mechanism,
@@ -576,7 +627,8 @@ class Application:
                                              "cancellation": "accepted_before_dispatch"})
                 return report
             try:
-                action = operation.perform_once()
+                with measure("operation"):
+                    action = operation.perform_once()
                 report.action = validate_action(action)
                 if report.action["call_outcome"] == "unknown":
                     self._unsafe = True
@@ -596,18 +648,24 @@ class Application:
             if self._unsafe:
                 return report
             report.phase = "after"
-            self._read(session, report, journal, target_reader)
+            with measure("after_snapshot"):
+                self._read(session, report, journal, target_reader)
+            if verify_working_sets:
+                with measure("working_sets_after"):
+                    observations["after"] = self._working_sets()
             if observation_seconds and report.action.get("call_outcome") == "success":
                 report.phase = "observing"
                 for _ in range(observation_seconds):
-                    if self._sleep is None:
-                        self._cancel.wait(1)
-                    else:
-                        self._sleep(1)
+                    with measure("observation_wait"):
+                        if self._sleep is None:
+                            self._cancel.wait(1)
+                        else:
+                            self._sleep(1)
                     if self._cancel.is_set():
                         self._error(report, "observing", ValueError("调用已返回，后续观察已停止；保留已有快照，未再次清理"), interruptions)
                         break
-                    self._read(session, report, journal, target_reader)
+                    with measure("observation_snapshot"):
+                        self._read(session, report, journal, target_reader)
             report.analysis = (analysis.cleanup_summary(report.samples, report.action, report.metadata["header"])
                                if lightweight else analysis.analyze(report.samples))
             journal.append("samples", {"record_type": "analysis", "analysis": report.analysis})
@@ -617,9 +675,14 @@ class Application:
             self._error(report, report.phase, error, interruptions)
         finally:
             report.phase = "closing"
-            self._close(session, report, interruptions)
-            self._close(operation, report, interruptions)
-            self._finish(report, journal, interruptions)
+            with measure("resource_close"):
+                self._close(session, report, interruptions)
+                self._close(operation, report, interruptions)
+            with measure("record_finalize"):
+                self._finish(report, journal, interruptions)
+            if timings is not None:
+                timings.mark("business_closed")
+            self._diagnostics(report, timings, observations)
             if interruptions:
                 raise interruptions[0]
         return report
@@ -654,6 +717,23 @@ class Application:
                 report.action = original["action"].copy()
             report.metadata = {k: original[k] for k in ("header", "terminal", "action")}
             report.metadata["source_gaps"] = original["gaps"]
+            if (original["header"] or {}).get("mode") == "maintain":
+                saved = None
+                try:
+                    if callable(getattr(self.records, "read_diagnostics", None)):
+                        saved = self.records.read_diagnostics(path)
+                    if saved is not None:
+                        verification.validate_attachment(saved, original["header"]["run_id"])
+                    report.metadata["diagnostics"] = verification.diagnostics(report.samples, original["header"],
+                        timing=saved.get("timing") if saved else None,
+                        working_sets=saved.get("working_sets") if saved else None,
+                        source="replay" if saved else "legacy_replay")
+                    if saved and saved.get("errors"):
+                        report.metadata["diagnostics"]["errors"] = saved["errors"]
+                except Exception as error:
+                    report.metadata["diagnostics"] = {"version": 1, "run_id": original["header"]["run_id"],
+                        "source": "invalid_attachment", "timing": None, "errors": [str(error)]}
+                    self._error(report, "diagnostics_read", error, interruptions)
             if conditions is not None and not isinstance(conditions, dict):
                 raise ValueError("conditions: 必须是对象")
             effective = conditions if conditions is not None else ((original["header"] or {}).get("parameters") or {}).get("conditions", {})

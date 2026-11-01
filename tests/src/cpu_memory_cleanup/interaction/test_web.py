@@ -229,6 +229,10 @@ class WebTests(unittest.TestCase):
         self.assertEqual(self.backend.actions, [])
         job = self.action({"kind": "cleanup", "confirmed": True})
         self.assertEqual(job["report"]["completion"], "success", job)
+        metadata = job["report"]["metadata"]
+        self.assertGreaterEqual(metadata["web_timing"]["accepted_to_report_ms"], 0)
+        self.assertIsNone(metadata["web_timing"]["ui_render_ms"])
+        self.assertIsNone(metadata["diagnostics"]["verification"]["native_call_ms"])
         self.assertEqual(len(job["report"]["samples"]), 2)
         self.assertNotIn("post_observation_seconds", job["report"]["metadata"]["header"])
         self.request("GET", "/api/job?id=" + job["id"])

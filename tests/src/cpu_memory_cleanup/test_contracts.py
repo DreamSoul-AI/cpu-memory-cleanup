@@ -1,6 +1,46 @@
 import unittest
+from cpu_memory_cleanup.contracts import StageTimings
+from tests.fixtures import FakeMonotonic
 
 from cpu_memory_cleanup.contracts import ActionRequest, Capabilities, Sample, validate_action
+
+
+class TimingTests(unittest.TestCase):
+    def test_nested_stages_are_inclusive_and_events_share_the_run_clock(self):
+        clock = FakeMonotonic()
+        timing = StageTimings(clock)
+        with timing.measure("operation"):
+            clock.advance_ms(20)
+            with timing.measure("native_call"):
+                clock.advance_ms(100)
+            timing.mark("native_returned")
+            clock.advance_ms(30)
+        value = timing.snapshot()
+        self.assertAlmostEqual(value["stages"][0]["duration_ms"], 150)
+        self.assertAlmostEqual(value["stages"][1]["duration_ms"], 100)
+        self.assertEqual(value["stages"][1]["parent"], "operation")
+        self.assertAlmostEqual(value["events"][0]["offset_ms"], 120)
+
+    def test_interrupted_stage_keeps_elapsed_time_and_exception(self):
+        clock = FakeMonotonic()
+        timing = StageTimings(clock)
+        with self.assertRaisesRegex(OSError, "native"):
+            with timing.measure("native_call"):
+                clock.advance_ms(40)
+                raise OSError("native")
+        self.assertEqual(timing.stages[0]["status"], "interrupted")
+        self.assertAlmostEqual(timing.stages[0]["duration_ms"], 40)
+
+    def test_clock_failure_keeps_measurement_unknown_without_skipping_cleanup(self):
+        calls = []
+        def broken():
+            raise ValueError("clock")
+        timing = StageTimings(broken)
+        with timing.measure("permission_restore"):
+            calls.append("restored")
+        self.assertEqual(calls, ["restored"])
+        self.assertIsNone(timing.stages[0]["duration_ms"])
+        self.assertTrue(timing.snapshot()["errors"])
 
 
 class ContractTests(unittest.TestCase):

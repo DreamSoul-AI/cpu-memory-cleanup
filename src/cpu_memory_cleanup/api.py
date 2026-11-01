@@ -12,7 +12,7 @@ __all__ = ["API_VERSION", "create_application", "ActionRequest", "Capabilities",
 
 
 def create_application(*, offline=False, reader=None, maintainer=None,
-                       capabilities=None, records=None, runtime=None):
+                       capabilities=None, records=None, runtime=None, monotonic=None):
     """创建独立应用；offline 仅装配记录回看，注入能力时不选择真实平台。"""
     if type(offline) is not bool:
         raise ValueError("offline 必须是布尔值")
@@ -25,7 +25,7 @@ def create_application(*, offline=False, reader=None, maintainer=None,
         reader = maintainer = backend
     app = Application(reader, maintainer, capabilities=capabilities,
                       records=RecordStore() if records is None else records,
-                      runtime=Runtime() if runtime is None else runtime)
+                      runtime=Runtime() if runtime is None else runtime, monotonic=monotonic)
     def preferences_factory(path):
         from .system.preferences import Preferences
         from .application.settings import validate_preferences

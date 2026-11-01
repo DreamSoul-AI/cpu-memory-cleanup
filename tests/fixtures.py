@@ -18,6 +18,18 @@ class FakeRuntime:
         logging.getLogger("cpu_memory_cleanup").warning(event["event"])
 
 
+class FakeMonotonic:
+    """显式推进阶段耗时，不睡眠也不使用主机指标。"""
+    def __init__(self):
+        self.seconds = 0.0
+
+    def __call__(self):
+        return self.seconds
+
+    def advance_ms(self, milliseconds):
+        self.seconds += milliseconds / 1000
+
+
 def create_application(*args, **kwargs):
     kwargs.setdefault("records", RecordStore())
     kwargs.setdefault("runtime", FakeRuntime())
