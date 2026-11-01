@@ -4,6 +4,42 @@ from cpu_memory_cleanup.contracts import RunReport, Sample
 from cpu_memory_cleanup.interaction.presentation import summary
 
 class PresentationTests(unittest.TestCase):
+    def partial_sweep_report(self):
+        return RunReport("run", "maintain", completion="partial",
+            action={"attempted": True, "call_outcome": "failure", "status": 5, "privilege_restored": True,
+                "process_sweep": {"successful_count": 692, "failed_count": 7, "skipped_count": 10,
+                    "unknown_count": 0, "resources_closed": True}},
+            samples=[Sample("run", i, None, {"physical": {"available_bytes": v * 1024**3}})
+                for i, v in enumerate((14, 20))],
+            errors=[{"phase": "calling", "message": "维护或恢复存在错误，见动作事实"}],
+            metadata={"terminal": {"completion": "partial", "sample_count": 2, "errors": [{"phase": "calling"}]}})
+
+    def test_completed_partial_sweep_keeps_real_delta_and_failed_counts(self):
+        report = self.partial_sweep_report()
+        original = report.to_dict()
+        view = summary(report)
+        self.assertEqual(view["title"], "部分完成 · 可用内存增加 6.00 GiB")
+        self.assertIn("逐进程成功692、跳过10、失败7", view["note"])
+        self.assertIn("原生错误保留", view["note"])
+        self.assertEqual(report.to_dict(), original)
+
+    def test_partial_sweep_replay_uses_same_summary_without_hiding_source_gaps(self):
+        report = self.partial_sweep_report()
+        report.mode = "review"
+        report.errors = [{"phase": "source", "message": "原运行条件或结果不完整"}]
+        report.metadata["source_gaps"] = ["维护运行未完整成功或恢复未确认", "运行未完整成功"]
+        self.assertIn("部分完成 · 可用内存增加", summary(report)["title"])
+        report.metadata["source_gaps"].append("缺样或重复序号")
+        self.assertNotIn("可用内存增加", summary(report)["title"])
+
+    def test_unconfirmed_sweep_close_does_not_use_completed_partial_summary(self):
+        report = self.partial_sweep_report()
+        report.action["process_sweep"]["resources_closed"] = False
+        self.assertNotIn("可用内存增加", summary(report)["title"])
+        report.action["process_sweep"]["resources_closed"] = True
+        report.action["process_sweep"]["unknown_count"] = 1
+        self.assertNotIn("可用内存增加", summary(report)["title"])
+
     def test_sweep_reports_coverage_separately_from_capacity_change(self):
         report = RunReport("run", "maintain", completion="success",
             action={"attempted": True, "call_outcome": "success", "process_sweep": {
