@@ -426,3 +426,17 @@ Application.memory_cleanup与maintain增加可选observation_seconds（整数0�
 当前实现使用metadata.diagnostics，包含timing、working_sets原观察及verification派生核验。memory_cleanup的capture_timings默认true，verify_working_sets默认false；后者仅Package显式开启，不改网页请求或CLI目录。内存时间轴给出window_started_at/window_ended_at、样本间隔、首次观测增加及回升。原生返回事件与business_closed采用运行内单调偏移，不把无UTC的事件伪造成精确墙钟时刻。真实界面显示时刻没有新增测量。
 
 测试保持源码镜像：现有contracts、core、records和Windows测试补分段及兼容用例，新增application/test_verification.py验证进程身份、覆盖缺口、下降/回升时间轴及旧记录未知字段。合成计时可明确制造原生慢、权限慢或写盘慢，证明分段位置。所有原生能力均用替身，既有真实记录仅离线回读。
+
+# 十七、同目标比较与独立观察的源码映射
+对应 [架构第十五章](<架构设计 Architecture Design CPU 内存清理.md#十五同目标工作集比较的职责与流程>)，复用既有包，不新增产品层或实验服务。
+
+| **位置** | **职责与约束** |
+| --- | --- |
+| system/platforms/windows.py | WindowsBackend内部装配可选择单目标原生方法，默认EmptyWorkingSet，传给现有TargetSession。全局命令及API选择不变 |
+| system/platforms/windows_process.py | TargetSession保留相同句柄权限、创建身份/路径核验与一次派发。内部候选使用SetProcessWorkingSetSize及两个指针宽度的全1值，动作记录保留native_method |
+| application/core.py | 动作意图保留系统前置检查提供的原生方法标识，不扩展公共请求字段或工具目录 |
+| application/verification.py | 纯数据提取逐项计时/窗口并汇总批次，不采样、不整理、不累加工作集差额。旧记录缺项保持未知 |
+| application/batch.py | 继续调用同一单目标Package流程，追加每项诊断证据。批次关闭后复用RecordStore独立diagnostics.json保存整批计时；回看按子运行重建摘要 |
+| application/experiments.py | 新增内部MemoryObserver，仅接收读取回调、采样预算和单调时钟。上下文负责观察线程收尾，返回原始样本、偏移、错误及标记，不持有维护能力，不自动运行真实实验 |
+
+测试镜像在对应test_windows_process.py、test_batch.py、test_verification.py及新增test_experiments.py，依照共用测试规范登记局部清单。Package公共创建/动作参数和API_VERSION不变，不增加CLI、Tool或HTTP方法。固定负载及真实比较的入口另按执行范围准备，不能以内部装配选项冒充已切换默认或已提速。
