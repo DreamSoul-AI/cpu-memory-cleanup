@@ -19,14 +19,29 @@ test('observations retarget one continuous position without starting a second fr
   p.tick(116);assert.ok(p.model.value<current&&p.model.value>10);
   p.tick(1200);assert.equal(p.model.value,10);assert.equal(p.frames.size,0);
 });
-test('rebound accepts a newer target without a jump or resetting its deadline',async()=>{
+test('rebound only lowers its cycle target and uses target/15 per 20ms step',async()=>{
   const p=display();p.model.update(40);p.model.refresh=async()=>35;p.model.start();p.tick(750);
   for(let i=0;i<4;i++)await Promise.resolve();
-  p.tick(850);const position=p.model.value;assert.ok(position>0&&position<35);
-  p.model.update(26,{timestamp:'new',source:'live'});
-  assert.equal(p.model.value,position);assert.equal(p.model.deadline,1050);
-  assert.equal(p.model.targetSample.timestamp,'new');
-  p.tick(1050);assert.equal(p.model.value,26);assert.equal(p.model.phase,null);
+  p.tick(770);assert.equal(p.model.value,35/15);
+  const position=p.model.value;p.model.update(26,{timestamp:'new',source:'live'});
+  assert.equal(p.model.value,position);assert.equal(p.model.step,26/15);
+  p.model.update(38);assert.equal(p.model.target,26);assert.equal(p.model.actual,38);
+  p.tick(790);assert.ok(Math.abs(p.model.value-position-26/15)<1e-9);
+  for(let time=810;time<=1150;time+=20)p.tick(time);
+  assert.equal(p.model.phase,null);assert.ok(p.model.value>=26);
+});
+test('lower target late in rebound does not accelerate to an old deadline',async()=>{
+  const p=display();p.model.update(40);p.model.refresh=async()=>35;p.model.start();p.tick(750);
+  for(let i=0;i<4;i++)await Promise.resolve();
+  for(let time=770;time<=990;time+=20)p.tick(time);
+  const position=p.model.value;p.model.update(26);
+  assert.equal(p.model.value,position);assert.equal(p.model.step,26/15);
+  p.tick(1010);assert.equal(p.model.value,26);assert.equal(p.model.phase,null);
+});
+test('new visual cycle does not inherit the previous minimum',async()=>{
+  const p=display();p.model.update(40);p.model.refresh=async()=>20;p.model.start();p.tick(750);
+  for(let i=0;i<4;i++)await Promise.resolve();
+  p.model.update(60);p.model.begin();p.model.start();assert.equal(p.model.target,60);
 });
 test('business hold preserves the displayed origin while actual readings continue',()=>{
   const p=display();p.model.update(40);p.model.begin();p.model.update(26);p.tick(5000);

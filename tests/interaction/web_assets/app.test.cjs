@@ -132,9 +132,9 @@ test('descent requests one fresh reading at zero then rebounds immediately',asyn
  p.tick(750);assert.equal(p.elements.percent.textContent,'0%');
  await p.run('Promise.resolve()');await p.run('Promise.resolve()');
  assert.equal(p.run('refreshCount'),1);assert.equal(p.run('decoration.phase'),'returning');
- p.run(`memory(${snapshot(75)})`);p.tick(900);
- assert.equal(p.elements.percent.textContent,'13%');
- p.tick(1050);assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'25%');
+ p.run(`memory(${snapshot(75)})`);for(let time=770;time<=890;time+=20)p.tick(time);
+ assert.equal(p.elements.percent.textContent,'12%');
+ for(let time=910;time<=1050;time+=20)p.tick(time);assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'25%');
 });
 test('failed report never supplies successful rebound signal',async()=>{
  const p=page();p.elements['decoration-enabled'].checked=true;
@@ -197,7 +197,7 @@ test('business finishes before descent and zero triggers only a readonly refresh
  assert.equal(p.run('decoration.phase'),'returning');
  assert.equal(p.run('requests.filter(path=>path==="/api/display").length'),1);
  assert.equal(p.run('requests.filter(path=>path==="/api/action").length'),1);
- p.tick(6050);assert.equal(p.elements.percent.textContent,'25%');assert.equal(p.run('decoration.phase'),null);
+ for(let time=5770;time<=6050;time+=20)p.tick(time);assert.equal(p.elements.percent.textContent,'25%');assert.equal(p.run('decoration.phase'),null);
  assert.equal(p.elements['recent-title'].textContent,'真实结果');
 });
 
@@ -207,7 +207,7 @@ test('changing live readings do not add a stability wait before rebound',async()
  p.tick(500);p.run(`memory(${snapshot(75)})`);
  p.tick(750);await p.run('Promise.resolve()');await p.run('Promise.resolve()');
  assert.equal(p.run('decoration.phase'),'returning');assert.equal(p.run('decoration.target'),20);
- p.tick(1050);assert.equal(p.run('decoration.phase'),null);
+ for(let time=770;time<=1070;time+=20)p.tick(time);assert.equal(p.run('decoration.phase'),null);
 });
 
 test('refresh failure preserves completed report and last actual value',async()=>{
