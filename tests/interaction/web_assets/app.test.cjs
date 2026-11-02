@@ -28,6 +28,15 @@ function page(reduced = false) {
 }
 const snapshot = available => `({samples:[{metrics:{physical:{total_bytes:100,available_bytes:${available}},commit:{used_bytes:10,limit_bytes:200}}}]})`;
 
+test('zero refresh waits for an in-flight read then requests a fresh sample without overlap',async()=>{
+  const p=page();p.run(`var resolveRead,calls=0;api=()=>{calls++;return new Promise(resolve=>resolveRead=resolve)};
+    var live=readDisplay(),fresh=readDisplay(true);`);
+  assert.equal(p.run('calls'),1);
+  p.run('resolveRead({id:1})');await p.run('live');await p.run('Promise.resolve()');
+  assert.equal(p.run('calls'),2);
+  p.run('resolveRead({id:2})');const result=await p.run('fresh');assert.equal(result.id,2);
+});
+
 test('25/75 occupancy updates actual ring, number and accessible bar together',()=>{
   const p=page();
   let time=0;

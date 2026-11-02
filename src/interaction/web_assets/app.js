@@ -136,6 +136,7 @@ function memory(report,source="live"){
   if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
   latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
   paintMemory(latestMemory,{timestamp:sample.timestamp??null,source,received:performance.now()});
+  if(flowStarted!=null&&(busy||decoration.phase))recordFlow("sample");
 }
 let displayRequest=null;
 async function readDisplay(fresh=false){
