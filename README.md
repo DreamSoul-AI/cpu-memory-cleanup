@@ -6,7 +6,7 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 ## 当前状态
 
-当前源码版本 **v0.4.0**。Rust 库、CLI、网页和工作集整理已贯通，最终 Windows 包已完成本机真实验收。GitHub 交付状态以 [v0.4.0 Release](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.4.0) 为准，不发布 PyPI 或 crates.io。历史 v0.2.0 和 Pages 静态演示保留各自版本。
+当前源码版本 **v0.4.0**。Rust 库、CLI、网页和工作集整理已贯通，最终 Windows 包已完成本机真实验收。已发布 [v0.4.0 Release](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.4.0)，附 Windows ZIP 和 SHA256 校验文件，不发布 PyPI 或 crates.io。历史 v0.2.0 和 Pages 静态演示保留各自版本。
 
 下载 Windows ZIP 后完整解压，双击 scripts/memory-cleanup.cmd，无需安装 Rust、Node 或 Python。请保留包内目录结构。
 
