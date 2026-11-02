@@ -27,7 +27,8 @@ src/
         ├── index.html        紧凑主区与折叠详情
         ├── styles.css        环形、绿色按钮和响应式布局
         ├── app.js            用户事件、实时刷新、业务结果和视觉协调
-        └── memory-display.js 统一实时追踪与独立动效，不持有清理能力
+        ├── memory-display.js 比例插值与绘制，不持有时钟或请求
+        └── cleanup-flow.js   实时、保持起点、归零及动态回弹流程
 ```
 
 模块按职责划分，避免HTTP、CLI各自实现一次清理。`contracts`仅保存跨模块事实；运行标识使用系统随机源，不触发内存采样。系统接口位于接入边界，`Application::new`可注入隔离实现，默认工厂选择真实平台。
@@ -63,7 +64,7 @@ src/
 
 # 五、测试和交付映射
 
-`tests/rust/application.rs`核对公共合同、隔离调用次数、记录阻断/回看、保护与压力规则；`tests/rust/web.rs`核对HTTP会话、启动无副作用、明确目标、维护中读取、互斥和摘要/完整报告。测试System不连接Win32，测试文件仅写自己的临时目录。`tests/system/measurement.rs`核对阶段、分位和旧记录覆盖；`tests/interaction/web_assets/memory-display.test.cjs`核对连续显示与固定回弹目标；`tests/interaction/web_assets/app.test.cjs`核对业务与视觉分离、回弹刷新及旧回复隔离。
+`tests/rust/application.rs`核对公共合同、隔离调用次数、记录阻断/回看、保护与压力规则；`tests/rust/web.rs`核对HTTP会话、启动无副作用、明确目标、维护中读取、互斥和摘要/完整报告。测试System不连接Win32，测试文件仅写自己的临时目录。`tests/system/measurement.rs`核对阶段、分位和旧记录覆盖；`tests/interaction/web_assets/memory-display.test.cjs`核对纯绘制，`cleanup-flow.test.cjs`核对保持、动态回弹与交接；`tests/interaction/web_assets/app.test.cjs`核对业务与视觉分离、回弹刷新及旧回复隔离。
 
 Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证，不把legacy、工具链或运行证据装入crate。`scripts/build.ps1`与run-tests.ps1复用rust-environment.ps1；正式入口为memory-cleanup.cmd→memory-cleanup.exe→同一Rust库；保留独立控制台CLI cpu-memory-cleanup.exe。旧manifest执行器和Tk脚本归档，未重跑旧测试，不把原571项验收改称Rust覆盖。
 
@@ -75,7 +76,7 @@ Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证�
 # 七、流畅显示与阶段计量的源码映射
 本节对应架构第七章和UX-01/02、NATIVE-01，已按本次代码与验收落地。NATIVE-02 后续实施见第八章，NATIVE-03 未实施。
 
-- interaction/web_assets/memory-display.js：纯显示驱动，拥有实时追踪、下降、刷新、回弹及连续交接，一个RAF持有者写入统一显示比例。替代cleanup-effect.js，既不发送维护也不计算业务收益
+- interaction/web_assets/memory-display.js：纯位置计算与绘制。cleanup-flow.js拥有实时追踪、保持起点、下降、刷新、动态回弹和连续交接，一个RAF持有者写入统一比例，既不发送维护也不计算业务收益
 - interaction/web_assets/app.js：保留真实快照、样本时间、报告与用户请求，原始容量立即呈现。显示驱动只接收比例及归零后的只读刷新回调。250毫秒轻量读取不重叠，保留有界请求/帧诊断供验收。主操作通过目标范围容器的disabled状态改变控件，不重建进程列表
 - interaction/web_assets/index.html、styles.css：细条使用单次scaleX显示，去除width的CSS叠加缓动，百分比等宽数字及固定占位。目标列表用fieldset统一忙碌状态，原始结果详情增加阶段/分布说明
 - system/measurement.rs：共享的阶段计时与纯分布汇总，返回版本化数据，统计总样本、P50/P95/P99、最大值和前20项，不查询应用名称或系统指标
@@ -102,11 +103,11 @@ feature 关闭与打开均通过格式、严格 Clippy 和 Cargo 检查，两种
 `examples/workingset-compare.rs` 是独立开发入口，静态计划与离线比较不读系统。仅显式开启会话后分配预算内负载与真实读取，每次原生动作还需单独输入方法确认。该入口不进入网页、六工具目录或规则。`tests/application/comparison.rs` 验证门控、证据、只读比较和受控负载内容，系统接入使用隔离实现。Cargo 包包含例程及对应测试源，构建不运行维护。
 
 # 十、圆环显示流程的重新划分
-状态：修正设计，尚未改源码，承接架构第十章。先明确职责，不为了目录层级创建空模块。
+状态：按架构第十章实施完成，主体实现94be940、样本时间线及读取回归f7b8aad，已做一次真实网页验收。
 
 - app.js 保留业务请求、原始结果与采样接入，开始/结束发出流程事件，不直接决定下降或回弹数值
 - memory-display.js 负责比例绘制节奏与插值，只接受明确的显示指令。实时目标和动效目标不得同时争用圆环
-- 拟提取 cleanup-flow.js，拥有实时、保持起点、下降、零位刷新、回弹及结束交接，持有周期标识。后台采样只更新原始状态，执行期间不得驱动圆环；容量数字照常更新
+- 已提取 cleanup-flow.js，拥有实时、保持起点、下降、零位刷新、回弹及结束交接，持有周期标识。后台采样只更新原始状态，执行期间不得驱动圆环；容量数字照常更新
 - 零位刷新与常规读取在同一读取协调入口管理，保留样本身份/时序，不把另一份未标识快照当作本次刷新结果。动作终态与显示终态独立
 - tests/interaction/web_assets/ 对应新增流程测试：点击后后台读数下降但圆环保持起点、只播一次下降、回弹目标来源可定位、旧回复不接管新周期、原始结果立即出现且一次派发
 
