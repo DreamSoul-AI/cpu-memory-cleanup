@@ -29,13 +29,17 @@
 
 报告含run_id、mode、completion、phase、samples、analysis、action、errors、metadata和output_dir。物理量单位bytes；analysis.available_change_bytes是原始前后系统可用量差额，不是独占释放量或提速比例。action.process_sweep保存覆盖、返回、未知、关闭状态和有界明细；跳过与失败不是成功。整体非success仍可能已经发生维护，宿主不得自动重试。
 
+新整理的 `action.process_sweep.timing.strategy` 和 `identity_scope` 标明策略及身份覆盖。最小权限全局候选的逐项 `created_at` 为 null，不可按 PID 跨运行关联或补查回填。旧记录缺项不推定候选身份。
+
 新记录为版本3的report.json，另有版本1的timing.json计时附件。附件保存同一运行的最终写盘时长，回看校验身份与版本后合并，原记录缺少阶段仍保持未知。metadata.native_summary给出已覆盖调用数、分位和最慢项，完整分布与截断覆盖分别标明。维护仍不自动重试。report.json流程为：动作前先写calling/unknown意图，动作后保存原始事实，再封存。memory_result只接受已封存记录，支持新文件及既有samples.jsonl、operation.jsonl与可选diagnostics.json。回看使用新run_id，metadata.source_run_id指原运行；不回写原件。旧Python批次索引、CPU分析等格式不在本轮兼容承诺内。
 
 六个工具名称及目录版本保留，Python模块导入API、旧CLI其他选项和Python发行方式已不兼容，不能只按名称推断全部合同相同。当前未提供MCP、远程RPC或特定Agent平台注册器。
 
 # 四、Rust同进程接入
 
-通过本仓库Cargo库引用 `cpu_memory_cleanup::{Application, Target}`。Application::default选择实际系统，Application::new接受System隔离实现，构造本身不读取。公开方法为memory_status、memory_targets、memory_cleanup、memory_process_cleanup、memory_batch_cleanup及memory_result，维护传记录基目录、明确确认和取消标志。HTTP调用同一库，不经过CLI子进程。
+通过本仓库Cargo库引用 `cpu_memory_cleanup::{Application, Target}`。Application::default选择实际系统，Application::new接受System隔离实现，构造本身不读取。Windows 开发对照可显式启用 Cargo feature `experimental-quota`，调用 `system::windows::quota_only_global_candidate()` 并注入 `Application::new`。构造不读取或维护，只有全局路径省略查询，明确目标仍核验创建身份和可选路径。仅启用 feature 不会改变默认工厂、CLI、HTTP 或规则装配，没有新增工具或网页模式。候选未做真实性能/覆盖比较，不建议其他宿主据此切换默认。
+
+公开方法为memory_status、memory_targets、memory_cleanup、memory_process_cleanup、memory_batch_cleanup及memory_result，维护传记录基目录、明确确认和取消标志。HTTP调用同一库，不经过CLI子进程。
 
 # 五、验证与采用限制
 

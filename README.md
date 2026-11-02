@@ -32,6 +32,7 @@ cargo build --release --locked
 | --- | --- |
 | 真实物理容量与提交量 | Win32读取，未知或错误不补零；显示与整理任务独立 |
 | 全局工作集整理 | 一轮枚举，对可访问进程调用 `SetProcessWorkingSetSize(-1,-1)`，关闭句柄；不结束应用 |
+| 全局最小权限开发候选 | 非默认 `experimental-quota` feature，显式库装配才选择；隔离验证完成，未实机比较，不接管绿色按钮 |
 | 选定进程和批次 | PID＋创建身份核验，支持路径/实例保护；全局整理不应用保护名单 |
 | 记录与回看 | 新版 `report.json`，维护前保存意图、维护后保存事实；只读兼容既有 JSONL/诊断记录 |
 | Package、CLI/Tool、HTTP | 共用 Rust `Application`，六个工具见接入指南 |
@@ -66,7 +67,11 @@ Python导入API已发生不兼容变化；需要旧版时使用原版本或 [历
 ./scripts/run-tests.ps1
 ```
 
-独立检查分别为 `cargo fmt --all -- --check`、`cargo clippy --all-targets --locked -- -D warnings`、`cargo test --all-targets --locked` 和 `node --test tests/interaction/web_assets/app.test.cjs tests/interaction/web_assets/memory-display.test.cjs`。统一脚本检查Rust格式、严格Clippy、Cargo测试及网页Node检查，需Rust开发工具和Node；统一脚本在允许本地脚本的PowerShell环境执行。Windows PowerShell策略禁止脚本时，可直接使用Cargo命令与Node检查，无需修改系统策略。本轮15项Rust检查、26项正式网页JS检查通过，测试隔离系统副作用；这些检查不执行真实清理，也不代替实机效果证据。原生与业务分段计时、全量调用分布及最终写盘计时附件已接入；旧真实记录只读回看可重算已覆盖分布，缺失阶段保留未知。只读页面与已有记录验收见 [流畅显示与计时记录](<docs/运行记录 Run Record/2026-11-02 流畅显示与计时验收.md>)。旧Python树状manifest保留在归档，不再参与当前测试发现。当前未配置GitHub CI，不把本地通过称为CI通过。
+独立检查分别为 `cargo fmt --all -- --check`、`cargo clippy --all-targets --locked -- -D warnings`、`cargo test --lib --test '*' --locked` 和 `node --test tests/interaction/web_assets/app.test.cjs tests/interaction/web_assets/memory-display.test.cjs`。统一脚本检查 Rust 格式、默认和候选配置的严格 Clippy、库及全部集成测试，以及网页 Node 检查。无测试用例的 GUI 启动器只检查编译，不执行空测试程序。需要 Rust 开发工具和 Node。统一脚本在允许本地脚本的PowerShell环境执行。Windows PowerShell策略禁止脚本时，可直接使用Cargo命令与Node检查，无需修改系统策略。
+
+默认与 `experimental-quota` 两种配置各25项 Rust 检查、26项正式网页 JS 检查通过，测试隔离系统副作用；这些检查不执行真实清理，也不代替实机效果证据。原生与业务分段计时、全量调用分布及最终写盘计时附件已接入；旧真实记录只读回看可重算已覆盖分布，缺失阶段保留未知。只读页面与已有记录验收见 [流畅显示与计时记录](<docs/运行记录 Run Record/2026-11-02 流畅显示与计时验收.md>)。全局最小权限候选的合同、隔离验证及未覆盖范围见 [候选验收](<docs/运行记录 Run Record/2026-11-02 最小权限串行候选验收.md>)。
+
+旧Python树状manifest保留在归档，不再参与当前测试发现。当前未配置GitHub CI，不把本地通过称为CI通过。
 
 ## 文件与文档入口
 

@@ -749,7 +749,7 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 | 结果核对 | 该循环未检查每项裁剪BOOL，枚举完成可返回1 | 保存成功/失败/跳过/关闭与前后快照 | 不能用对方函数“返回完成”证明覆盖和效果相同，也不删本项目错误事实制造快感 |
 | 显示 | 整理后下降，到零请求更新，保存目标后回弹 | 主要顺序相同，浏览器另外持续显示读数 | 零位停留不能代表360全部整理耗时 |
 
-最小权限与裁剪参数由 [Microsoft SetProcessWorkingSetSize](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize) 核对。用户提供的360结果截图显示关闭0个程序，不能把该次更快感受归因于结束应用。当前缺少同负载、同目标覆盖、相同起点的360计时，尚不能断言它用相同工作量比本工具少几秒。
+2026年11月2日继续核对官方合同：裁剪句柄需要 `PROCESS_SET_QUOTA`，两个 -1 表示尽可能移出工作集，BOOL 和错误码仍须检查。最小权限与裁剪参数由 [Microsoft SetProcessWorkingSetSize](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize) 核对。用户提供的360结果截图显示关闭0个程序，不能把该次更快感受归因于结束应用。当前缺少同负载、同目标覆盖、相同起点的360计时，尚不能断言它用相同工作量比本工具少几秒。
 
 同类源码也不能提供“换 Rust 即瞬间完成”的证据。固定 WinMemClean 的进程分支也是逐项EmptyWorkingSet；没有排除时转全局NT工作集命令。固定 WinMemoryCleaner 同样区分逐进程排除与全局NT两条路径。这些是权限、范围和核验合同不同的策略，不能把一个全局调用或较少目标当同工作量对照，也不作为当前绿色按钮替换决定。[WinMemClean进程实现](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs)、[WinMemClean策略分支](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs)、[WinMemoryCleaner策略实现](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs)
 
@@ -771,6 +771,6 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 
 原生侧先补完整的逐阶段与长尾摘要，再设计贴近360的全局最小权限串行候选。它可能减少查询和访问差异，但不承诺把3秒变成1秒；定向身份和保护不能削弱。若同范围原生调用仍占主要耗时，才评估内部最多2项并发的受控对照准备，保留串行为基线。360已追循环本身没有并发，不能把此候选称为复原360。并发的原生时间合计与墙钟必须分开，可能受系统争用和重新驻留影响，未经真实对照不进入默认按钮。
 
-本轮UX-01/02与NATIVE-01已实施，并用既有真实记录和真实只读页面验收，见 [流畅显示与计时验收](<运行记录 Run Record/2026-11-02 流畅显示与计时验收.md>)。这不构成新的原生速度或真实清理后动效证据，NATIVE-02/03仍是后续候选。当前不转NT全局清理，不减少覆盖、跳过慢目标、结束应用、提前报完成或循环重试。后续真实对照须另有执行范围；该次复核只形成调研与计划，后续实施状态见 [开发计划](<开发计划 Development Plan CPU 内存清理.md#三下一轮先把百分比和点击做顺>)。
+本轮UX-01/02与NATIVE-01已实施，并用既有真实记录和真实只读页面验收，见 [流畅显示与计时验收](<运行记录 Run Record/2026-11-02 流畅显示与计时验收.md>)。这不构成新的原生速度或真实清理后动效证据，NATIVE-02 的后续隔离实现见 [最小权限候选验收](<运行记录 Run Record/2026-11-02 最小权限串行候选验收.md>)，它未进入默认按钮或取得实机速度证据；NATIVE-03 仍为条件研究。当前不转NT全局清理，不减少覆盖、跳过慢目标、结束应用、提前报完成或循环重试。后续真实对照须另有执行范围；该次复核只形成调研与计划，后续实施状态见 [开发计划](<开发计划 Development Plan CPU 内存清理.md#三下一轮先把百分比和点击做顺>)。
 
 本节来源访问日期为2026年11月2日。GitHub采用既有固定提交缓存并复核哈希，不声称读取远端最新版本；360为静态机器码与资源证据，未运行对方程序；Microsoft、MDN和web.dev为本轮阅读的官方/维护方文档，滚动页面无本轮源码性能实测含义。
