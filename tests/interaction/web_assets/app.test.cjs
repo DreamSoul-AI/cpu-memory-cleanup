@@ -21,6 +21,7 @@ function page(reduced = false) {
     requestAnimationFrame(fn){frames.set(++next,fn);return next;},cancelAnimationFrame(id){frames.delete(id);},
     AbortSignal,setTimeout(){return 0;},clearTimeout(){},fetch:()=>new Promise(()=>{})});
   vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../src/interaction/web_assets/memory-display.js"),"utf8"),context);
+  vm.runInContext(fs.readFileSync(path.join(__dirname,"../../../src/interaction/web_assets/cleanup-flow.js"),"utf8"),context);
   vm.runInContext(source,context);
   vm.runInContext("var originalYieldForPaint=yieldForPaint;yieldForPaint=async()=>{}",context);
   return {elements,run:s=>vm.runInContext(s,context),tick(time){clock=time;for(const id of [...frames.keys()]){const fn=frames.get(id);frames.delete(id);if(fn)fn(time);}},frames};
@@ -175,7 +176,7 @@ test('business finishes before descent and zero triggers only a readonly refresh
   api=async (path,body,options)=>{requests.push(path);if(path==='/api/action')return {id:'one'};if(path==='/api/display')return {completion:'success',...${snapshot(75)}};return pending;};
   memory(${snapshot(60)});var running=run({kind:'cleanup',mechanism:'working-set'});`);
  await p.run('Promise.resolve()');p.tick(5000);
- assert.equal(p.run('decoration.phase'),null);assert.equal(p.elements.percent.textContent,'40%');
+ assert.equal(p.run('decoration.phase'),'working');assert.equal(p.elements.percent.textContent,'40%');
  assert.equal(p.elements['global-clean'].disabled,true);
  p.run(`complete({kind:'cleanup',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'真实结果',note:'原报告',context:'记录'}})`);
  await p.run('running');

@@ -14,5 +14,5 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $taskCargo test --lib --test '*' --features experimental-quota --locked
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-node --test tests/interaction/web_assets/app.test.cjs tests/interaction/web_assets/memory-display.test.cjs
+node --test tests/interaction/web_assets/app.test.cjs tests/interaction/web_assets/memory-display.test.cjs tests/interaction/web_assets/cleanup-flow.test.cjs
 exit $LASTEXITCODE

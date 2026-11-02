@@ -11,15 +11,15 @@ function paintGauge(value,label){
   if(value!=null)el("meter").setAttribute("aria-valuenow",String(Math.round(value)));else el("meter").removeAttribute("aria-valuenow");
   el("meter").setAttribute("aria-label",label);
 }
-const decoration=new MemoryDisplay((value,phase)=>{
+const decoration=new CleanupFlow((value,phase)=>{
   if(phase!==lastEffectPhase){lastEffectPhase=phase;recordFlow(phase);}
-  paintGauge(value,{emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:"物理内存占用"}[phase]);
+  paintGauge(value,{working:"正在整理 · 后台持续读取",emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:"物理内存占用"}[phase]);
 },refreshForRebound,()=>reducedMotion.matches);
 let latestMemory=null,latestMemoryAt=null;
 let fullReportUrl=null,flowStarted=null,flowEvents=[],flowFrame=null,lastEffectPhase=null;
 function recordFlow(phase){
   if(flowStarted==null)return;
-  flowEvents.push({phase,ms:performance.now()-flowStarted,actual:occupancy(latestMemory)});
+  flowEvents.push({phase,ms:performance.now()-flowStarted,actual:occupancy(latestMemory),displayed:decoration.value,target:decoration.target??null,targetSample:decoration.targetSample??null});
   el("gauge").setAttribute("data-flow",JSON.stringify(flowEvents));
 }
 function beginFlow(){
@@ -33,7 +33,8 @@ async function yieldForPaint(){await new Promise(resolve=>requestAnimationFrame(
 function notifyDecoration(kind){
   try{
     if(!decoration)return;
-    if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start();
+    if(kind==="begin"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.begin();
+    else if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start();
     else if(kind==="stop")decoration.stop();
   }catch(_){paintGauge(occupancy(latestMemory),"物理内存占用");}
 }
@@ -119,22 +120,28 @@ function renderRows() {
   count();
 }
 function count(){el("selection-count").textContent=`${rows.length} 个目标 · 已选 ${selected.size} 个`;}
-function paintMemory(value){
+function paintMemory(value,sample=null){
   const {total,available,commitUsed,commitLimit}=value;
   const pct=occupancy(value);
   el("actual-percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
   el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
-  decoration.update(pct);
+  decoration.update(pct,sample);
 }
-function memory(report){
+function memory(report,source="live"){
   const sample=report.samples?.at(-1);if(!sample)return;
   const physical=sample.metrics.physical,commit=sample.metrics.commit;if(!physical)return;
   const sampleAt=Date.parse(sample.timestamp);
   if(Number.isFinite(sampleAt)&&latestMemoryAt!=null&&sampleAt<latestMemoryAt)return;
   if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
   latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
-  paintMemory(latestMemory);
+  paintMemory(latestMemory,{timestamp:sample.timestamp??null,source,received:performance.now()});
+}
+let displayRequest=null;
+async function readDisplay(fresh=false){
+  if(fresh&&displayRequest)await displayRequest.catch(()=>{});
+  if(!displayRequest)displayRequest=api("/api/display",{},{signal:AbortSignal.timeout(2500)}).finally(()=>displayRequest=null);
+  return displayRequest;
 }
 const displayMetrics={reads:0,request_ms:[],interval_ms:[]};let previousRead=null;
 async function refreshDisplay(){
@@ -143,7 +150,7 @@ async function refreshDisplay(){
   displayInFlight=true;const readStarted=performance.now();
   if(previousRead!=null){displayMetrics.interval_ms.push(readStarted-previousRead);if(displayMetrics.interval_ms.length>120)displayMetrics.interval_ms.shift();}previousRead=readStarted;
   try{
-    const report=await api("/api/display",{});
+    const report=await readDisplay();
     if(!liveEnabled||document.hidden||stopped)return;
     if(report.completion!=="success")throw new Error(report.errors?.map(e=>e.message).join("；")||"内存读数不完整");
     memory(report);
@@ -159,12 +166,12 @@ async function refreshDisplay(){
 async function refreshForRebound(){
   if(document.hidden||stopped||!token||!readingSupported)return null;
   try{
-    const report=await api("/api/display",{},{signal:AbortSignal.timeout(2500)});
+    const report=await readDisplay(true);
     if(document.hidden||stopped)return null;
     const sample=report.samples?.at(-1),physical=sample?.metrics?.physical;
     if(report.completion!=="success"||occupancy({total:physical?.total_bytes,available:physical?.available_bytes})==null)
       throw new Error(report.errors?.map(item=>item.message).join("；")||"整理后内存读数不完整");
-    memory(report);
+    memory(report,"zero_refresh");
     recordFlow("refresh_received");
     el("live-status").textContent=`${liveEnabled?"后台持续读取":"整理后单次刷新"} · ${new Date(sample.timestamp).toLocaleTimeString()}`;
     return occupancy(latestMemory);
@@ -177,7 +184,7 @@ document.addEventListener("visibilitychange",()=>{if(document.hidden){pauseDispl
 el("decoration-enabled").addEventListener("change",()=>notifyDecoration("stop"));
 window.addEventListener("pagehide",()=>{notifyDecoration("stop");liveEnabled=false;pauseDisplay();clearTimeout(ruleTimer);});
 function present(job){
-  const report=job.report;if(job.kind!=="replay")memory(report);
+  const report=job.report;if(job.kind!=="replay")memory(report,"business_report");
   if(job.kind==="targets"){
     rows=report.samples[0]?.processes||[];const present=new Set(rows.map(key));selected=new Set([...selected].filter(k=>present.has(k)));renderRows();
     if(report.completion!=="success") error("列表可能不完整："+JSON.stringify(report.errors.concat(report.samples[0]?.errors||[])));
@@ -212,7 +219,7 @@ function present(job){
 }
 async function run(action){
   if(busy||stopped)return;error("");busy=true;cleaning=action.kind==="cleanup"||action.kind==="batch";if(cleaning)beginFlow();controls();
-  notifyDecoration("stop");
+  notifyDecoration("stop");if(cleaning)notifyDecoration("begin");
   el("job-status").textContent="正在提交本次请求…";
   try{
     await yieldForPaint();recordFlow("dispatch");
