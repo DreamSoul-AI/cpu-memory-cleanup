@@ -14,7 +14,8 @@ src/
 │   └── policy.rs             Protection、Settings、Rule、Policy
 ├── system/
 │   ├── mod.rs                System能力合同、平台装配及系统随机源
-│   ├── windows.rs            Win32读取、身份核验、工作集循环、句柄所有权
+│   ├── windows.rs            Win32读取、权限映射及句柄所有权
+│   ├── workingset.rs         共用串行工作集调度与默认/候选策略
 │   ├── measurement.rs        阶段时钟与纯调用分布汇总
 │   └── records.rs            原子报告、计时附件与新旧记录回看
 └── interaction/
@@ -37,7 +38,7 @@ src/
 | AR-01 交互 | interaction/cli.rs、web.rs、web_assets/app.js | 参数和请求校验、目标选择、会话、输出；调用Application |
 | AR-02 流程 | application/service.rs | 确认、实例内维护互斥、前后快照、记录及终态，不直接写界面 |
 | AR-03 只读 | system/mod.rs、windows.rs | System::snapshot/targets，GetPerformanceInfo/EnumProcesses和进程身份 |
-| AR-04 维护 | system/windows.rs | 同一句柄核验并SetProcessWorkingSetSize，逐项关闭；不创建终止/提权分支 |
+| AR-04 维护 | system/windows.rs、workingset.rs | 平台调用和串行调度分开，同一句柄核验并整理，逐项关闭；不创建终止/提权分支 |
 | AR-05 记录 | application/service.rs、system/records.rs | 功能决定保存时机，records实际读写；新report.json及旧JSONL只读回看 |
 | AR-06 呈现 | service.rs的presentation/brief、web.rs按需报告 | 摘要保留原终态，完整报告仅按需传递；不修改原始事实 |
 | AR-07 显示 | app.js、memory-display.js | 后台/display独立读取，业务报告立即呈现，动效只拥有圆环显示 |
@@ -82,6 +83,17 @@ Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证�
 - interaction/web.rs：嵌入新显示资源，服务就绪时段与功能计时分别表达，不把浏览器时间写成系统调用时间
 
 新增检查按源职责组织在tests/system/measurement.rs与tests/interaction/web_assets/，已有Rust公共/HTTP合同测试继续使用Cargo入口。旧真实Run作为只读测试材料在忽略目录独立执行，不把机器路径写死进公开测试。不在Cargo测试或浏览器验收中调用真实清理。
+
+# 八、最小权限串行候选的源码映射
+对应架构第八章与 NATIVE-02，先固定以下映射，再完成实现与隔离检查。
+
+- `system/workingset.rs`：拥有单轮枚举、权限意图、身份核验、一次原生调用、关闭与阶段计量。小范围平台接口仅覆盖本次调用链，不扩展成通用插件框架。默认和候选共用同一个循环
+- `system/windows.rs`：实现平台接口，将只读、核验维护、仅配额维护三种权限意图分别映射到 Win32 掩码。进程句柄继续由 RAII 对象持有；原生调用内部记录自身耗时，调度与测试不伪造系统耗时
+- Cargo 的 `experimental-quota` 非默认 feature 暴露开发用候选装配，显式注入 `Application` 才生效。默认 `system::native()`、CLI、HTTP、规则和网页不选择候选，不新增用户模式开关
+- 候选只有全局分支省略身份查询。明确目标仍走默认核验分支。逐项 `created_at` 缺失保留 null，计时记录策略与身份覆盖，不能拿本次 PID 补查结果回填身份
+- `tests/system/workingset.rs`：按职责验证串行顺序、两种权限、默认身份、候选不查询、定向身份与路径不匹配阻断、原生失败、取消及关闭未知停止。用隔离句柄覆盖维护逻辑，不调用主机维护 API
+
+feature 关闭与打开均执行格式、严格 Clippy 和 Cargo 检查，候选版另构建库与控制台二进制。正式运行服务保持原版本，本轮不重启为候选、不运行真实清理。实际速度和覆盖比较未验证。
 
 # 历史方案定位
 原章节和旧执行约定归档到 [Rust迁移前源码结构基线](<开发记录 Development Record/2026-11-02 Rust迁移前源码结构基线.md>)。历史记录中的提交、路径和验收状态保留原义。
