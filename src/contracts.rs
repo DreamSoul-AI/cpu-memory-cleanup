@@ -3,6 +3,25 @@ use serde_json::{Value, json};
 
 pub type AppResult<T> = Result<T, String>;
 
+#[cfg(feature = "experimental-quota")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComparisonMethod {
+    Verified,
+    Quota,
+}
+#[cfg(feature = "experimental-quota")]
+pub fn validate_comparison_pids(pids: &[u32]) -> AppResult<()> {
+    if pids.is_empty()
+        || pids.len() > 4096
+        || pids.contains(&0)
+        || pids.iter().collect::<std::collections::BTreeSet<_>>().len() != pids.len()
+    {
+        return Err("对照需要1..4096个不重复的非零PID".into());
+    }
+    Ok(())
+}
+
 pub fn now() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Rfc3339)

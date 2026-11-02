@@ -175,6 +175,18 @@ fn access_rights(access: Access) -> u32 {
     }
 }
 struct Win32Processes;
+#[cfg(feature = "experimental-quota")]
+struct FixedProcesses(Vec<u32>);
+#[cfg(feature = "experimental-quota")]
+impl Processes for FixedProcesses {
+    type Handle = ProcessHandle;
+    fn enumerate(&self) -> AppResult<Vec<u32>> {
+        Ok(self.0.clone())
+    }
+    fn open(&self, pid: u32, access: Access) -> Result<ProcessHandle, u32> {
+        ProcessHandle::open(pid, access)
+    }
+}
 impl Processes for Win32Processes {
     type Handle = ProcessHandle;
     fn enumerate(&self) -> AppResult<Vec<u32>> {
@@ -238,6 +250,77 @@ impl super::System for QuotaOnlyGlobal {
     }
 }
 
+/// Experimental fixed *global-style* sweep. This is not the verified target API.
+/// Construction validates input only. Normal CLI/HTTP never selects this system.
+#[cfg(feature = "experimental-quota")]
+pub fn comparison_system(
+    pids: Vec<u32>,
+    method: crate::contracts::ComparisonMethod,
+) -> AppResult<impl super::System> {
+    crate::contracts::validate_comparison_pids(&pids)?;
+    Ok(ComparisonWindows { pids, method })
+}
+#[cfg(feature = "experimental-quota")]
+pub fn comparison_pids() -> AppResult<Vec<u32>> {
+    ids()
+}
+/// Read only the fixed list, outside the measured maintenance interval.
+#[cfg(feature = "experimental-quota")]
+pub fn comparison_observe(pids: &[u32]) -> AppResult<Vec<Target>> {
+    let mut result = Vec::new();
+    for &pid in pids {
+        let Ok(handle) = ProcessHandle::open(pid, Access::Query) else {
+            continue;
+        };
+        let identity = handle.identity();
+        let working_set_bytes = handle.working_set();
+        handle.close()?;
+        if let Ok(created_at) = identity {
+            result.push(Target {
+                pid,
+                created_at,
+                name: String::new(),
+                image_path: None,
+                working_set_bytes,
+            });
+        }
+    }
+    Ok(result)
+}
+#[cfg(feature = "experimental-quota")]
+struct ComparisonWindows {
+    pids: Vec<u32>,
+    method: crate::contracts::ComparisonMethod,
+}
+#[cfg(feature = "experimental-quota")]
+impl super::System for ComparisonWindows {
+    fn supported(&self) -> bool {
+        true
+    }
+    fn snapshot(&self) -> AppResult<Memory> {
+        super::System::snapshot(&Windows)
+    }
+    fn targets(&self) -> AppResult<Vec<Target>> {
+        comparison_observe(&self.pids)
+    }
+    fn cleanup(&self, selected: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep> {
+        if selected.is_some() {
+            return Err("开发固定全局清单不支持定向接口".into());
+        }
+        let strategy = match self.method {
+            crate::contracts::ComparisonMethod::Verified => Strategy::Verified,
+            crate::contracts::ComparisonMethod::Quota => Strategy::QuotaOnlyGlobal,
+        };
+        let mut result =
+            workingset::sweep(&FixedProcesses(self.pids.clone()), None, strategy, cancel)?;
+        if let Some(timing) = result.timing.as_mut() {
+            timing["enumeration_source"] = serde_json::json!("fixed_developer_comparison");
+            timing["fixed_pids"] = serde_json::json!(self.pids);
+        }
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +329,15 @@ mod tests {
         assert_eq!(access_rights(Access::Query), 0x1000);
         assert_eq!(access_rights(Access::VerifiedCleanup), 0x1100);
         assert_eq!(access_rights(Access::QuotaOnlyCleanup), 0x0100);
+    }
+    #[cfg(feature = "experimental-quota")]
+    #[test]
+    fn developer_fixed_scope_validates_input_and_refuses_target_api_before_native_access() {
+        use super::super::System;
+        use crate::contracts::ComparisonMethod as Method;
+        assert!(comparison_system(vec![], Method::Quota).is_err());
+        assert!(comparison_system(vec![1, 1], Method::Verified).is_err());
+        let system = comparison_system(vec![1], Method::Quota).unwrap();
+        assert!(system.cleanup(Some(&[]), &AtomicBool::new(false)).is_err());
     }
 }
