@@ -1,4 +1,4 @@
-原机制资料信息截止：2026年10月21日。2026年10月30日补充同类源码与包分发比较，见第十二章。360 公开页面与本仓库界面源码于2026年10月26日定向复核，具体范围见第二章第三节。本文研究技术机制、工具比较、方案取舍及证据限制，不维护代码演进或逐次运行结果。2026年10月27日补充当前按钮的源码调用链，并定向复读三篇 Microsoft 机制与接口文档，范围见第四章第五节。未执行主机实验。设计输入见 [架构设计 Architecture Design](<架构设计 Architecture Design CPU 内存清理.md>)，资料入口见 [项目协作约定](<../AGENTS.md>)。
+当前重点为 Rust 整理的原生长尾与网页百分比流畅度，现行判断见第十八章。运行时边界见第十七章，360 及同类固定源码证据见第十二至十六章。具体执行过程归日期记录。当前架构和实施分别见 [架构设计](<架构设计 Architecture Design CPU 内存清理.md>)、[开发计划](<开发计划 Development Plan CPU 内存清理.md>)，资料入口见 [项目协作约定](../AGENTS.md)。
 
 # 一、研究目标、范围与技术全景
 ## （一）核心问题
@@ -44,7 +44,7 @@ CPU 治理应先识别谁在持续执行什么，再减少不必要工作或调�
 
 # 二、360 的产品行为与可确认机制
 ## （一）产品与版本边界
-研究对象是 PC 端 360 安全卫士的加速球及优化加速。安全浏览器、极速浏览器和手机卫士分别是其它产品，下载目录名称也不能用来确定研究对象。未安装或核验当前二进制构建，公开页面按自己的版本与日期使用。
+产品资料的研究对象是 PC 端 360 安全卫士的加速球及优化加速。另按用户指认检查本机“360软件小助手”安装文件，静态范围见第十六章第七节，不能直接等同于安全卫士加速球的全部当前行为。安全浏览器、极速浏览器和手机卫士分别是其它产品，下载目录名称也不能用来确定研究对象。公开页面按自己的版本与日期使用。
 
 | **产品能力** | **直接来源确认的行为** | **技术含义与未知** |
 | --- | --- | --- |
@@ -124,8 +124,8 @@ Chromium 页面生命周期将冻结与丢弃分开。冻结限制可冻结队�
 | **路线** | **公开契约与操作范围** | **代价及采用条件** |
 | --- | --- | --- |
 | PSAPI/PDH 只读观察 | 读取主机容量与速率，可作为只读观察路线 | 有采样时差与读取缺口，不提供工具所有权 |
-| `EmptyWorkingSet` | 有公开文档，指定进程句柄需要查询权限与 `PROCESS_SET_QUOTA` | 是独立的逐进程路线，不能用它证明全局 NT 命令的权限或支持范围。本项目不新增逐 PID 释放 |
-| 全局内存列表命令 | 可见实现使用类80及命令2、4，需要按构建和特权验证 | 对整个系统页面列表生效，没有业务进程排除保证，保留为显式实验后端 |
+| `EmptyWorkingSet` | 有公开文档，指定进程句柄需要查询权限与 `PROCESS_SET_QUOTA` | 是独立的逐进程路线，不能用它证明全局 NT 命令的权限或支持范围。本项目已有显式目标整理，当前采用判断见第十六章 |
+| 全局内存列表命令 | 可见实现使用类80及命令2、4，需要按构建和特权验证 | 对整个系统页面列表生效，没有业务进程排除保证，当前为显式全局后端，其速度与收益仍待比较 |
 | 宿主正常释放连接 | 根据业务引用和正常关闭契约回收工具 | 需要宿主证据及接口，不由 Windows 内存列表代替 |
 
 `NtSetSystemInformation` 函数本身存在 Microsoft 官方说明。该说明没有给出 `SystemMemoryListInformation=80`、命令2和4的稳定支持契约，因此准确边界是“函数有文档，当前内存列表信息类与命令不具备该页给出的 SDK 支持保证”。不能笼统称整个函数完全未文档化，也不能将代码注释中的“publicly documented commands”作为 ABI 依据。[函数说明](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ntsetsysteminformation)、[逐进程接口](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset)
@@ -187,7 +187,7 @@ flowchart TD
 
 `PhysicalAvailable` 包含 Standby、Free 和 Zero，转入 Standby 的页面仍可能保有内容且计入可用量。因此界面上的占用减少不能理解为内容消失。[容量字段定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information)
 
-桌面独立使用 `GetPerformanceInfo` 只读刷新，并在读数间缓动。动作结果使用记录中的前后快照，动画值不进入记录，实时变化本身不能证明清理成功。360 是产品对照，其内部调用仍未知，本项目的 NT 路线不能用作 360 实现的证据。交互反馈与验收安排见 [产品反馈决策记录](<开发记录 Development Record/2026-10-30 阶段完成与计划整理.md#四实现机制与用户反馈的对应>)。
+桌面独立使用 `GetPerformanceInfo` 只读刷新，并在读数间缓动。动作结果使用记录中的前后快照，动画值不进入记录，实时变化本身不能证明清理成功。360 是产品对照，软件小助手已取得局部静态工作集路径，但用户当前按钮的实际调用与动效关系仍未确认，本项目的 NT 路线不能用作 360 实现的证据。交互反馈与验收安排见 [产品反馈决策记录](<开发记录 Development Record/2026-10-30 阶段完成与计划整理.md#四实现机制与用户反馈的对应>)。
 
 # 五、现有工具与可见实现比较
 ## （一）按同一任务比较
@@ -382,7 +382,7 @@ Windows 内部内存列表命令兼容性、真实权限恢复、跨会话协调
 ### 2. 核心库与 CLI 的关系
 [WinMemClean core/lib.rs](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L361) 的 `optimize_with_options` 读取 before，逐区域保存结果，再读取 after，返回结构化 OptimizationReport。[CLI入口](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-cli/src/main.rs#L15) 从 core 引入快照、选项和动作函数，负责命令参数与输出。该证据支持库拥有能力、CLI消费结果的划分，不代表已经提供本项目采用的 JSON Tool 合同。
 
-同一核心 [WorkingSet 分支](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L443) 在存在排除项时走进程工作集路线，否则走 EmptyWorkingSets。由此不能把“有排除名单”直接移植到本项目的全局工作集方式。若将来需要保护特定应用，必须先评估动作范围及实现路径，当前不新增这一功能。
+同一核心 [WorkingSet 分支](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L443) 在存在排除项时走进程工作集路线，否则走 EmptyWorkingSets。由此不能把“有排除名单”直接移植到本项目的全局工作集方式。本轮据此采用独立逐进程批次及保护规则，全局方式仍不能排除对象，具体采用状态见第十三章。
 
 ## （三）采用方向与分发方式
 ```mermaid
@@ -397,21 +397,21 @@ flowchart TD
 
 当前判断：继续采用现有 Package、CLI、前端并列复用结构，发布价值是容易安装、结果可解释和可被程序调用，不是宣称内存机制创新。没有竞品不是发布前提，有开源实现也不代表可直接替代本项目的包合同、记录回看或授权边界。
 
-Knowledge 本地 README 与通知工具指南只证明该仓库能承载独立工具与文档，不证明已有统一 Tool 注册协议。建议 Knowledge 维护安装来源、版本和调用指引，必要时放薄入口，产品源码与测试继续留在本仓库，避免两个副本分别维护。具体宿主没有确定前不增加 MCP、服务或安装器。
+Knowledge 本地 README 与通知工具指南只证明该仓库能承载独立工具与文档，不证明已有统一 Tool 注册协议。建议 Knowledge 维护安装来源、版本和调用指引，必要时放薄入口，产品源码与测试继续留在本仓库，避免两个副本分别维护。具体Agent宿主没有确定前不增加MCP或宿主专有安装器。本地网页HTTP服务是当前已采用的产品入口，不等于跨机器Agent服务。
 
-0.2.0的MIT许可、项目地址和预览分发已在本次源码补查之后完成，GitHub Release包含wheel、源码包和校验文件，实际结果见 [发布运行记录](<运行记录 Run Record/2026-10-30 MIT 与 GitHub Release.md>)。这完成了原先的分发准备建议，不证明清理效果或宿主接入。PyPI未发布，包名可用性及上传权限没有核验。下一步改进以本章第四节的内存专用结果为先，具体消费者明确后再处理Knowledge接入。
+0.2.0的MIT许可、项目地址和预览分发已在本次源码补查之后完成，GitHub Release包含wheel、源码包和校验文件，实际结果见 [发布运行记录](<运行记录 Run Record/2026-10-30 MIT 与 GitHub Release.md>)。这完成了原先的分发准备建议，不证明清理效果或宿主接入。PyPI未发布，包名可用性及上传权限没有核验。后续采用判断以第十三章和当前开发计划为准，旧发布状态不能代表本地新增能力。
 
 本章结论进入 [当前开发计划](<开发计划 Development Plan CPU 内存清理.md#二下一步开发任务>)。本次阅读支持职责与分发选择，不支持真实清理收益、自动化干预有效性或多平台兼容性。
 
 ## （四）清理功能与使用体验的源码差异
-2026年10月30日重新收敛问题：下一轮应优先增加哪种有实际用途的清理能力，而非只整理结果字段。复读本章固定提交的 WinMemoryCleaner ComputerService（含OptimizeWorkingSet）、MainViewModel，WinMemClean core/lib.rs、process.rs、nt.rs及CLI入口，并对照本项目WindowsBackend、ActionRequest、包公共入口和桌面。原先“结果报告为主”的建议被本节取代，其过程保留在日期开发记录。以下为源码分析与方案建议，未运行外部程序或实机实验。
+本节当前比较已于2026年10月31日更新，保留固定源码证据。关注有实际用途的清理范围与使用体验。复读本章固定提交的 WinMemoryCleaner ComputerService（含OptimizeWorkingSet）、MainViewModel，WinMemClean core/lib.rs、process.rs、nt.rs及CLI入口，并对照本项目WindowsBackend、ActionRequest、包公共入口和桌面。原先“结果报告为主”的建议被本节取代，其过程保留在日期开发记录。以下为源码分析与方案建议，未运行外部程序或实机实验。
 
 | **维度** | **同类源码怎么做** | **我们目前怎样** | **下一轮采用判断** |
 | --- | --- | --- | --- |
-| 清理范围 | 两个项目都在存在排除名单时改为枚举进程、逐个整理工作集；没有排除项则可走全局路线 | 桌面与memory_cleanup固定全局工作集，不具备按应用保护或定向整理 | 优先设计定向工作集能力，首版只处理用户明确选择的一个进程，避免直接引入整机批量遍历 |
-| 清理区域 | WinMemClean的MemoryArea覆盖工作集、Standby、文件缓存等，调用由nt.rs分开；WinMemoryCleaner同样按区域执行 | 系统接入已有working-set和standby两条路径，普通桌面只开放前者 | 不把已有Standby当成未实现的新功能，不将更多区域或一键全部清理作为优先目标 |
-| 自动化 | WinMemClean有冷却、压力与低优先级Standby条件；WinMemoryCleaner有定时和低内存触发 | 当前打开只读、点击才整理，无自动清理 | 源码存在不等于适合当前产品。自动策略可能反复造成页面恢复代价，现阶段不采用其阈值或调度 |
-| 使用体验 | ViewModel以忙碌状态阻止重入，清理后更新内存和通知；排除列表用于表达用户不想处理哪些对象 | 已有绿色按钮、并行刷新、动画和结果区，但没有可见的范围选择 | 保留主窗口，详情里提供可选的目标进程选择和清晰的动作范围，不强制每次先看CPU诊断 |
+| 清理范围 | 两个项目都在存在排除名单时改为枚举进程、逐个整理工作集；没有排除项则可走全局路线 | memory_cleanup保留全局；Package、CLI与正式网页支持明确身份批次和路径/实例保护 | 已采用用户选择的固定目标，逐项验证和记录；不持续全机遍历或自动选择高占用对象 |
+| 清理区域 | WinMemClean的MemoryArea覆盖工作集、Standby、文件缓存等，调用由nt.rs分开；WinMemoryCleaner同样按区域执行 | 系统接入已有working-set和standby；网页将后者置于高级手动系统范围 | 不把已有Standby当成未实现的新功能，不将更多区域或一键全部清理作为优先目标 |
+| 自动化 | WinMemClean有冷却、压力与低优先级Standby条件；WinMemoryCleaner有定时和低内存触发 | 可见网页持续轻量显示；独立确认才启用默认关闭的定时或持续压力整理规则 | 采用可配置持续窗口、冷却、固定保护快照与显式停止，不照搬竞品阈值；当前只有合成验证 |
+| 使用体验 | ViewModel以忙碌状态阻止重入，清理后更新内存和通知；排除列表用于表达用户不想处理哪些对象 | 已有绿色按钮、范围选择、逐项结果、保护设置与规则状态 | 当前主入口为localhost网页，旧桌面兼容保留，不引入CPU诊断前置步骤 |
 | 结果解释 | before/after与区域结果集中返回，界面据此通知 | 已有RunReport和动作记录，部分差额在桌面计算，轻量流程仍输出通用诊断 | 结果统一作为定向功能配套，不再独占下一轮主线 |
 
 ### 1. 为什么范围控制需要不同实现
@@ -422,11 +422,379 @@ Microsoft [EmptyWorkingSet](https://learn.microsoft.com/en-us/windows/win32/api/
 同类逐进程实现按名称排除，且部分访问拒绝被忽略。因此不能把其成功返回直接解释为所有进程均已整理。本项目只借鉴“范围决定调用路径”，不复制其名字匹配、静默忽略或全机批量处理逻辑。
 
 ### 2. 推荐的最小功能增量
-首版保留现有默认全局工作集按钮，增加一个独立、明确的可选动作：“只整理选中的进程”。选择与展示使用名称及稳定身份，执行前核对目标，调用一次目标工作集整理。一个程序可能有多个进程，首版必须明确只处理选中的进程，不声称覆盖整个应用组，也不承诺零共享页影响或完全不卡顿。
+已采用的基础增量保留现有默认全局工作集按钮，提供独立、明确的可选动作：“只整理选中的进程”。选择与展示使用名称及稳定身份，执行前核对目标，调用一次目标工作集整理。一个程序可能有多个进程，首版必须明确只处理选中的进程，不声称覆盖整个应用组，也不承诺零共享页影响或完全不卡顿。
 
-这与同类排除名单不是完全相同的功能，而是从其范围控制机制推导的更小增量：先让用户直接决定处理谁，之后有明确需要再设计多进程应用组与排除名单。首次使用不要求配置清单。目标列表按需读取，不在主窗口持续枚举或排名，不根据内存大小自动选择执行对象。
+这与同类排除名单不是完全相同的功能，而是从其范围控制机制推导的更小增量：由用户决定处理谁，本轮再扩展固定批次、同一程序文件分组与保护；文件组不能代表整个多程序应用。首次使用不要求配置清单。目标列表按需读取，不在主窗口持续枚举或排名，不根据内存大小自动选择执行对象。
 
 此能力已在当前开发工作区按独立process合同实现并完成离线验证，未包含在已发布v0.2.0中，真实效果仍未知。旧system合同保留，新目标由PID与创建身份绑定，新process记录采用schema2，不得将旧system事实改名冒充进程能力。Package拥有执行逻辑，CLI与桌面只作适配。仅用合成进程和假DLL验证，真实采样与清理另行授权。
 
 ### 3. 选择依据与限制
-优先定向整理是产品与范围控制的建议，不是性能实测结论，不保证比现有全局方式释放更多内存或更快。自动清理、更多缓存区域、托盘和Knowledge分发分别解决别的问题，当前后置。若后续设计发现进程身份或权限不能可靠落实，停在方案评审，不退回只改报表并声称已完成清理功能。
+定向整理用于目标范围控制，是否适合作为更快的默认方式仍待第十六章的比较，不保证比全局方式释放更多内存或更快。确定性规则已按第十三章采用，系统文件缓存现列为新增比较候选，其他缓存区域、原生托盘和进一步宿主分发仍后置。若后续设计发现进程身份或权限不能可靠落实，停在方案评审，不退回只改报表并声称已完成清理功能。
+
+# 十三、范围、方法与常驻的采用判断
+当前已完成正式网页、批次保护、方式与规则的工程实现及受控验证，并有本机全局工作集基本旅程证据。以下维护已采用范围，底层候选的当前比较与默认策略选型统一见第十六章。基本调用成功不等于性能、恢复代价或完整平台矩阵已验收。
+
+复用第十二章固定提交的WinMemoryCleaner OptimizeWorkingSet与WinMemClean核心：有排除时逐进程处理，没有排除时可能全局处理。WinMemClean CLI自动模式默认筛除完整 Standby 和 Modified，不能泛化为所有模式或其他项目的默认行为。本项目采用显式目标批次与路径保护，不复制名称排除、静默跳过或清理阈值，也未运行竞品。
+
+| 候选 | 本轮判断 | 原因与证据边界 |
+| --- | --- | --- |
+| 工作集 | 保留当前默认及已实现目标批次，默认选型待比较 | 复用既有EmptyWorkingSet与全局后端，驻留变化不等于对象释放 |
+| Standby | 仅保留系统范围的明确高级手动入口 | 现有后端已实现；不能提供进程排除，也不作为自动规则动作 |
+| 系统文件缓存 | 首个新增比较候选，尚未实现 | 先核对公开接口和单项证据，详见第十六章，不直接加入默认按钮 |
+| Modified、低优先级Standby、合并页及其他缓存刷新 | 后置，不新增默认调用 | 当前没有本机恢复代价与速度收益证据，不复制同类整套默认掩码 |
+| 应用归组 | 同一完整程序文件路径组 | 官方QueryFullProcessImageNameW给出句柄对应映像路径；路径不能证明整个应用组或发布者，不按同名及父子关系猜测 |
+| 规则自动化 | 默认关闭，先合成信号验证 | 定时与持续压力用于触发而非收益判定；只使用受保护的目标快照，不自动全局清页 |
+| 托盘与通知 | 原型保留后置，本轮采用显式本地网页服务生命周期 | Shell_NotifyIconW的机制阅读不等于原型已完成验收，不以桌面Computer Use占用输入设备 |
+
+本次读取Microsoft [QueryFullProcessImageNameW](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-queryfullprocessimagenamew)的路径、权限和返回值，以及[Shell_NotifyIconW](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shell_notifyiconw)的图标生命周期与返回值。未调用真实接口。界面归组与调度方案是本项目设计推导，不是Microsoft推荐策略。跨应用AI研究与Linux仍不纳入当前工程。
+
+工程采用情况见 [本轮开发记录](<开发记录 Development Record/2026-10-31 正式网页与范围规则.md>)，实际受控执行见 [本轮运行记录](<运行记录 Run Record/2026-10-31 正式网页与范围规则.md>)。未运行竞品、真实系统采样或清理，不能比较实际性能。
+
+## 本机机制验证的证据边界
+2026年10月31日，经用户授权从正式网页执行一次系统工作集整理，原生返回0、权限恢复；同一运行的系统可用量从17,542,221,824增至24,391,077,888 bytes（约16.34→22.72 GiB）。这支持当前机器上正式调用链能够执行和保存原始事实，不能把并发变化全部归因为清理收益，也不证明永久释放、再次访问成本或360内部实现。只执行一次，不作为性能实验，见 [真实验收记录](<运行记录 Run Record/2026-10-31 真实网页验收与启动修正.md>)。
+
+# 十四、当前网页体验的源码复核与优化建议
+2026年10月31日，针对实时显示和单击工作集已实现后的下一轮取舍，复读既有固定提交缓存，核对SHA256与原sources.json一致。在线固定链接此次返回Cache miss，未据此声称复核远端最新版本；本节来源是此前固定提交源码，不是竞品运行体验或性能测试。未运行竞品、主机采样或清理。
+
+## （一）复核来源与当前判断
+| **源码证据** | **读到的机制** | **本项目采用判断** |
+| --- | --- | --- |
+| [WinMemoryCleaner MainViewModel CompactMode](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L350) | 紧凑模式独立保存；CanOptimize核对动作选择及是否执行中，见274行 | 主界面优先状态、主按钮、最近一次结果；进程、保护和规则按需展开。是本项目界面建议，不复制其窗口实现 |
+| [同一文件 MonitorComputer](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L1698)及Optimize 1749行 | 监测循环约5秒读取且忙时跳过；动作有忙碌标记，完成后更新内存与命令状态 | 不照搬其间隔或忙时停止显示。本项目继续独立轻量显示，补齐数字、圆环、按钮及结果的一致状态 |
+| [WinMemClean OptimizationReport](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L142)与optimize_with_options 361行 | 核心返回before、after及逐区域结果，外层消费 | 将当前实时占用与最近动作的固定结果分开：主反馈用普通语言概括时间、范围与前后变化，原始报告继续折叠 |
+| [WinMemoryCleaner动作耗时](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L147) | 按区域Stopwatch计时，成功及错误分别记录 | 有真实计时依据时显示本次处理用时，不把快照时间差冒充原生API独占耗时，不为结果卡额外清理 |
+
+## （二）发现的具体实现差距
+复核时发现的WEB-02来自兄弟元素之间的错误状态绑定：app.js把占用角度与working类写到横条，而圆环自身消费相应样式。当前已将状态绑定实际圆环，25%/75%受控JS回归及内置浏览器检查有证据，见 [体验优化运行记录](<运行记录 Run Record/2026-10-31 网页与桌面体验优化.md>)。这也说明HTTP测试只能证明接口行为，不能代替可见控件及动画检查。
+
+## （三）建议顺序与不采用项
+优先三个小范围任务：一是修正可见状态绑定并验证；二是主界面收紧为紧凑使用、详情按需展开；三是把最近结果放在主按钮附近，以实际时间、范围及带方向变化说明这次发生了什么。三者仍复用现有Package、动作与记录，不改变清理机制。
+
+更多清理区域、热键、托盘、开机启动和更激进的自动化暂不作为优先增量；同类存在这些功能不等于当前产品需要。WinMemoryCleaner对差额取绝对值的做法继续不采用，变化方向、非永久释放及未验证提速的边界保留。上述三项及桌面入口整合已按开发计划实施，原生可见窗口验收单列待验证。机制结论不因界面优化扩展为性能收益；工程过程归日期开发记录。
+
+# 十五、归零再回升：显示动效与内存机制的区分
+## （一）问题、范围与结论
+2026年10月31日，针对加速球从约40下降至0、等待后回到当前占用值的描述，复核360公开说明、此前固定提交的同类清理源码及本仓库19bfdea。此处同时分析“真实驻留变化”和“独立过程动效”两种解释，未运行360、同类程序或本机清理，也未修改产品界面。用户描述作为待解释现象，未取得具体360版本、显示模式、逐帧视频和同步系统原始读数，不能将其补写为本轮实测。
+
+当前可支持的判断：
+- **前端动效解释在实现上成立**：显示位置可独立从旧位置降到0，后台只调用一次清理，调用收尾后再回到最新有效读数。中途的0是过程表现，不要求物理内存真的为0，也不证明换用了更强清理API。这是工程推导，不是取得了360动画源码
+- **同类工具已经分开动作反馈与实际占用**：WinMemoryCleaner将真实内存条、从0开始的步骤进度及忙碌图标分别维护。所读路径没有显示将实际内存使用率主动置零再回弹的正常流程，不能把其进度0当内存0，也不能据此证明整个仓库任何位置都没有其它动画
+- **本项目的全局工作集路线并非独有弱化方案**：Mem Reduct、WinMemClean、System Informer和WinMemoryCleaner无排除名单分支都可见同一类内存列表命令。组合区域、排除范围、系统版本和权限仍有区别，同类路径不能证明与360内部实现一致
+- **尚不能定案360采用哪种解释**：官方资料说明其部分版本有智能数值与内存数值两种模式，但未披露这里描述的归零动画、时间曲线或完整清理算法。搜索没有找到可直接核验该动画的360官方源码或时序说明。不能把“未找到”写成“不存在”，也不能反过来断言它一定只是动画
+
+## （二）同类源码的具体证据
+复用此前固定提交，不按仓库最新版本泛化。WinMemoryCleaner为a19f25719c9b9a58a0acea99cb8adb4737d2d318，WinMemClean为36729828ed032b6fd6dc08b0c0788a125f9bd28d，Mem Reduct为04402de8b6a8ff9d1c5517c675d87c346655323c，System Informer为2e1349b065e5cf187db390697062fc95c846de33。
+
+| **对象与位置** | **实际读到的行为** | **对归零现象的意义** |
+| --- | --- | --- |
+| [WinMemoryCleaner MainWindow.xaml 647行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/View/Window/MainWindow.xaml#L647)及865行 | 内存条绑定Computer.Memory.Physical.Used.Percentage，另一条进度绑定OptimizationProgressValue，最大值为步骤总数 | 两条百分比用途不同，不能因步骤进度从0开始就认定系统占用归零 |
+| [MainViewModel OptimizeAsync 1817行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/ViewModel/MainViewModel.cs#L1817)及Optimize 1749行 | 派发前将步骤进度置0，后台执行选定区域，之后重新取内存并在finally结束忙碌状态 | 完成依据后台任务收尾，不等待内存自然回到原水平 |
+| [ComputerService Optimize 147行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L147)及MainViewModel 1738行 | 每个区域开始时上报步骤编号，进度百分比由步骤编号/总数计算 | 这是区域步骤反馈，不是原生清页字节进度或驻留量变化曲线 |
+| [NotificationService 565行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/NotificationService.cs#L565)及522行 | 忙碌图标用200毫秒计时器每次旋转90度。数值图标绘制读取memory.Physical.Used.Percentage，见327行 | 动效时间轴可以独立于系统指标，这个已见实例是图标旋转，不是360归零动画 |
+| [ComputerService OptimizeWorkingSet 710行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710)和[Constants 166行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Core/Constants.cs#L166) | 有进程排除时逐项EmptyWorkingSet，无排除时NtSetSystemInformation的信息类80及MemoryEmptyWorkingSets=2 | 无排除分支与本项目全局主按钮机制同类，视觉差别不能直接推出调用不同 |
+| [Mem Reduct main.c 388行](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L388)及471行 | 前置读数、选定区域调用、后置读数。Working Set分支使用MemoryEmptyWorkingSets；结果差额无减少时截为0 | 此处0是本次差额，不是整机占用为0，没有读到本路径等待占用回升趋稳后才完成 |
+| [WinMemClean lib.rs 361行](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L361)及450行 | before快照、依次执行所选区域、after快照，WorkingSet使用EmptyWorkingSets枚举2，nt.rs的信息类为80 | 核心报告保留前后值，不提供把内存曲线压到0的保证 |
+| [System Informer memlists.c 196行](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L196)及244行 | 统一调用内存列表命令，工作集动作传MemoryEmptyWorkingSets，按状态码返回结果 | 说明同一动作路径的另一实现，不证明其UI或360具有相同动画；其提权服务回退不在本项目采用范围 |
+
+WinMemoryCleaner的内存对象也有初始化0值，Memory getter错误处理与初始值不能当作设计好的清理动画证据。本章只分析已读的取值、优化、绑定、进度及通知路径，不将字符串检索到的每个0都解释为同一种行为。具体阅读范围和校验回执见 [源码复核记录](<运行记录 Run Record/2026-10-31 归零回升动效源码复核.md>)。
+
+## （三）360公开资料与仍然缺失的证据
+360在2018年的[12.0智能数值说明](https://bbs.360.cn/thread-15621325-1-1.html)中解释，智能值组合内存、CPU、I/O及网络指标，且可切回内存数值。当前[清理加速产品页](https://weishi.360.cn/clear/)也介绍智能数值及多类加速功能，但没有给出本问题的逐帧轨迹或算法。历史功能说明不能直接指定用户当前安装的版本、模式和归零原因。
+
+因此保留三种候选解释：①界面主动播放过程动效，②显示值是综合指标、进度或其它口径，③真实可分页工作集被裁剪后重新装入，且显示/采样没有捕获完整轨迹。这些解释可能同时存在。操作系统工作集包含可分页驻留，进程再次访问缺失页面时可经缺页处理重新加入；这能解释某些回升，但不支持整机所有物理内存都能被工具清到0。[Microsoft工作集定义](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)
+
+后续若要对360本体定案，应固定版本和显示模式，关联屏幕轨迹与同时间轴的系统指标。没有这组证据时，回弹“看起来像真实内存”或“看起来像动效”都不足以确定实现。本轮不启动该实验，也不安装、反编译或操作360。
+
+## （四）与本项目调研基线机制对照
+| **维度** | **本项目19bfdea** | **判断** |
+| --- | --- | --- |
+| 系统动作 | Windows接入的系统范围working-set以信息类80、命令2至多调用一次，并核对权限恢复 | 与上述同类的全局工作集分支同类，不等于与全部区域组合或360相同 |
+| 实际读数 | GetPerformanceInfo返回PhysicalTotal及PhysicalAvailable，界面计算总量减可用量后的比例 | 这是整机物理量口径，不是360综合分值。Available包含Standby、Free及Zero，页面内容不一定消失。[字段定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information) |
+| 普通显示 | 桌面约0.5秒、可见网页约1秒刷新，均将前后读数在约0.4秒内平滑插值 | 若真实读取只得到40和20，就只会显示40到20，中间帧由插值产生。不会自动经过0，也可能漏过短于采样间隔的低谷 |
+| 当前清理流程 | 主按钮要求3秒后续观察，保存前置、即时后置及三个后续样本，仍只调用一次 | 这是新增的采样窗口，不是归零/回弹动效，不证明360也观察3秒或等待稳定 |
+| 当前结果 | 取同一运行前后样本的净差额，动画值不入报告 | 净变化和动画到达0没有数值上的必然关系。不能以动画最低点计算真实释放量 |
+| 当前完成 | 观察窗口完成后返回报告，界面展示观察结束；普通0.4秒插值可能仍在播放 | 动作收尾、采样完成、动画播放结束是不同事件，当前尚无独立的“清理归零—回弹”交互状态机 |
+
+我此前将“必须等内存回升趋稳才完成”作为对该现象的解释，证据不足。它不能从用户描述或这些同类源码推出，不应据此直接增加持续监测、稳定阈值或更激进的清理。3秒观察也只能表示当前实现选定的窗口，不能反向证明该设计是360机制要求。
+
+## （五）过程动效方案与采用范围
+用户描述可以转化为一个独立的呈现方案，保留真实指标与动作事实：
+
+```mermaid
+flowchart TD
+    CLICK["单击主按钮"] --> BACKEND["后台只派发一次清理"]
+    CLICK --> EMPTY["前端从当前位置降到空环"]
+    EMPTY --> WAIT["空环等待，标明整理中"]
+    BACKEND --> FACT["返回动作事实和有效读数"]
+    WAIT --> JOIN{"后台已收尾且收束动效可开始？"}
+    FACT --> JOIN
+    JOIN --> RETURN["从空环回到选定的最新有效读数"]
+    RETURN --> DONE["动画收束，主圆环恢复实际显示"]
+    FACT --> RESULT["立即发布原报告结果，不等待动画"]
+    LIVE["持续有效读数"] --> ACTUAL["实际区域始终更新"]
+    FACT -."记录与结果独立保存".-> RECORD["原始快照与动作事实，不接收动画值"]
+```
+
+例如旧占用40%、后台读到32%时，呈现可走“40→0→32”，系统真实记录仍是40和32。此例只是状态与数值说明，不是360实测曲线，也不要求把真实内存清到0。网页requestAnimationFrame可按时间戳推进绘制，动画完成事件可独立等待，桌面已有定时绘制能力，不需要为此更换清理API。[动画帧机制](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)、[动画完成事件](https://developer.mozilla.org/en-US/docs/Web/API/Animation/finished)
+
+归零阶段应明确标为“整理中”，可让圆环/水位归零而暂不把中心数字标成“物理占用0%”。真实容量及报告继续保留其含义。后台提前完成时结果立即发布，只有视觉自行收束；后台未返回不能仅因动效播放完就显示成功。回弹的终点可以固定为开始回弹时取得的有效快照，后台实时读取与实际区域始终继续，动画收束后主圆环再恢复实际显示，不必无限追逐变化中的系统占用直到所谓“完全回升”。失败则按实际结果退出忙碌状态，不播放成功结论。
+
+当前网页按后续静态证据与用户确认，改为本次真实整理、快照及安全收尾完成后才下降归零，到零请求一份新读数并回弹。实际区域持续更新，结果不等动效，不再增加3～8秒趋缓观察。所分析360版本的定时器与零位事件已有直接机器码依据，详见第十六章第七节。静态流程不证明当前运行实例的精确耗时，750毫秒下降与300毫秒回弹是本项目采用的显示参数。桌面保持原状，职责合同见 [架构设计](<架构设计 Architecture Design CPU 内存清理.md#十三网页交互的需求与状态合同>)，实际执行见 [运行记录](<运行记录 Run Record/2026-11-02 完成后归零与真实验收.md>)。
+
+# 十六、底层清理策略的比较与下一轮选择
+## （一）问题与当前判断
+本节回答默认按钮能否更快产生实际内存下降，以及应比较哪些底层路线。阅读范围为此前固定提交的四款同类项目、相关 Microsoft 接口正文和本仓库当前调用链。源码复核阶段没有真实操作，随后另行授权取得一次本机G0分段测量，见本节证据摘要；没有运行竞品或调整动效。
+
+当前默认按钮在前置检查后一次调用全局工作集命令，实际页面处理交给操作系统，不按动画帧逐页删除。该路线有同类源码依据，但只实现一个基础动作，不能据调用成功认定清理策略已经达到目标体验。现阶段有三项决定：
+
+1. 保留全局工作集作为比较基线，同时复用已有定向批次作为范围可控的比较对象，不预设后者更快或释放更多
+2. 新取得的360静态调用链指向逐进程工作集裁剪。优先比较同一目标集上的既有EmptyWorkingSet与SetProcessWorkingSetSize候选，系统文件缓存保持后续独立候选，不把多个动作无条件串入主按钮
+3. 先建立底层耗时与真实读数的证据，再选择默认策略。动效只负责呈现，本轮保持不变。360 同版本、同负载的同步对照仍缺失，不声称已经解释其速度优势
+
+## （二）同类源码实际采用了什么
+固定提交完整标识沿用第十五章。下表为针对性路径阅读，不表示运行过这些项目、核验其当前最新版本或测得性能。
+
+| **对象与直接来源** | **范围、分支及执行方式** | **对本项目的意义** |
+| --- | --- | --- |
+| [Mem Reduct 默认掩码，main.h 61行](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.h#L61)及[动作路径 main.c 315行起](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L315) | 未指定掩码时读取配置或源码默认值。该固定版本默认包含工作集、系统文件缓存、低优先级 Standby、注册表缓存、页面合并和卷缓存刷新。完整 Standby 与 Modified 不在此默认掩码中，自动模式还会按配置移除标记为易停顿的两项。实际动作按条件顺序执行，全局工作集仍是同类 NT 命令 | 证明我们默认范围更窄，不能证明其默认组合在本机更快。低优先级 Standby 与完整 Standby 不能混称为同一默认选择 |
+| [WinMemoryCleaner ComputerService.Optimize 147行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L147)、[工作集 710行](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710) | 按传入区域顺序处理，逐区域用 Stopwatch 记录成功或失败耗时。有排除项时枚举进程并逐个 EmptyWorkingSet，无排除时使用全局工作集命令。读取的枚举循环没有并行清理。本次未核实其持久化设置的初始区域组合 | 借鉴范围分支与逐区域计时，不把名称排除、忽略部分错误或权限持有方式直接复制为本项目规则。定向价值是控制处理对象，速度仍需测量 |
+| [WinMemClean core lib.rs 361行](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs#L361)、[process.rs 61行](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs#L61)及[CLI 30行起](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-cli/src/main.rs#L30) | 区域迭代器有固定顺序，逐区域调用并保存结果。有排除时逐进程，否则全局。CLI 未选择区域时只显示统计。核心 OptimizeOptions 的 allow_freeze_prone_areas 默认 true，CLI 自动模式才默认设为 false，过滤完整 Standby 和 Modified | 修正“所有模式默认排除易停顿区域”的泛化。借鉴明确的有效区域与逐项结果，不把手动与自动策略合并，也不因 Rust 实现推断一定更快 |
+| [System Informer memlists.c 196行起](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L196) | 统一包装不同内存列表命令，工作集、Modified、Standby、低优先级 Standby 分别执行和报告。源码还有权限不足时连接提权服务的路径 | 支持将机制分开比较，而不是视作一个万能清理算法。本项目不采用其服务提权回退 |
+
+这些实现揭示的主要差异是选中区域、目标范围、权限和报告方式。在已读路径中，没有发现一种能保证相同全局工作集请求按固定速率下降、立即降到20%或天然优于当前 NT 调用的替代实现。
+
+## （三）哪些底层候选值得比较
+工作集移除是驻留状态变化。干净页面可能留在缓存中，脏页复用前可能需要写回，后续访问又可使页面回到工作集。原生返回、可用量变化与应用再次响应应分别观察。[Microsoft 工作集说明](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)
+
+| **候选** | **作用对象与机制依据** | **当前取舍** |
+| --- | --- | --- |
+| G0 全局工作集 | 当前信息类80、命令2路径，处理系统范围的可分页工作集，没有应用排除保证 | 保留基线，先量清其原生调用与外层成本，不按慢一次就判定路线错误 |
+| P1 明确目标的工作集批次 | 既有目标句柄调用 EmptyWorkingSet，系统尽可能移出该进程工作集中的页面。逐项处理增加枚举、打开和身份核验成本，也可能因范围缩小减少工作量 | 复用现有能力比较，保留 PID 与创建身份、路径保护及逐项结果。不新增自动挑选“可删进程”的规则，不预设比 G0 更快。[接口契约](https://learn.microsoft.com/en-us/windows/win32/api/psapi/nf-psapi-emptyworkingset) |
+| F1 系统文件缓存工作集裁剪 | 同类有独立系统文件缓存分支。Microsoft 的 SetSystemFileCacheSize 允许以两个 SIZE_T(-1) 请求刷新缓存，要求启用 SeIncreaseQuotaPrivilege，Flags=0保留既有限制设置 | 公开接口规格已核对，优先级位于同目标工作集比较之后。以后先比较 F1 单独与 G0，再考虑组合。不是磁盘垃圾文件删除，也不改变长期缓存上限。WinMemoryCleaner 同时调用 NT 与公开接口的写法，不证明两次调用都必要。[公开接口及影响](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setsystemfilecachesize)、[同类分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L662) |
+| 完整或低优先级 Standby | 清除的是已可复用的缓存页。当前占用按 Total−Available 计算，而 Available 已包含 Standby、Free 和 Zero | 保留现有高级入口。不能把 Standby→Free 的全部变化算成占用下降，不把它作为默认“更快降数字”的补丁。[容量口径](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information) |
+| Modified、卷缓存刷新、注册表缓存和页合并 | 同类的不同动作，不是工作集命令的速度参数。写回涉及 I/O，页面合并也不等同于强制压缩全部应用内存 | 本轮后置。没有本机收益、耗时和恢复代价证据前，不复制整套默认掩码，不并发全局清理或循环清到零 |
+
+系统缓存复合计数包含 Standby，不能看到 SystemCache 较大就认为全部都是额外可裁剪的占用。未来比较 F1 应区分系统缓存驻留部分与 Standby，不重复累计。同理，进程工作集可能共享页面，批次各进程差额不能相加宣称整机释放量。[字段定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information)
+
+本项目的全局 NT 路线有可读实现及本机调用证据，但 Microsoft 的 NtSetSystemInformation 页面没有为上述具体信息类与命令提供稳定 SDK 支持保证。新增缓存候选优先核对公开接口，不据多个项目都调用就忽略版本、位宽和权限差异。[官方范围](https://learn.microsoft.com/en-us/windows/win32/sysinfo/ntsetsysteminformation)
+
+## （四）已有证据能解释什么
+回读已有全局工作集记录：整段流程约2.549秒和6.401秒，原生调用均返回成功，即时可用量净变化分别约5.512 GiB和7.471 GiB。它们初始负载不同，也没有不清理对照，不能比较谁更高效，不能把6.401秒全部记为原生 API 独占耗时。具体 Run、时间及原始文件见 [本轮只读复核记录](<运行记录 Run Record/2026-11-02 底层清理策略源码复核.md>)。
+
+原有记录缺口包括：原生调用自身耗时、权限与持久化成本、首次明显下降的时刻、同负载下不同范围的差别，以及再次使用应用的恢复代价。已有1秒显示刷新不适合证明亚秒级先后关系。两份即时快照也不能复原最低点或下降曲线。分段计时、可选前后工作集观察和纯数据核验已通过 [受控验证及旧记录回读](<运行记录 Run Record/2026-11-02 分段计时与工作集核验.md>)，不回填旧记录。
+
+2026年11月2日另行授权的 [单次真实G0测量](<运行记录 Run Record/2026-11-02 真实分段计时与工作集核验.md>)显示：Package总计3.444秒，其中原生调用3.324秒，占96.52%；前后只读进程核验合计95.862毫秒。748项可匹配身份中747项工作集下降，可用物理内存净增5.191 GiB；仍有不可读对象，覆盖为partial。该次主要等待位于系统调用边界，不能归因于Python逐进程清理或动效。尚未细分原生内部工作，也没有连续容量曲线、固定负载对照或应用恢复代价；不能据此解释360速度、选择最快策略或宣布性能改善。
+
+本机360软件小助手已取得安装文件指纹及局部逐进程工作集裁剪路径，见本章第七节。但实际界面所用版本/模块、数值模式、按钮调用链及相同负载下的同步时间轴仍未核对。不能将上述任一开源组合直接命名为“360同款底层”，也不能把它更快的主观观感归结为驱动、语言或特殊压缩算法。
+
+## （五）采用建议与实施边界
+分段计时已实现，并取得一次G0测量。下一轮优先把360已连接的逐进程路径转换为可控的同目标接口比较：P1沿用EmptyWorkingSet，P2候选使用SetProcessWorkingSetSize的两个-1参数，先设计及假接入，再于执行范围明确时比较G0/P1/P2。F1保留已核规格，后置于工作集路线比较。计时用于选型，不把增加报告字段或换接口名本身当成性能改善。
+
+```mermaid
+flowchart LR
+    SOURCE["固定源码、二进制调用链与既有测量"] --> SPEC["明确 G0 与同目标 P1/P2，F1 后置"]
+    SPEC --> OFFLINE["分段计时设计与假调用验证"]
+    OFFLINE --> CHECK{"具备本次真实执行授权与固定负载？"}
+    CHECK -->|否| WAIT["保留待测，不宣称提速"]
+    CHECK -->|是| COMPARE["分别比较方法、下降时间与恢复代价"]
+    COMPARE --> DECIDE["决定保留、替换或组合默认策略"]
+```
+
+G0/P1已有实现，分段计时与工作集证据核验已完成受控实现，F1尚未实现，组合策略尚未选定。默认按钮暂时维持现状，不自动从定向失败回退为全局操作，也不通过放宽保护、重复派发或改变动效来制造“更快”的结果。具体任务、依赖与验收见 [开发计划第十二章](<开发计划 Development Plan CPU 内存清理.md#十二底层清理策略的下一轮任务>)。
+
+## （六）原生调用瓶颈后的优化取舍
+### 1. 现有命令是否有更快的调用方式
+四款固定版本的全局工作集分支均发送一个 MemoryEmptyWorkingSets 命令。WinMemClean 明确传入32位命令及其长度，本仓库同样发送信息类80、命令2、4字节载荷。在已读调用中没有“清理速度”或“强度”参数，也没有依靠重复派发、逐页延时或并发全局调用加速的证据。[WinMemClean 命令封装](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/nt.rs#L140)、[本仓库原生派发](<../legacy/python/src/cpu_memory_cleanup/system/platforms/windows.py>)
+
+System Informer 将选中的多种命令交给工作线程，但线程内部仍逐项调用回调。这解决界面等待问题，不证明一个全局命令变快。WinMemoryCleaner 与 WinMemClean 在配置排除项时才枚举并逐进程整理，是处理范围变化，不是同一全局算法的加速参数。[System Informer 命令线程](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L478)、[WinMemoryCleaner 范围分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710)、[WinMemClean 逐进程循环](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs#L61)
+
+Microsoft 另提供 SetProcessWorkingSetSizeEx 的两个 SIZE_T(-1) 参数来尽可能移出指定进程工作集中的页，EmptyWorkingSet 也可完成这一目的。文档没有给出前者更快的保证，不因换函数名就建立一条新的优先路线。[Microsoft 目标工作集接口](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsizeex)
+
+结合本次3.324秒原生、3.444秒总计的单次证据，推断只优化原生之外的全部开销，理论上也只涉及约0.120秒，且其中含本次显式核验。故暂不重写语言、删除写盘或常驻特权来处理这个瓶颈。这个边界只针对该次测量，不是所有负载的性能上限。
+
+### 2. 文件缓存作为后续独立候选
+同类真正扩大的处理对象是系统文件缓存等区域。Mem Reduct 在工作集后单独裁剪文件缓存，WinMemoryCleaner 的文件缓存分支先调用 NT 接口，再调用公开接口。源码说明存在这种组合，不证明重复调用必要，也不证明组合总耗时更短。[Mem Reduct 两个独立分支](https://github.com/henrypp/memreduct/blob/04402de8b6a8ff9d1c5517c675d87c346655323c/src/main.c#L390)、[WinMemoryCleaner 缓存分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L662)
+
+F1 的候选规格采用公开 SetSystemFileCacheSize：两个参数按当前进程指针宽度传 SIZE_T(-1)，Flags=0，请求一次缓存整理。只临时启用调用所需的 SeIncreaseQuotaPrivilege 并恢复。不得将 Flags=0解释为主动关闭缓存限制，也不写长期硬上限，不先后调用 NT 与公开接口来重复完成同一候选。[Microsoft 文件缓存接口](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setsystemfilecachesize)
+
+F1 单独处理系统文件缓存，不能标成已整理所有应用工作集。它是补充作用范围的候选，不是已找到的 G0 加速器。先比较 F1 单独与既有 G0、P1，只有单项有价值才登记 G0→F1 或 F1→G0 的组合实验。将 F1 提前可能改变首次下降时机，但仍需等待后续 G0，不能据此宣称总耗时降低。组合必须有中间快照和逐步骤计时，不把多个非同步差额相加。
+
+缓存测量要区分实际驻留与容量限制。GetSystemFileCacheSize 返回最小/最大限制及启用标志，不返回当前实际驻留字节。PERFORMANCE_INFORMATION.SystemCache 又含 Standby，不能直接当成额外可释放容量。先保留前后系统可用量及缓存字段的原义，尚无可靠驻留口径时将“文件缓存独占释放量”保留未知，不靠相减拼出指标。[Microsoft 缓存限制查询](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-getsystemfilecachesize)、[Microsoft 系统计数定义](https://learn.microsoft.com/en-us/windows/win32/api/psapi/ns-psapi-performance_information)
+
+System Informer 的文件缓存成功消息使用调用前取得的 cacheInfo.CurrentSize，没有在该函数内用调用后驻留量求差。本项目不将这样的调用前容量直接显示为实际释放量，只复用可核实的动作与测量职责。[System Informer 缓存消息路径](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L386)
+
+### 3. 采用顺序与判断标准
+接下来先将P1/P2同目标比较做成独立、显式候选，完成设计及假接口验证，保留当前G0默认。F1后置。并行整理全部进程、循环全局整理、清除完整Standby、强制写回Modified或长期压低缓存上限均不作为本轮默认提速方案。Standby已计入Available，仅把它转成Free不构成按Total−Available计算的占用下降。
+
+P1 继续服务明确选中的程序，比较时列出目标数量、覆盖及跳过，不用较小范围的短耗时声称完成与 G0 相同的工作。真实比较要同时检查首次观测下降、动作总时长、固定窗口净变化和应用恢复响应。单次容量增加不等于提速。未来若仍需解释 G0 内部等待，再单独设计系统跟踪，不能从3.324秒反推出磁盘写回、锁或驱动的具体占比。
+
+## （七）本机360软件小助手的静态提取与清理线索
+### 1. 资源确实可以解包
+本机外层 SoftManagerLite.exe 的版本资源为“360软件小助手”3, 1, 0, 1075。其可见字符串指向 SML 模块，沿已定位安装目录找到子目录中的 SoftMgrLite.exe、SMLCore.dll、SMLHelper64.exe 及五份 .uiz 皮肤包。后五包是可直接读取的标准 ZIP，已校验CRC并提取1,212份文件。两份默认皮肤的 OnekeyAcce/OneKeyAcce.xml 包含 BtnOneKeyAcce 与 CheckClearMem，分别对应“一键加速”和“清理系统内存”。这证明存在相关界面资源，不证明当前窗口采用哪份皮肤。
+
+五份被检查PE合计提取66份图标、对话框、菜单、版本及清单等资源，并保存节区与字符串。没有从PE中识别出可还原代码的ZIP或UPX载荷，不能把节区提取说成已脱壳。皮肤解包成功也不等于恢复原始C++源码。原文件和提取文件均仅保留本机忽略目录，不复制到产品或上传仓库。
+
+### 2. 找到一条逐进程裁剪工作集路径
+新增检查的 SMLCore.dll 中存在 SetProcessWorkingSetSize 静态导入。将导入表地址与局部机器码交叉核对后，发现同一片段按顺序调用 Process32FirstW、OpenProcess、SetProcessWorkingSetSize、CloseHandle、Process32NextW，并回跳循环。工作集调用的两个大小参数均为-1，句柄来自该轮 OpenProcess，调用RVA为0x8a52a。这是比单纯字符串更强的静态实现证据，具体字节位置、文件指纹与校验见 [静态解包记录](<运行记录 Run Record/2026-11-02 360软件小助手静态解包.md>)。
+
+按公开接口契约，两个 SIZE_T(-1) 请求尽可能移出指定进程的工作集页，并非将进程数据做通用压缩。该路径在作用对象上更接近本仓库P1定向工作集路线，和G0单条全局命令的范围组织不同。不能因此推断逐进程必然更快或当前按钮一定使用这段例程。[Microsoft SetProcessWorkingSetSize](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize)
+
+SoftMgrLite.exe 中的九处已找到的同接口静态引用，均具有先取得 GetCurrentProcess 再以两个-1调用的字节序列，属于自身工作集裁剪线索，不能混称为九次全机整理。SMLCore.dll 中上述一处已找到的引用则来自逐进程枚举片段。它们都是静态引用数量，不是本轮实际执行次数。
+
+### 3. 一键加速到清理函数的静态条件调用链
+现已连接按钮绑定、事件处理、组件工厂和实际工作集例程，限于已固定哈希的SoftMgrLite.exe 3.1.0.2511与SMLCore.dll 3.1.0.2120。界面类名COneKeyAcceWnd、进程管理类名CProcMgr来自RTTI，以下职责名称是分析标注，不冒充恢复的原始函数名。完整RVA、导入/虚表及48处指令核验见 [调用链运行记录](<运行记录 Run Record/2026-11-02 360一键加速调用链复核.md>)。
+
+```mermaid
+flowchart TD
+    XML["XML：BtnOneKeyAcce / CheckClearMem"] --> BIND["窗口查找控件并绑定事件0"]
+    BIND --> EVENT["委托转发到窗口事件处理函数"]
+    EVENT --> CHECK{"事件对象是主按钮且事件为0"}
+    CHECK --> START["进入一键加速处理"]
+    START --> SAVE["保存选项状态"]
+    SAVE --> MEMORY{"清理系统内存已勾选或控件缺失"}
+    MEMORY -->|是| API["CProcMgr 虚表 +0x4c"]
+    API --> ENUM["进程快照与逐项枚举"]
+    ENUM --> OPEN["OpenProcess：PROCESS_SET_QUOTA"]
+    OPEN --> TRIM["SetProcessWorkingSetSize：两个 -1"]
+    TRIM --> NEXT["关闭句柄，处理下一进程"]
+    NEXT --> APPS["进入软件项处理"]
+    MEMORY -->|否| APPS
+    APPS --> MARK{"软件项标志要求处理"}
+    MARK -->|是| EXIT["进程管理方法 → CProcItem → TerminateProcess"]
+    MARK -->|否| END["继续界面与统计流程"]
+    EXIT --> END
+    OBS["独立枚举更新 GlobalMemoryStatusEx"] --> DISPLAY["窗口更新容量差值与显示比例"]
+    END --> DISPLAY
+```
+
+跨模块关联不是仅凭相同虚表偏移猜测：窗口经提供器取得对象，提供器请求的GUID与SMLCore中的CProcMgr工厂常量相同。工厂构造函数安装已定位的CProcMgr虚表，其+0x4c确指向工作集循环。主按钮处理在检查CheckClearMem后调用该槽位，过程中没有等待动效结束的调用门控。此为静态条件链，不证明当前正在运行的360实例加载了同一文件、使用了相同配置或执行了该分支。
+
+工作集循环逐进程打开配额权限句柄，不调整长期工作集上限，不在这段例程中调用全局NT命令或文件缓存整理。打开失败则跳到下一项，SetProcessWorkingSetSize的返回值在该例程中未逐项检查，枚举走完返回1。因此“该方法返回”不等于全机每个进程整理成功，也不应复制这种结果口径。
+
+一键加速处理随后按软件项标志调用另一条管理路径，可追到CProcItem及TerminateProcess。该动作会结束程序，与工作集裁剪有本质区别，不能把其容量变化一起归功于裁剪算法。未核验当前界面选择和实际对象类型，不声称每次点击均结束程序。本仓库继续遵守不结束进程的约定，不采用此分支。
+
+### 4. 归零与回弹已有更直接的静态证据
+继续检查同一组已固定哈希的文件，现已连接 `ProgressSrc` 控件、`CXProgressCtrlAC` 定时器、窗口事件与枚举更新回调。普通一键分支先调用工作集整理和条件性软件处理，再启动下降动效。下降每30毫秒减去起点的1/25，名义约0.75秒到零，零位发出事件0x6f，请求进程管理器的 `Enum` 更新。枚举更新回调读取显示比例，在下降标志已清除时启动20毫秒步进的回弹定时器，达到保存目标后发出0x70并退出动画。
+
+这条已追通路径没有本项目“整理返回后至少观察三秒、等待三份读数趋缓、最多八秒”的门槛。零位等待主要连接到数据更新回调，不是等待物理内存稳定。下降动效开始前已经调用本次工作集整理，因此零位停留短也不能证明全部原生整理只花了这段零位时间。当前回弹段以保存目标推进，并非按我们的实时重定向方案逐帧追踪实际值。系统字段刷新、动画显示和实际清理应分别理解。
+
+名义节奏来自静态常量和步进，不是对运行中360的实测。`SetTimer` 的间隔以毫秒计，依赖消息分派，不能保证每帧准时。[Microsoft SetTimer](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-settimer)。具体版本、49处原始指令重新解码、事件链及限制见 [动效静态追踪记录](<运行记录 Run Record/2026-11-02 360归零与回弹静态追踪.md>)。没有运行360或追加真实清理，没有恢复其原始 C++ 源码。该结果足以解释本项目额外等待与360所见路径的差别，仍不能证明两者相同负载下谁的原生执行更快。
+
+### 5. 与本项目相比，哪些差异可能解释更快的感受
+| **比较点** | **360本机静态路径** | **本项目当前实现与判读** |
+| --- | --- | --- |
+| 主内存动作 | 枚举进程并逐项SetProcessWorkingSetSize(-1,-1) | 原G0为一次全局NT工作集命令；当前按用户决定采用逐进程方式。此前G0测量不代表新默认的全机性能，静态代码不能证明哪条更快 |
+| 同类定向接口 | 指定句柄的工作集裁剪 | P1已有EmptyWorkingSet及固定目标批次。官方将两个接口列为可完成工作集移页的方式，没有给出速度排名。[接口关系](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize) |
+| 附带作用 | 按软件项条件可进入结束进程路径 | 本项目不结束进程。若实际使用中该分支生效，下降幅度就不能与纯工作集整理作同等比较，是否生效尚未实测 |
+| 覆盖与成本 | 只按PID打开配额句柄，失败继续，无逐项返回检查 | P1按创建身份/路径核验，逐项留记录。更少检查可能减少外层工作或隐藏覆盖缺口，但不能解释已测G0中3.324秒的原生内部时间 |
+| 读数与结果 | 独立GlobalMemoryStatusEx更新字段，窗口再计算容量变化和显示比例 | 当前真实读数也独立更新，Run结果固定于前后快照。两者显示与统计时刻不同，单看圆环收束速度不足以比较清理完成时间 |
+| 已有性能证据 | 本轮未运行360，无本机原生耗时或配对负载结果 | G0有一次原生3.324秒、总计3.444秒测量；P1/P2单目标探索见下节，范围及实际起点差异不能与360主观速度直接构成对照 |
+
+已确认原G0与360所见机制不同，且“一键加速”可能包含不同动作，尚不能给出“360在相同工作量下更快”的因果结论。P1/P2探索结果如下，分别保留原生时间、整批时间、覆盖与后续响应，不以减少核验、结束应用或提前宣告成功制造性能结论。文件缓存候选并未在所追工作集函数中出现，当前不扩展F1。
+
+### 6. 当前工程准备与证据界限
+P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留创建身份、路径核验、保护和原记录。假DLL覆盖当前64位与模拟32位参数、原生错误及单次派发；批次摘要分开保存原生、核验及整批成本。独立只读观察器可在动作期间取样，自有负载入口提供固定触页与读回。实现与受控证据见 [运行记录](<运行记录 Run Record/2026-11-02 同目标工作集候选与实验准备.md>)，实验顺序见 [开发计划](<开发计划 Development Plan CPU 内存清理.md#四按真实效果决定默认策略>)。
+
+经单独授权的 [一次真实同目标探索](<运行记录 Run Record/2026-11-02 P1与P2真实同目标对照.md>)使用同一自有进程，每组重建128 MiB数据，P1/P2各一次原生调用成功，工作集即时分别144.48/130.33 MiB降至0，读回后恢复约129.92 MiB，PrivateUsage保持138.11 MiB。原生耗时18.64/13.17 ms，但实际起点差9.80%超过预设5%容差，且无清理系统可用量也波动约131 MiB，不能认定P2更快、全机下降更多或计算独占释放量。读回约34.38/28.96 ms，对照2.49 ms，证明驻留恢复有实际代价；缺页计数不能替代硬缺页或磁盘证据。
+
+该次探索增加了单目标真实功能及恢复代价证据，尚缺完整起点恢复、顺序平衡及配对重复，不能支持性能排名或360速度归因。用户随后明确选择尽量复刻360内存逻辑；当前正式装配已接入一轮逐进程SetProcessWorkingSetSize，保留身份核验、错误和覆盖计数，不采用终止程序分支或叠加其他缓存动作。选择依据是产品目标，不把未满足可比条件的探索说成胜出证据。实现与受控证据见 [产品接入记录](<运行记录 Run Record/2026-11-02 360逐进程工作集产品接入.md>)，动效未改。
+
+随后单独授权的 [正式网页真实验收](<运行记录 Run Record/2026-11-02 正式网页逐进程真实验收.md>)在内置浏览器实际触发一轮709项遍历，692成功、10打不开而跳过、7原生返回5，未知0、资源关闭确认；原生调用合计5.534秒，Package约5.645秒。系统可用量即时14.17→20.08 GiB，约39秒后的独立显示为25.46 GiB；不同时间点分列，不把后续全部净变化当作独占收益。原结果partial，不等于一轮没有作用或全部成功。该证据确认当前主路径真实生效，不能与原G0在不同负载下排名或证明达到360相同速度，也不证明长期收益。
+
+静态反汇编采用临时目录隔离的Capstone 5.0.6，没有运行目标程序或恢复原始源码。资源解析仍使用LIEF 0.16.4，结构依据 [Microsoft PE格式](https://learn.microsoft.com/en-us/windows/win32/debug/pe-format)、[LIEF资源说明](https://lief.re/doc/latest/tutorials/07_pe_resource.html) 和 [Capstone Python用法](https://www.capstone-engine.org/lang_python.html)。动态模块替换、不同版本、未追踪分支和当前屏幕的实际动效仍未验收。
+
+### 7. 核心语言、逐段差异与按键卡顿的证据
+同一副本的 EXE 与 DLL 均为 I386 原生映像，链接器版本字段为14.16。窗口及进度控件分别具有 `COneKeyAcceWnd`、`CXProgressCtrlAC` 的 C++ RTTI，管理模块具有 `CProcMgr`，结合已核对虚表可确认这条核心链使用编译后的 C++ 类，具有 MSVC 兼容工具链特征。不能据此认定整个产品只有一种语言、精确编译器版本或已恢复原始 `.cpp`。[Microsoft RTTI说明](https://learn.microsoft.com/en-us/cpp/build/reference/gr-enable-run-time-type-information?view=msvc-170)
+
+逐段比较确认：360普通按钮直接进入本地调用，进程快照采用 Toolhelp，只申请 SET_QUOTA，逐项整理后关闭句柄。迁移前实现是浏览器JS、HTTP和Python工作线程，采用 EnumProcesses，增加 QUERY 权限、两次创建身份读取及动作计时。核心裁剪接口相同。业务已在线程中执行，DLL用 WinDLL 装载，该调用会释放 Python GIL，不能将两秒原生调用说成Python在前端主线程中执行。[Python3.13 WinDLL文档](https://docs.python.org/3.13/library/ctypes.html#ctypes.WinDLL)
+
+已有真实Run 88d38249的2649.665毫秒中，原生调用区间2581.800毫秒，身份核验13.829毫秒、打开16.279毫秒、枚举0.609毫秒。原生区间包含跨语言调用与系统等待，不能用该比例推算重写C++的收益或与360排名。该轮报告有2908项阶段，HTTP报告本体按现行序列化为741247字节，浏览器二空格格式化后为1203373字节，页面在结果返回时立即格式化并写入折叠报告。这是可确认的呈现负担，其帧耗时未测，不能当成按下瞬间卡顿的已证实原因。
+
+全局遍历也会处理可访问的运行服务自身，记录中服务PID对应目标成功。裁剪后再次使用页面可能产生缺页及重新驻留，这是机制上的解释候选，而非本轮采到的卡顿因果，不能据此擅自增加排除项或复制360的软件退出分支。[Microsoft工作集与缺页说明](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)。完整对照、RVA、源码入口与未测范围见 [按键静态复核](<运行记录 Run Record/2026-11-02 360语言与按键链路对照.md>)。下一步优先量清点击反馈和结果呈现各自时段，不继续用动效参数掩盖等待或在证据不足时换语言。
+
+
+# 十七、原生运行时与当前清理成本
+
+用户已明确选择Rust正式运行时。当前产品不再依赖Python，Package、CLI、回环HTTP和Windows接入由Rust实现，浏览器仍是网页。源码入口为 [功能流程](../src/application/service.rs)、[系统接入](../src/system/windows.rs)、[网页适配](../src/interaction/web.rs) 和 [显示协调](../src/interaction/web_assets/app.js)。旧实现保存在legacy/python，前文Python调用链比较按原版本理解。
+
+语言变化没有改变操作系统的工作集语义：仍是一次枚举，对可访问进程调用SetProcessWorkingSetSize(-1,-1)，关闭句柄。它不删除应用数据、不等私有提交清零、不承诺永久释放；继续使用应用会重新驻留。360静态链确认C++类和相同核心裁剪接口，但没有恢复全部原始源码或取得同负载动态性能对照，不能据语言推断快慢。[Microsoft接口说明](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize)、[工作集](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)
+
+当前Rust实现比迁移前主通道更小：按原生绑定调用，目标创建身份在同一句柄核验，全局不额外读取逐目标工作集；主页面先获取摘要，完整事实展开后再取，点击先绘制忙碌反馈。上述是可从源码核对的实现差异，不自动等于测得响应收益。
+
+本次正式内置浏览器一次真实整理覆盖691个枚举目标，679成功、10跳过、2失败，资源关闭且未知0。前后可用量19.77→28.06 GiB，业务3231.06毫秒，其中原生调用3211.37毫秒，约99.39%；这提示当前该次等待主要位于操作系统调用区间。原生区间也包含调用和调度成本，不能据此断言每个进程的磁盘等待或全部卡顿原因。不同负载的旧Python记录不能作为配对语言基准，不能声称Rust必然比Python/360快。
+
+浏览器该轮点击后21.7毫秒提交，26.0毫秒受理，3360.1毫秒呈现结果；随后归零，到零刷新约4.1毫秒返回，回弹结束4441.2毫秒。动效不决定后台动作和结果；它没有把系统内存真正清到0。详细时序、原件和限制见 [Rust原生网页验收](<运行记录 Run Record/2026-11-02 Rust原生网页验收.md>)。
+
+当前采用判断：保留真实整理及独立动效，Rust作为用户指定的运行路线；不增加并行裁剪、NT全局切换、结束应用或循环重试来追求预设占用值。若后续仍需比较360速度，应先固定负载、目标、读数窗口及恢复条件再设计明确对照。本轮未启用自动规则，未增加第二次清理或进行竞品实机测试。
+
+
+# 十八、三秒整理与百分比顿挫的分开定位
+
+本节顿挫代码为修正前基线，用于解释当时原因。对应显示问题已修复，当前采用与真实证据以第二十章为准。原生长尾与同条件竞品速度尚未验证的限制仍适用，不把历史修复任务视为当前待办。
+
+## （一）问题、范围与证据
+本节回答两个问题：已经采用 Rust，3.23 秒主要花在哪里；百分比为何仍显得停顿、跳变。依据为当前提交155c210的源码、既有真实 Run ed4c5691、已校验的360副本和同类固定源码。只做静态复核、原记录统计和官方文档阅读，没有再次采样、执行真实清理或修改服务。完整定位和原件见 [速度与显示复核记录](<运行记录 Run Record/2026-11-02 Rust速度与百分比复核.md>)。
+
+## （二）三秒主要由少数较慢的原生调用累加
+既有 Run 的681次原生调用合计3211.37毫秒，业务3231.06毫秒。原生以外约19.69毫秒，占0.61%。中位单项只有0.405毫秒，P95约20.46毫秒、P99约66.99毫秒、最大267.66毫秒。最慢10项合计1126.95毫秒，占原生35.09%；最慢20项1549.62毫秒，占48.25%。这是一轮串行处理的长尾，不是每个进程都慢，也不是已测得 Rust 本身循环耗时三秒。[真实 Run 与离线统计](<运行记录 Run Record/2026-11-02 Rust速度与百分比复核.md#二原生时长分布>)
+
+计时字段在最终报告写入前取值，服务任务就绪计时3232.42毫秒还包括其后的封存及少量接入开销，合计非原生约21.05毫秒。在原生时长和目标集合不变的前提下，移除这些开销仍只能省约20毫秒，不能省几秒。当前逐项目标没有记录当时的工作集、应用名称或缺页/I/O证据，不能从耗时给慢 PID 猜程序或归因磁盘、锁竞争、杀软。也不应拿现在同号 PID 补历史身份。裁剪后再次访问会发生缺页是官方机制，但尚不能证明本次顿挫来自硬缺页。[Microsoft Working Set](https://learn.microsoft.com/en-us/windows/win32/memory/working-set)
+
+## （三）360 的核心路径相近，速度差尚缺同条件证据
+复核 SoftMgrLite.exe 3.1.0.2511、SMLCore.dll 3.1.0.2120，哈希与原静态记录一致。DLL RVA 0x8a480至0x8a574为串行遍历：Toolhelp快照→OpenProcess(0x100)→SetProcessWorkingSetSize(-1,-1)→CloseHandle→下一项。这段没有线程池、每项固定等待或另一种瞬时清空全部物理内存的接口。[360静态调用链](<运行记录 Run Record/2026-11-02 360语言与按键链路对照.md#二逐段对照>)
+
+| 环节 | 360 已追到的实现 | 当前 Rust | 对下一步的含义 |
+| --- | --- | --- | --- |
+| 枚举 | Toolhelp进程快照 | EnumProcesses | 不能凭接口名认定快慢，该轮全部非原生开销仅约20毫秒 |
+| 目标访问 | 仅PROCESS_SET_QUOTA | QUERY_LIMITED_INFORMATION加SET_QUOTA，读取一次创建身份 | 全局最小权限是可研究的贴齐方向；定向/保护仍必须保留身份与路径核验 |
+| 实际裁剪 | 串行SetProcessWorkingSetSize，两个-1 | 相同方法、相同参数，串行 | 语言已变，操作系统执行的主要工作没有变 |
+| 结果核对 | 该循环未检查每项裁剪BOOL，枚举完成可返回1 | 保存成功/失败/跳过/关闭与前后快照 | 不能用对方函数“返回完成”证明覆盖和效果相同，也不删本项目错误事实制造快感 |
+| 显示 | 整理后下降，到零请求更新，保存目标后回弹 | 主要顺序相同，浏览器另外持续显示读数 | 零位停留不能代表360全部整理耗时 |
+
+2026年11月2日继续核对官方合同：裁剪句柄需要 `PROCESS_SET_QUOTA`，两个 -1 表示尽可能移出工作集，BOOL 和错误码仍须检查。最小权限与裁剪参数由 [Microsoft SetProcessWorkingSetSize](https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-setprocessworkingsetsize) 核对。用户提供的360结果截图显示关闭0个程序，不能把该次更快感受归因于结束应用。当前缺少同负载、同目标覆盖、相同起点的360计时，尚不能断言它用相同工作量比本工具少几秒。
+
+同类源码也不能提供“换 Rust 即瞬间完成”的证据。固定 WinMemClean 的进程分支也是逐项EmptyWorkingSet；没有排除时转全局NT工作集命令。固定 WinMemoryCleaner 同样区分逐进程排除与全局NT两条路径。这些是权限、范围和核验合同不同的策略，不能把一个全局调用或较少目标当同工作量对照，也不作为当前绿色按钮替换决定。[WinMemClean进程实现](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs)、[WinMemClean策略分支](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/lib.rs)、[WinMemoryCleaner策略实现](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs)
+
+## （四）百分比不流畅有独立的源码原因
+当前 [app.js](../src/interaction/web_assets/app.js) 与 [styles.css](../src/interaction/web_assets/styles.css) 的可确认行为如下。它们支持定位候选，不把静态分析写成已测得的全部主观体验原因。
+
+1. 读取完成后再等1000毫秒，插值仅400毫秒。不同读数之间有约600毫秒加请求时间的静止段，每次过渡又从零速度起步。使用RAF不等于整体节奏连续，正常变成“动一小段、停一段”
+2. JS每帧修改进度条width，CSS又给width加0.4秒transition，形成二次追赶。圆环、数字和细条没有完全相同的显示响应
+3. 动效stop时取消当前插值并直接paintMemory(latestMemory)。回弹期间如果新实际值已变化，回弹到保存目标后可能立即跳到最新值，再进入下一次过渡。固定回弹目标本身符合已追360逻辑，问题是接回实时显示的衔接
+4. 百分比只显示整数。以回弹终点38%、时长300毫秒为例，理想60帧时每帧约跨2.1个百分点，即使不掉帧，数字也会明显跳。这是量化和显示速度，不等于系统没有读取或没有清理
+5. run开始、finally结束都会无条件renderRows，即使进程详情折叠也重建已读列表。真实发现曾有693项目，完整列表时的开始反馈和结束绘制成本尚未测。主操作不应先付这笔无关列表重建成本
+
+圆环每帧改conic-gradient、数字每帧写DOM、细条width与脉冲阴影属于还需测量的绘制负担，不能因存在就宣称GPU或浏览器必然卡住。官方建议检查样式对布局、绘制的实际影响，优先优化确有成本的路径，不盲加图层或改渲染框架。[MDN requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame)、[web.dev动画性能指南](https://web.dev/articles/animations-guide)
+
+旧浏览器记录最大动画帧间隔18.6毫秒，只说明那次受监控RAF片段没有长停顿，不能否定停走节奏、整数跳变、列表展开时的另一条路径或用户当前反馈。该轮点击至报告约3.36秒，视觉结束约4.44秒。“3.23秒后台”和“4.44秒视觉全部收束”需要分开。报告120毫秒轮询对应的约0.10秒残差包含受理时点差、轮询、传输与调度，未测为纯网络耗时。
+
+## （五）采用判断与优化顺序
+优先改可确认的显示节奏和点击路径：一个显示驱动统一圆环、数字和细条，去掉重复过渡，缩短真实读取间隔并取消每次从头起步的插值，回弹到实时值连续交接，主操作不重建折叠列表。后台仍真实读取、只整理一次，结果立即显示，不用增加零位等待掩盖业务耗时。
+
+原生侧先补完整的逐阶段与长尾摘要，再设计贴近360的全局最小权限串行候选。它可能减少查询和访问差异，但不承诺把3秒变成1秒；定向身份和保护不能削弱。若同范围原生调用仍占主要耗时，才评估内部最多2项并发的受控对照准备，保留串行为基线。360已追循环本身没有并发，不能把此候选称为复原360。并发的原生时间合计与墙钟必须分开，可能受系统争用和重新驻留影响，未经真实对照不进入默认按钮。
+
+本轮UX-01/02与NATIVE-01已实施，并用既有真实记录和真实只读页面验收，见 [流畅显示与计时验收](<运行记录 Run Record/2026-11-02 流畅显示与计时验收.md>)。这不构成新的原生速度或真实清理后动效证据，NATIVE-02 的后续隔离实现见 [最小权限候选验收](<运行记录 Run Record/2026-11-02 最小权限串行候选验收.md>)，它未进入默认按钮或取得实机速度证据；NATIVE-03 仍为条件研究。后续 [性能对照准备](<运行记录 Run Record/2026-11-03 性能对照准备验收.md>) 已提供固定清单、自有负载恢复、分段采集与只读比较入口，仅验证工程合同，没有新增真实速度证据。当前不转NT全局清理，不减少覆盖、跳过慢目标、结束应用、提前报完成或循环重试。后续真实对照须另有执行范围；该次复核只形成调研与计划，后续实施状态见 [开发计划](<开发计划 Development Plan CPU 内存清理.md#三下一轮先把百分比和点击做顺>)。
+
+本节来源访问日期为2026年11月2日。GitHub采用既有固定提交缓存并复核哈希，不声称读取远端最新版本；360为静态机器码与资源证据，未运行对方程序；Microsoft、MDN和web.dev为本轮阅读的官方/维护方文档，滚动页面无本轮源码性能实测含义。
+
+# 十九、最小权限候选的真实对照判断
+2026年11月3日的 [真实对照](<运行记录 Run Record/2026-11-03 真实工作集对照.md>)中，128 MiB自有进程两种方法均约10 ms，工作集约130 MiB降至1 MiB，内容保持。默认创建身份读取约0.001 ms，没有支持省掉查询即可节省数秒的证据。
+
+同次固定全局482项只有9项可维护、473跳过，执行权限和覆盖与此前正式服务环境不同，不能将几十毫秒与此前3.23秒对比。最小权限不自动带来更多覆盖。本轮不足以认定速度排名，继续保留默认核验路径，先定位环境差异。自有内容恢复代价与全局长尾、前端动效分别判断，不通过动画或较少目标制造提速结论。
+
+# 二十、360回调与圆环流程的校准
+进一步核对固定EXE原字节：下降开始同时设置整体动效及下降标志，零位仅结束下降，回弹结束才结束整体动效。窗口更新回调在下降结束后仍可写回弹目标，不能把原静态摘要的“保存目标”扩大为回弹期间永久固定。当前网页已采用独立保持/下降流程，以及新真实读数动态更新终点，从当前显示位置接向新目标，不重启整个回弹截止时刻。这是浏览器实现取舍，不声称逐帧等同原生SetTimer。
+
+一次 [真实网页验收](<运行记录 Run Record/2026-11-03 圆环流程修正真实验收.md>)确认后台实际下降时圆环保持44.55%，结果后才下降，零位27.06%刷新后又按新样本更新至26.55%完成回弹。没有固定26%或以历史最低值替代当前读数。后续真实占用波动继续显示，单次时序验证不证明360同速或永久释放。
+
+## （一）下降名义时长已经一致，回弹取值仍有差异
+进一步逐字节复核112条指令并追踪x87数据栈，普通动效更新路径先比较保存比例a与提供器新比例b。a≤b时经0xd98d6保留a；a>b时重新读取提供器、归一化后经0xd98bd保存，并供0xd990f写入回弹目标。假设分支内第二次提供器读取未变化，等效目标为min(a,b)。这只是在当前动效更新分支保留较低值，不是清理到历史最低内存。动效结束清活动标志后，普通刷新分支0xd9835至0xd9859会恢复采用当前读数。完整条件和原件见 [回弹节奏复核](<运行记录 Run Record/2026-11-03 360回弹目标与节奏复核.md>)。
+
+前一实现f7b8aad在回弹中双向采用最新样本，固定300毫秒截止；若临近截止才到达不同目标，剩余路程/剩余时间会突变，因此连续位置不必然保证连续速度。较高或较低终点也可能只是新采样时点不同，不能全部解释成算法错误。360候选风格可以只对本次视觉目标下调，原始容量与报告必须继续真实，视觉结束再交回实时，不得以低目标假装实际占用。该建议已在b1cb4bf按本次视觉周期低目标与20毫秒步进落地，不再采用固定截止时刻，真实采样和结果独立。
+
+下降起点/25、30毫秒步进名义750毫秒，与当前网页750毫秒线性段一致。差别主要在消息步进、绘制和前置等待，不能把“下降偏快”未经拆段就归因于时长不对。原生SetTimer受调度影响，静态名义时长不能当成360动态实测。阶段技术文字当前按用户要求暂保留，后续产品收敛再移出主圆环。
+
+## （二）360式回弹的当前采用与证据
+当前采用下降750毫秒、本次视觉目标只下调、回弹20毫秒名义步进及目标/15步长，接收更新时重设步长和下一次名义步进，不按剩余时间加速。到达或越过目标钳位结束，恢复实际读数。原生消息调度与浏览器RAF不同，不声称逐帧或全部360分支一致，也不复制其忽略返回或终止应用行为。
+
+一次 [真实网页验收](<运行记录 Run Record/2026-11-03 360式回弹真实验收.md>)中，零位31.61%更新到回弹目标30.26%，显示终点30.26%，随后实际读数仍独立变化。回弹约332毫秒，下降首次帧至零约750.7毫秒。真实运行未自然出现回弹阶段占用回升，该分支由隔离回归覆盖，不冒充实机已遇到。31项网页及默认/开发Rust检查通过，不由此宣称底层提速或永远固定某个占用。

@@ -1,0 +1,152 @@
+{
+  "files": {
+    "test_cli.py": {
+      "target": "src/cpu_memory_cleanup/interaction/cli.py",
+      "tags": [
+        "offline",
+        "module_cli"
+      ],
+      "cases": {
+        "CliTests.test_default_only_requests_one_readonly_sample": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        },
+        "CliJourneyTests.test_offline_review_uses_saved_run_with_zero_backend_calls": {
+          "level": "e2e"
+        },
+        "CliJourneyTests.test_synthetic_agent_uses_catalog_status_cleanup_and_original_result": {
+          "level": "e2e"
+        },
+        "CliJourneyTests.test_post_read_failure_preserves_successful_action_in_cli_result": {
+          "level": "e2e"
+        },
+        "CliTests.test_text_report_preserves_sample_gap_reasons": {
+          "plans": [
+            "quick",
+            "readonly_offline"
+          ]
+        }
+      }
+    },
+    "test_desktop.py": {
+      "target": "src/cpu_memory_cleanup/interaction/desktop.py",
+      "tags": [
+        "offline",
+        "module_desktop"
+      ],
+      "cases": {
+        "DesktopTests.test_result_summary_uses_available_snapshot_change": {
+          "subtests": [
+            {
+              "after": 3
+            },
+            {
+              "after": 1
+            },
+            {
+              "after": 2
+            }
+          ]
+        },
+        "DesktopTests.test_readonly_journey_uses_core_without_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopTests.test_cancel_before_worker_enters_core_prevents_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopTests.test_cancel_after_worker_entry_before_core_begin_prevents_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_mainloop_interrupt_cancels_and_joins_undispatched_maintenance": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_mainloop_unexpected_return_discards_pending_maintenance_and_joins_reader": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_mainloop_error_after_root_destroy_still_joins_and_preserves_error": {
+          "level": "e2e"
+        },
+        "DesktopRunTests.test_normal_close_returns_without_destroying_root_twice": {
+          "level": "e2e"
+        },
+        "DesktopTests.test_live_display_preserves_last_cleanup_snapshot_result": {
+          "level": "integration",
+          "tags": [
+            "offline",
+            "module_desktop",
+            "feature_cleanup_feedback"
+          ]
+        }
+      },
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_web.py": {
+      "target": "src/cpu_memory_cleanup/interaction/web.py",
+      "tags": [
+        "offline",
+        "module_web"
+      ],
+      "level": "e2e",
+      "cost_class": "c2",
+      "timeout_s": 10,
+      "memory_bytes": 268435456,
+      "plans": [
+        "regression"
+      ],
+      "cost_estimate": {
+        "estimated_wall_time_ms": 500,
+        "estimated_peak_memory_bytes": null,
+        "estimate_source": "本地HTTP合成集成，含服务线程收尾"
+      }
+    },
+    "test_presentation.py": {
+      "target": "src/cpu_memory_cleanup/interaction/presentation.py",
+      "tags": [
+        "offline",
+        "module_presentation"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_workspace.py": {
+      "target": "src/cpu_memory_cleanup/interaction/workspace.py",
+      "tags": [
+        "offline",
+        "module_workspace"
+      ],
+      "level": "integration",
+      "plans": [
+        "regression"
+      ]
+    },
+    "test_ring.py": {
+      "target": "src/cpu_memory_cleanup/interaction/ring.py",
+      "tags": [
+        "offline",
+        "module_ring"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    },
+    "test_cleanup_effect.py": {
+      "target": "src/cpu_memory_cleanup/interaction/cleanup_effect.py",
+      "tags": [
+        "offline",
+        "module_cleanup_effect"
+      ],
+      "plans": [
+        "quick",
+        "readonly_offline"
+      ]
+    }
+  }
+}

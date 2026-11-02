@@ -1,0 +1,47 @@
+[package]
+name = "cpu-memory-cleanup"
+version = "0.4.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Native memory cleanup library, CLI tools and localhost workbench"
+license = "MIT"
+repository = "https://github.com/DreamSoul-AI/cpu-memory-cleanup"
+readme = "README.md"
+default-run = "cpu-memory-cleanup"
+include = ["/build.rs", "/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/tests/application/*.rs", "/examples/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
+
+[features]
+experimental-quota = []
+
+[[example]]
+name = "workingset-compare"
+required-features = ["experimental-quota"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tiny_http = "0.12"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Memory", "Win32_Security_Cryptography", "Win32_UI_WindowsAndMessaging"] }
+
+[[bin]]
+name = "memory-cleanup"
+path = "src/launcher.rs"
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[[test]]
+name = "application"
+path = "tests/rust/application.rs"
+
+[[test]]
+name = "web"
+path = "tests/rust/web.rs"
+
+[[test]]
+name = "measurement"
+path = "tests/system/measurement.rs"
