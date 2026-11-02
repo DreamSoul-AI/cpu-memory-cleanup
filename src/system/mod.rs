@@ -4,6 +4,8 @@ pub mod measurement;
 pub mod records;
 #[cfg(windows)]
 pub mod windows;
+#[cfg(any(windows, test))]
+mod workingset;
 
 pub fn random_bytes(bytes: &mut [u8]) -> AppResult<()> {
     #[cfg(windows)]

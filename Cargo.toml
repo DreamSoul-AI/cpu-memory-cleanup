@@ -10,6 +10,9 @@ readme = "README.md"
 default-run = "cpu-memory-cleanup"
 include = ["/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
 
+[features]
+experimental-quota = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

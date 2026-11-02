@@ -1,11 +1,7 @@
 //! The unsafe boundary is restricted to Win32 calls and owned process handles.
+use super::workingset::{self, Access, NativeCall, Process, Processes, Strategy};
 use crate::contracts::{AppResult, Memory, Sweep, Target};
-use serde_json::json;
-use std::{
-    mem, ptr,
-    sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
-};
+use std::{mem, ptr, sync::atomic::AtomicBool, time::Instant};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, FILETIME, GetLastError, HANDLE},
     System::{
@@ -23,8 +19,8 @@ use windows_sys::Win32::{
 pub struct Windows;
 struct ProcessHandle(HANDLE);
 impl ProcessHandle {
-    fn open(pid: u32, write: bool) -> Result<Self, u32> {
-        let rights = PROCESS_QUERY_LIMITED_INFORMATION | if write { PROCESS_SET_QUOTA } else { 0 };
+    fn open(pid: u32, access: Access) -> Result<Self, u32> {
+        let rights = access_rights(access);
         let handle = unsafe { OpenProcess(rights, 0, pid) };
         if handle.is_null() {
             Err(unsafe { GetLastError() })
@@ -138,7 +134,7 @@ impl super::System for Windows {
     fn targets(&self) -> AppResult<Vec<Target>> {
         let mut targets = Vec::new();
         for pid in ids()? {
-            let Ok(handle) = ProcessHandle::open(pid, false) else {
+            let Ok(handle) = ProcessHandle::open(pid, Access::Query) else {
                 continue;
             };
             let identity = handle.identity();
@@ -163,92 +159,92 @@ impl super::System for Windows {
         Ok(targets)
     }
     fn cleanup(&self, selected: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep> {
-        let mut timing = super::measurement::Stages::default();
-        let mut native_samples = Vec::new();
-        let ids = timing.measure("enumeration", || match selected {
-            Some(targets) => Ok(targets.iter().map(|t| t.pid).collect::<Vec<_>>()),
-            None => ids(),
-        })?;
-        let mut sweep = Sweep {
-            enumerated_count: ids.len(),
-            resources_closed: true,
-            ..Default::default()
-        };
-        for pid in ids {
-            if cancel.load(Ordering::Acquire) {
-                sweep.cancelled = true;
-                break;
-            }
-            sweep.visited_count += 1;
-            let handle = match timing.measure("open", || ProcessHandle::open(pid, true)) {
-                Ok(handle) => handle,
-                Err(status) => {
-                    sweep.skipped_count += 1;
-                    sweep.push(json!({"pid":pid,"outcome":"skipped","status":status}));
-                    continue;
-                }
-            };
-            let identity = timing.measure("identity", || handle.identity());
-            let target = selected.and_then(|targets| targets.iter().find(|t| t.pid == pid));
-            let mismatch = timing.measure("path_verification", || match &identity {
-                Ok(created) => target.is_some_and(|t| {
-                    t.created_at != *created
-                        || t.image_path.as_ref().is_some_and(|p| {
-                            handle
-                                .path()
-                                .is_none_or(|current| normalize(&current) != normalize(p))
-                        })
-                }),
-                Err(_) => true,
-            });
-            if mismatch {
-                sweep.skipped_count += 1;
-                sweep.push(json!({"pid":pid,"outcome":"skipped","reason":"目标身份或路径未确认"}));
-            } else if cancel.load(Ordering::Acquire) {
-                sweep.cancelled = true;
-            } else {
-                sweep.attempted_count += 1;
-                let before = selected.and_then(|_| {
-                    timing.measure("working_set_verification", || handle.working_set())
-                });
-                let started = Instant::now();
-                let ok = unsafe { SetProcessWorkingSetSize(handle.0, usize::MAX, usize::MAX) };
-                let status = if ok == 0 {
-                    unsafe { GetLastError() }
-                } else {
-                    0
-                };
-                let elapsed = started.elapsed().as_secs_f64() * 1000.;
-                timing.add("native", elapsed);
-                sweep.native_call_ms += elapsed;
-                native_samples.push((pid, elapsed));
-                if ok != 0 {
-                    sweep.successful_count += 1;
-                } else {
-                    sweep.failed_count += 1;
-                }
-                let after = selected.and_then(|_| {
-                    timing.measure("working_set_verification", || handle.working_set())
-                });
-                sweep.push(json!({"pid":pid,"created_at":identity.ok(),"outcome":if ok!=0 {"success"} else {"failure"},"status":status,"native_call_ms":elapsed,"working_set_before_bytes":before,"working_set_after_bytes":after}));
-            }
-            if let Err(error) = timing.measure("close", || handle.close()) {
-                sweep.resources_closed = false;
-                sweep.unknown_count += 1;
-                sweep.push(json!({"pid":pid,"close_error":error,"outcome":"unknown"}));
-                break;
-            }
-            if sweep.cancelled {
-                break;
-            }
-        }
-        let summary = super::measurement::native_summary(&native_samples, sweep.attempted_count);
-        let mut measured = timing.report("serial_system_sweep");
-        measured["native_summary"] = summary;
-        sweep.timing = Some(measured);
-        Ok(sweep)
+        workingset::sweep(&Win32Processes, selected, Strategy::Verified, cancel)
     }
 }
 pub fn normalize(path: &str) -> String {
-    path.replace('\\', "/").to_lowercase()
+    workingset::normalize(path)
+}
+
+fn access_rights(access: Access) -> u32 {
+    match access {
+        Access::Query => PROCESS_QUERY_LIMITED_INFORMATION,
+        Access::VerifiedCleanup => PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SET_QUOTA,
+        #[cfg(any(feature = "experimental-quota", test))]
+        Access::QuotaOnlyCleanup => PROCESS_SET_QUOTA,
+    }
+}
+struct Win32Processes;
+impl Processes for Win32Processes {
+    type Handle = ProcessHandle;
+    fn enumerate(&self) -> AppResult<Vec<u32>> {
+        ids()
+    }
+    fn open(&self, pid: u32, access: Access) -> Result<ProcessHandle, u32> {
+        ProcessHandle::open(pid, access)
+    }
+}
+impl Process for ProcessHandle {
+    fn identity(&self) -> AppResult<String> {
+        ProcessHandle::identity(self)
+    }
+    fn path(&self) -> Option<String> {
+        ProcessHandle::path(self)
+    }
+    fn working_set(&self) -> Option<u64> {
+        ProcessHandle::working_set(self)
+    }
+    fn trim(&self) -> NativeCall {
+        let started = Instant::now();
+        let ok = unsafe { SetProcessWorkingSetSize(self.0, usize::MAX, usize::MAX) };
+        let status = if ok == 0 {
+            unsafe { GetLastError() }
+        } else {
+            0
+        };
+        NativeCall {
+            succeeded: ok != 0,
+            status,
+            elapsed_ms: started.elapsed().as_secs_f64() * 1000.,
+        }
+    }
+    fn close(self) -> AppResult<()> {
+        ProcessHandle::close(self)
+    }
+}
+
+/// Development-only assembly for a future controlled comparison.
+/// Construction performs no reads or maintenance. Explicit targets retain full verification.
+/// Neither the default factory nor CLI/HTTP selects this assembly.
+#[cfg(feature = "experimental-quota")]
+pub fn quota_only_global_candidate() -> impl super::System {
+    QuotaOnlyGlobal
+}
+#[cfg(feature = "experimental-quota")]
+struct QuotaOnlyGlobal;
+#[cfg(feature = "experimental-quota")]
+impl super::System for QuotaOnlyGlobal {
+    fn supported(&self) -> bool {
+        true
+    }
+    fn snapshot(&self) -> AppResult<Memory> {
+        super::System::snapshot(&Windows)
+    }
+    fn targets(&self) -> AppResult<Vec<Target>> {
+        super::System::targets(&Windows)
+    }
+    fn cleanup(&self, selected: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep> {
+        workingset::sweep(&Win32Processes, selected, Strategy::QuotaOnlyGlobal, cancel)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn access_masks_match_query_verified_and_quota_only_contracts() {
+        assert_eq!(access_rights(Access::Query), 0x1000);
+        assert_eq!(access_rights(Access::VerifiedCleanup), 0x1100);
+        assert_eq!(access_rights(Access::QuotaOnlyCleanup), 0x0100);
+    }
 }
