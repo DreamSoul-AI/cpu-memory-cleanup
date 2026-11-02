@@ -74,7 +74,7 @@ pub fn catalog() -> Value {
             "input_schema":{"type":"object","properties":properties,"required":required,"additionalProperties":false},
             "command":{"executable":"cpu-memory-cleanup","args":argv}})
     }).collect();
-    json!({"tool_schema_version":1,"implementation":"rust","version":crate::VERSION,
+    json!({"tool_schema_version":1,"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,
         "output":"one JSON report on stdout","exit_codes":{"0":"完整成功","1":"partial/failed/unknown/cancelled，原始事实在JSON中","2":"参数或入口错误，原因在stderr"},
         "maintenance_output_option":["--output-dir","{directory}"],"tools":tools})
 }
@@ -88,9 +88,13 @@ pub fn main(args: Vec<String>) -> i32 {
     }
 }
 pub fn execute(args: Vec<String>) -> AppResult<i32> {
+    if args == ["--version"] || args == ["-V"] {
+        println!("CPU 内存清理 {} ({})", crate::VERSION, crate::BUILD_ID);
+        return Ok(0);
+    }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "CPU 内存清理 Rust {}\n--web [--port 14800] [--open] [--output-dir DIR]\n--tool-info\n--tool memory_status|memory_targets|memory_cleanup|memory_process_cleanup|memory_batch_cleanup|memory_result\n维护需要--confirm，单目标需要--pid及--created-at，批次需要--request-file，回看需要--run-dir。",
+            "CPU 内存清理 Rust {}\n--web [--port 14800] [--open] [--output-dir DIR]\n--version\n--tool-info\n--tool memory_status|memory_targets|memory_cleanup|memory_process_cleanup|memory_batch_cleanup|memory_result\n维护需要--confirm，单目标需要--pid及--created-at，批次需要--request-file，回看需要--run-dir。",
             crate::VERSION
         );
         return Ok(0);
@@ -262,6 +266,7 @@ fn running_workbench(port: u16) -> bool {
     serde_json::from_str::<Value>(body).is_ok_and(|value| {
         value["implementation"] == "rust"
             && value["version"] == crate::VERSION
+            && value["build_id"] == crate::BUILD_ID
             && value["preview"] == false
     })
 }
@@ -289,7 +294,7 @@ mod tests {
         use std::io::{Read, Write};
         for (body, expected) in [
             (
-                serde_json::json!({"implementation":"rust","version":crate::VERSION,"preview":false}),
+                serde_json::json!({"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,"preview":false}),
                 true,
             ),
             (
@@ -298,6 +303,10 @@ mod tests {
             ),
             (
                 serde_json::json!({"implementation":"rust","version":"old","preview":false}),
+                false,
+            ),
+            (
+                serde_json::json!({"implementation":"rust","version":crate::VERSION,"build_id":"old-build","preview":false}),
                 false,
             ),
         ] {

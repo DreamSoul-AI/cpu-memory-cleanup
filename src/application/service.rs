@@ -120,7 +120,7 @@ impl Application {
         } else {
             "maintain"
         })?;
-        report.metadata["header"] = json!({"run_id":report.run_id,"record_version":3,"program_version":crate::VERSION,"implementation":"rust","mechanism":"working-set","scope":if targets.is_some(){"process"}else{"system"},"started_at":crate::contracts::now()});
+        report.metadata["header"] = json!({"run_id":report.run_id,"record_version":3,"program_version":crate::VERSION,"build_id":crate::BUILD_ID,"implementation":"rust","mechanism":"working-set","scope":if targets.is_some(){"process"}else{"system"},"started_at":crate::contracts::now()});
         match timing.measure("before_snapshot", || self.system.snapshot()) {
             Ok(memory) => report.sample(memory),
             Err(error) => {

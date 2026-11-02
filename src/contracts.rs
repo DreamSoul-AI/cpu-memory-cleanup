@@ -119,7 +119,7 @@ impl Report {
             analysis: json!({}),
             action: Value::Null,
             errors: Vec::new(),
-            metadata: json!({"implementation":"rust","program_version":crate::VERSION}),
+            metadata: json!({"implementation":"rust","program_version":crate::VERSION,"build_id":crate::BUILD_ID}),
             output_dir: None,
             extra: Default::default(),
         })

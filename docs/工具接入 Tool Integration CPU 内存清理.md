@@ -1,8 +1,8 @@
-更新日期：2026年11月2日。当前接入为本地Rust 0.4.0候选，尚未发布。库、CLI工具和网页共用Application，不由宿主复制清理脚本，不要求先安装Python。版本、构建和边界见 [README](../README.md)。Knowledge已有固定历史指南本轮未改，不代表它已指向Rust版本。
+更新日期：2026年11月3日。当前接入为本地Rust 0.4.0候选，尚未发布。库、CLI工具和网页共用Application，不由宿主复制清理脚本，不要求先安装Python。版本、构建和边界见 [README](../README.md)。Knowledge已有固定历史指南本轮未改，不代表它已指向Rust版本。
 
 # 一、静态发现与调用
 
-构建后执行 `cpu-memory-cleanup.exe --tool-info`，返回工具目录版本1、Rust版本、描述、input_schema、参数数组模板和退出码。该调用不读取系统。宿主使用绝对可执行路径和参数数组，不将模型输入拼成shell命令。stdout是一份JSON，stderr为入口错误；退出0为整体success，1为partial/failed/unknown/cancelled，2为参数或入口错误。
+构建后执行 `cpu-memory-cleanup.exe --tool-info`，返回工具目录版本1、Rust版本、build_id、描述、input_schema、参数数组模板和退出码。该调用不读取系统。宿主使用绝对可执行路径和参数数组，不将模型输入拼成shell命令。stdout是一份JSON，stderr为入口错误；退出0为整体success，1为partial/failed/unknown/cancelled，2为参数或入口错误。
 
 | 工具 | 参数 | 副作用 |
 | --- | --- | --- |
@@ -17,7 +17,7 @@
 
 # 二、目标与确认
 
-先取得本次memory_targets返回的目标，再传PID及原始created_at；可选image_path用于额外路径核验。不得按程序名称猜PID、换同名进程或在失败后改全局范围。批次请求为UTF-8 JSON，最多1MiB：
+先取得本次memory_targets返回的目标，再传PID及原始created_at。单进程CLI只接受PID和创建身份，没有image_path参数；需要额外路径核验时，使用批次请求的Target.image_path或库接口，不自行添加CLI选项。不得按程序名称猜PID、换同名进程或在失败后改全局范围。批次请求为UTF-8 JSON，最多1MiB：
 
 ```json
 {"targets":[{"pid":123,"created_at":"从本次发现复制","name":"显示名","image_path":null,"working_set_bytes":null}],"protections":[]}
@@ -37,7 +37,7 @@
 
 # 四、Rust同进程接入
 
-通过本仓库Cargo库引用 `cpu_memory_cleanup::{Application, Target}`。Application::default选择实际系统，Application::new接受System隔离实现，构造本身不读取。Windows 开发对照可显式启用 Cargo feature `experimental-quota`，调用 `system::windows::quota_only_global_candidate()` 并注入 `Application::new`。构造不读取或维护，只有全局路径省略查询，明确目标仍核验创建身份和可选路径。仅启用 feature 不会改变默认工厂、CLI、HTTP 或规则装配，没有新增工具或网页模式。候选未做真实性能/覆盖比较，不建议其他宿主据此切换默认。
+通过本仓库Cargo库引用 `cpu_memory_cleanup::{Application, Target}`。Application::default选择实际系统，Application::new接受System隔离实现，构造本身不读取。Windows 开发对照可显式启用 Cargo feature `experimental-quota`，调用 `system::windows::quota_only_global_candidate()` 并注入 `Application::new`。构造不读取或维护，只有全局路径省略查询，明确目标仍核验创建身份和可选路径。仅启用 feature 不会改变默认工厂、CLI、HTTP 或规则装配，没有新增工具或网页模式。候选已做真实探索对照，但全局覆盖不足、顺序未平衡，不能据此判断更快或切换默认，详见[真实工作集对照](<运行记录 Run Record/2026-11-03 真实工作集对照.md>)。
 
 公开方法为memory_status、memory_targets、memory_cleanup、memory_process_cleanup、memory_batch_cleanup及memory_result，维护传记录基目录、明确确认和取消标志。HTTP调用同一库，不经过CLI子进程。
 
@@ -74,3 +74,13 @@ cargo run --release --locked --features experimental-quota --example workingset-
 <a id="五验收与当前状态"></a>
 <a id="六本地批次与正式网页候选"></a>
 <a id="七维护诊断的增量字段"></a>
+
+# 七、本地入口与构建一致性
+
+`cpu-memory-cleanup.exe --version`不采样，显示库版本及BUILD_ID。静态工具目录、HTTP会话和新报告metadata引用同一源码构建标识。同版本不同构建不会被启动器复用；请先在旧网页停止服务，再打开新程序。构建标识用于识别实现，不是签名或系统授权。
+
+双击scripts/memory-cleanup.cmd仍启动无控制台网页，不恢复旧Tk窗口。CLI仅在明确调用时读取/整理；server与CLI共用库，动效仅属于网页。`scripts/ci.ps1`执行本地测试、构建及离线源码包验证，不启动系统维护、不部署、不发布。命令与产物位置以[README](../README.md)为准。
+
+# 八、源码包与运行交付
+
+Cargo源码包用于库接入及Rust构建，包含当前源码、嵌入资源、Rust测试、例程、README与MIT，不包含scripts、旧Python、运行证据或开发工具链。README中的仓库开发脚本应在完整仓库使用，不能假定解包crate后存在。Windows运行ZIP为另一种交付产物，目前待准备和验收，不能用Cargo包验证代替运行ZIP验收。
