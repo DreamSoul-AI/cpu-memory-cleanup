@@ -8,3 +8,4 @@ main{max-width:760px}.intro{display:none}.layout{display:block;max-width:460px;m
 .overview .connection{padding-top:12px;margin:12px 0;min-height:45px}.connection #job-status{flex:1}.connection #cancel{padding:7px 9px;font-size:11px}.overview .gauge{width:156px;height:156px;margin:15px auto}.overview .meter{margin-bottom:16px}.overview .recent{padding-top:14px;margin-top:14px;min-height:100px}.overview>.error{font-size:12px;overflow-wrap:anywhere}.overview .card-heading{margin-bottom:12px}.effect-setting{display:flex;align-items:center;gap:8px;margin:16px 2px}
 
 #target-controls{border:0;padding:0;margin:0;min-width:0}.gauge>span{font-variant-numeric:tabular-nums;min-width:4ch;text-align:center}.gauge.working{animation:none;box-shadow:0 0 0 4px #087f4f0c}
+.gauge small{width:108px;max-width:70%;height:30px;margin-top:3px;font-size:11px;line-height:15px;text-align:center;overflow-wrap:anywhere;display:flex;align-items:center;justify-content:center;flex-shrink:0}
