@@ -11,6 +11,7 @@ src/
 ├── application/
 │   ├── mod.rs
 │   ├── service.rs            Application六能力、一次派发、报告和摘要
+│   ├── comparison.rs         非默认feature的对照会话、证据与只读比较
 │   └── policy.rs             Protection、Settings、Rule、Policy
 ├── system/
 │   ├── mod.rs                System能力合同、平台装配及系统随机源
@@ -96,7 +97,7 @@ Cargo只包含当前Rust源码与资源、Rust合同测试、README和许可证�
 feature 关闭与打开均通过格式、严格 Clippy 和 Cargo 检查，两种配置均独立构建库、控制台及 GUI 二进制。正式运行服务保持原版本，本轮不重启为候选、不运行真实清理。实际速度和覆盖比较未验证。
 
 # 九、性能对照源码映射
-对应架构第九章与 COMPARE-01 至03。非默认 feature 下新增 `application/comparison.rs`，负责会话、单次门控、比较证据与只读汇总。`system/windows.rs` 增加开发用固定 PID 枚举装配，两种方法仍调用 `workingset.rs` 的同一串行循环。它拒绝明确目标接口，避免把只按句柄的候选伪装成定向身份核验。
+对应架构第九章与 COMPARE-01 至03，设计提交47a9030，实现提交0df3537。隔离验证及构建完成，实机对照未执行。非默认 feature 下新增 `application/comparison.rs`，负责会话、单次门控、比较证据与只读汇总。方法枚举和固定清单校验位于 contracts.rs，系统接入不依赖 application。`system/windows.rs` 增加开发用固定 PID 枚举装配，两种方法仍调用 `workingset.rs` 的同一串行循环。它拒绝明确目标接口，避免把只按句柄的候选伪装成定向身份核验。
 
 `examples/workingset-compare.rs` 是独立开发入口，静态计划与离线比较不读系统。仅显式开启会话后分配预算内负载与真实读取，每次原生动作还需单独输入方法确认。该入口不进入网页、六工具目录或规则。`tests/application/comparison.rs` 验证门控、证据、只读比较和受控负载内容，系统接入使用隔离实现。Cargo 包包含例程及对应测试源，构建不运行维护。
 
