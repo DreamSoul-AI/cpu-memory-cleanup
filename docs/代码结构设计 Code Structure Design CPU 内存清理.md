@@ -1,4 +1,4 @@
-更新日期：2026年11月3日。本文从 [当前架构](<架构设计 Architecture Design CPU 内存清理.md>) 推导Rust源码职责，硬约束集中于 `src/`。外围目录由 [README](../README.md) 导航，允许按实际工具调整。迁移前实现和测试已保留在 `legacy/python/`，不参与正式运行。
+更新日期：2026年11月5日。本文从 [当前架构](<架构设计 Architecture Design CPU 内存清理.md>) 推导Rust源码职责，硬约束集中于 `src/`。外围目录由 [README](../README.md) 导航，允许按实际工具调整。迁移前实现和测试已保留在 `legacy/python/`，不参与正式运行。
 
 # 一、源码结构
 
@@ -7,6 +7,7 @@ src/
 ├── lib.rs                    公共库入口、版本和构建标识
 ├── main.rs                   CLI二进制入口
 ├── launcher.rs               无控制台原生网页入口，复用同一CLI/库
+├── window.rs                 可选系统WebView窗口入口
 ├── contracts.rs              Memory、Target、Sweep、Report和时间/运行标识
 ├── application/
 │   ├── mod.rs
@@ -16,6 +17,11 @@ src/
 ├── system/
 │   ├── mod.rs                System能力合同、平台装配及系统随机源
 │   ├── windows.rs            Win32读取、权限映射及句柄所有权
+│   ├── linux.rs              Linux原生/proc只读
+│   ├── macos/
+│   │   ├── mod.rs            macOS只读能力装配
+│   │   ├── memory.rs         sysctl/Mach容量及资源释放
+│   │   └── processes.rs      libproc身份、驻留及路径
 │   ├── workingset.rs         共用串行工作集调度与默认/候选策略
 │   ├── measurement.rs        阶段时钟与纯调用分布汇总
 │   └── records.rs            原子报告、计时附件与新旧记录回看
@@ -23,6 +29,8 @@ src/
     ├── mod.rs
     ├── cli.rs                参数、六工具目录、JSON和退出码
     ├── web.rs                回环HTTP、会话、后台Job、按需报告
+    ├── desktop/
+    │   └── mod.rs            可选窗口、实例复用、导航与收尾
     └── web_assets/
         ├── index.html        紧凑主区与折叠详情
         ├── styles.css        环形、绿色按钮和响应式布局
@@ -39,7 +47,7 @@ src/
 | --- | --- | --- |
 | AR-01 交互 | interaction/cli.rs、web.rs、web_assets/app.js | 参数和请求校验、目标选择、会话、输出；调用Application |
 | AR-02 流程 | application/service.rs | 确认、实例内维护互斥、前后快照、记录及终态，不直接写界面 |
-| AR-03 只读 | system/mod.rs、windows.rs | System::snapshot/targets，GetPerformanceInfo/EnumProcesses和进程身份 |
+| AR-03 只读 | system/mod.rs、windows.rs、linux.rs、macos/ | 按平台实现snapshot/targets，指标口径与身份来源明确 |
 | AR-04 维护 | system/windows.rs、workingset.rs | 平台调用和串行调度分开，同一句柄核验并整理，逐项关闭；不创建终止/提权分支 |
 | AR-05 记录 | application/service.rs、system/records.rs | 功能决定保存时机，records实际读写；新report.json及旧JSONL只读回看 |
 | AR-06 呈现 | service.rs的presentation/brief、web.rs按需报告 | 摘要保留原终态，完整报告仅按需传递；不修改原始事实 |

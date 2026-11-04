@@ -812,7 +812,7 @@ Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高�
 
 直接依据：[Linux内核/proc文档](https://www.kernel.org/doc/html/v6.11/filesystems/proc.html)、[process_madvise手册](https://www.man7.org/linux/man-pages/man2/process_madvise.2.html)、[Apple host_statistics64](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[NSIS固定包发布页及摘要](https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download)。Linux跨进程回收建议需核对ptrace和CAP_SYS_NICE等权限，本轮不使用该机制或以root身份默认清理。
 
-独立窗口已采用Wry/Tao可选原型，有真实WebView只读、重复实例及安装证据，原生可见体验仍待验收。MCP仍为条件项，已有CLI已可被Codex直接调用。
+独立窗口已采用Wry/Tao可选原型，有真实WebView只读、重复实例及安装证据，窗口可见页面与真实按钮旅程已补齐，前台聚焦和长期占用未验证。MCP仍为条件项，已有CLI已可被Codex直接调用。
 
 ## （一）独立窗口选型与实际依赖
 
