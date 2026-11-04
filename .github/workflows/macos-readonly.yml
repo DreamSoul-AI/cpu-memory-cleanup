@@ -21,6 +21,9 @@ jobs:
           set -euo pipefail
           mkdir -p .test-results/macos-readonly
           { sw_vers; uname -m; rustc --version; cargo --version; node --version; git rev-parse HEAD; } > .test-results/macos-readonly/environment.txt
+          cargo fmt --all -- --check > .test-results/macos-readonly/format.txt 2>&1
+          cargo clippy --all-targets --locked -- -D warnings > .test-results/macos-readonly/clippy.txt 2>&1
+          cargo clippy --all-targets --features experimental-quota --locked -- -D warnings > .test-results/macos-readonly/clippy-feature.txt 2>&1
           cargo test --lib --test '*' --locked > .test-results/macos-readonly/rust-tests.txt 2>&1
           cargo test --lib --test '*' --features experimental-quota --locked > .test-results/macos-readonly/rust-feature-tests.txt 2>&1
           node --test tests/interaction/web_assets/*.test.cjs > .test-results/macos-readonly/web-tests.txt 2>&1
