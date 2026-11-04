@@ -8,11 +8,11 @@ output=${1:-dist/macos}
 cargo build --release --locked
 target=${CARGO_TARGET_DIR:-target}
 binary="$target/release/cpu-memory-cleanup"
-version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+version=$(sed -n 's/^version = "\([^"]*\)".*$/\1/p' Cargo.toml | head -n 1)
 name="cpu-memory-cleanup-$version-macos-$(uname -m)"
 mkdir -p "$output/$name"
 "$binary" --tool-info > "$output/$name/build.json"
-cp "$binary" LICENSE "$output/$name/"
+cp "$binary" LICENSE THIRD_PARTY_NOTICES.txt "$output/$name/"
 cat > "$output/$name/run.command" <<'RUN'
 #!/bin/sh
 set -eu
