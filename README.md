@@ -6,9 +6,11 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 ## 当前状态
 
-当前源码版本 **v0.4.0**。Rust 库、CLI、网页和工作集整理已贯通，最终 Windows 包已完成本机真实验收。已发布 [v0.4.0 Release](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.4.0)，附 Windows ZIP 和 SHA256 校验文件，不发布 PyPI 或 crates.io。历史 v0.2.0 和 Pages 静态演示保留各自版本。
+当前源码版本 **v0.5.0**。Windows x64提供真实内存读取与工作集整理，并保留网页、独立应用窗口、CMD脚本三个入口，共用Rust Package。安装器、便携包及源码下载见[Release列表](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases)。v0.4.0等旧版和Pages静态演示保留各自范围。
 
-下载 Windows ZIP 后完整解压，双击 scripts/memory-cleanup.cmd，无需安装 Rust、Node 或 Python。请保留包内目录结构。
+Windows安装包创建开始菜单入口；便携ZIP完整解压后，双击 `scripts/memory-cleanup.cmd` 打开网页版，或双击 `target/release/memory-cleanup-window.exe` 打开应用窗口。运行不需要Rust、Node或Python；独立窗口需要Microsoft WebView2 Runtime，包内附加载器但不捆绑完整Runtime。安装包未签名。
+
+Linux x86_64和macOS arm64另提供**只读试用包**，能显示真实容量与进程，不提供主动整理。Linux仅Ubuntu WSL、Mac仅托管15.8.2 arm64验证；普通桌面、旧libc、Finder/Gatekeeper、Intel Mac等未验证，Mac未签名或公证。
 
 ## 日常使用
 
@@ -30,19 +32,21 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 | Package、CLI/Agent、HTTP | 共用 Application，六工具接口见接入指南 |
 | 定向/批次、保护及自动规则 | 已实现并有隔离验证，完整实机验收未完成，规则默认关闭、重启不自动启用 |
 | experimental-quota | 非默认开发候选，做过真实探索对照，覆盖不足以决定采用，不接管绿色按钮 |
-| 独立桌面窗口、CPU 分析、Standby、Linux/macOS | 不属于本版，旧 Python/Tk 入口归档 |
+| 独立应用窗口 | Windows可选WebView2外壳，复用同一网页与后端，旧Python/Tk入口归档 |
+| Linux/macOS | 有限环境验证的只读试用包；不提供主动整理 |
+| CPU分析、Standby | 未提供 |
 
 整理减少页面驻留，不删除应用数据，不保证降低私有提交量或提高速度。应用再次访问时占用可能回升。圆环归零是视觉表达，不代表系统内存被清空。实际容量、业务结果与动画分别管理，结果不等待动效结束。
 
 默认与候选对照尚未证明谁更快，也没有与 360 同条件同负载的动态速度证明。360 参考来自固定版本静态分析，不是完整源码复原或逐帧等同。
 
-## 下一轮本地候选
+## 安装与跨平台说明
 
-当前开发分支增加Windows当前用户安装器和Linux只读适配，尚未发布。Windows安装器创建开始菜单入口，卸载保留用户数据。未提供窗口构建时打开浏览器；显式带匹配窗口构建时提供独立WebView2窗口及浏览器备用入口。`scripts/build-installer.ps1 -Compiler 编译器路径`从两份release EXE构建安装候选，需要另行准备NSIS，不自动安装编译器。
+0.5.0增加Windows当前用户安装器和Linux/macOS只读适配。Windows安装器创建开始菜单入口，卸载保留用户数据。未提供窗口构建时打开浏览器；显式带匹配窗口构建时提供独立WebView2窗口及浏览器备用入口。`scripts/build-installer.ps1 -Compiler 编译器路径`从两份release EXE构建安装候选，需要另行准备NSIS，不自动安装编译器。
 
-Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS arm64只读候选已在托管Mac验证实际容量、原生进程身份、解压包、HTTP、真实页面渲染与停止；不提供主动整理，也未验证普通用户下载、Gatekeeper或原生Mac小窗口。已发布v0.4.0的支持范围仍是Windows x64。开发与验收进度见开发计划及[本轮完成核验](<docs/运行记录 Run Record/2026-11-05 本轮目标完成核验.md>)，其中列出逐项证据和未验证范围。
+Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS arm64只读候选已在托管Mac验证实际容量、原生进程身份、解压包、HTTP、真实页面渲染与停止；不提供主动整理，也未验证普通用户下载、Gatekeeper或原生Mac小窗口。v0.4.0的支持范围仍是Windows x64，不能用新版候选证据回签旧包。开发与验收进度见开发计划及[本轮完成核验](<docs/运行记录 Run Record/2026-11-05 本轮目标完成核验.md>)，其中列出逐项证据和未验证范围。
 
-安装版从开始菜单“CPU Memory Cleanup”启动，程序位于当前用户LocalAppData的Programs目录，运行记录独立存放在LocalAppData的DreamSoul目录；卸载保留记录。安装器尚未签名，也未上传到Release。 当前窗口候选已通过安装快捷入口、重复打开、自有进程整理、结果回看、动效收尾及停止重开旅程；后台调试验收未覆盖前台聚焦。整理期间显示真实处理目标数，计数不代表释放比例；首次原生等待仍取决于实际负载。见[窗口验收](<docs/运行记录 Run Record/2026-11-05 窗口完整旅程与整理进度.md>)。Linux原生开发环境可用 `sh scripts/package-linux.sh 新输出目录` 构建只读便携候选，解压后运行 `sh ./run.sh` 并在浏览器打开打印的本地地址；不自动安装依赖，不执行整理。
+安装版从开始菜单“CPU Memory Cleanup”启动，程序位于当前用户LocalAppData的Programs目录，运行记录独立存放在LocalAppData的DreamSoul目录；卸载保留记录。安装器尚未签名，具体可下载产物以Release列表为准。 当前窗口候选已通过安装快捷入口、重复打开、自有进程整理、结果回看、动效收尾及停止重开旅程；后台调试验收未覆盖前台聚焦。整理期间显示真实处理目标数，计数不代表释放比例；首次原生等待仍取决于实际负载。见[窗口验收](<docs/运行记录 Run Record/2026-11-05 窗口完整旅程与整理进度.md>)。Linux原生开发环境可用 `sh scripts/package-linux.sh 新输出目录` 构建只读便携候选，解压后运行 `sh ./run.sh` 并在浏览器打开打印的本地地址；不自动安装依赖，不执行整理。
 
 ## 开发构建与检查
 
@@ -62,7 +66,7 @@ ci.ps1 使用独立 target，在 .test-results/local-ci/日期时间/ 保存阶�
 
 已发布入口适配验证：默认 25 项 Rust、开发配置 33 项 Rust、31 项网页 JS 全部通过，release 与源码包构建验证通过。原仓库运行曾遇 Cargo 文件访问拒绝，成功结果来自逐字节核对的一致副本，详见[入口适配验收](<docs/运行记录 Run Record/2026-11-03 本地入口与包适配验收.md>)。日常仍采用本地验证；本轮另已配置获授权的macOS只读专项Actions，不作为已通过的跨平台支持证据。
 
-打包命令：`./scripts/package.ps1`，默认读取 target/release，输出 dist 下的 Windows ZIP 和 SHA256SUMS.txt，已有产物不覆盖。该脚本不清理、不上传。
+Windows完整打包命令：`./scripts/package.ps1 -WindowBuildDirectory target/release`，窗口先由 `./scripts/build-window.ps1` 构建。`./scripts/build-installer.ps1 -Compiler NSIS路径 -WindowBuildDirectory target/release`生成安装包。`./scripts/package.ps1`，默认读取 target/release，输出 dist 下的 Windows ZIP 和 SHA256SUMS.txt，已有产物不覆盖。该脚本不清理、不上传。
 
 ## Package 与 Agent 接入
 
@@ -141,3 +145,9 @@ macOS专项工作流为 `.github/workflows/macos-readonly.yml`，当前只保留
 当前未发布候选已接入macOS真实只读：Memory的提交字段改为Option，新增可用量口径及可选压缩驻留。Rust结构体初始化需适配；JSON中Windows/Linux已测值保持数字，Mac不提供的提交值为空。此变化不回签已发布v0.4.0，Mac支持状态须以新的原生验证为准。
 
 macOS原生开发环境可用 `sh scripts/package-macos.sh 新目录` 生成arm64等当前主机架构便携候选；完整解压后运行 `./run.command`，手动打开打印的localhost地址。不要求安装Rust/Node/Python运行时，未签名、未公证，普通用户下载和系统提示尚未验收。
+
+## 0.5.0接口兼容变化
+
+Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和可选压缩驻留字段。直接构造结构体的调用方需适配，可用 `..Memory::default()` 初始化可选项。JSON在Windows/Linux仍保留已测数值，Mac未提供的提交统计为null及unavailable；不要把null当成0。静态目录新增platform_capabilities，读取可用不代表支持维护。
+
+项目自有代码继续采用MIT，分发包附[第三方通知](THIRD_PARTY_NOTICES.txt)，涵盖固定依赖及WebView2加载器的原始通知；未包含完整WebView2 Runtime。

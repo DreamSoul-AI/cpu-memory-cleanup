@@ -95,6 +95,6 @@ Linux候选支持memory_status和memory_targets的真实读取，不支持主动
 
 # 十、跨平台指标候选合同
 
-未发布候选的physical增加available_kind及可选compressed_bytes；Mac的free_and_inactive_estimate表示空闲与非活跃页估算，不等同Windows可用量。commit的used_bytes/limit_bytes允许null，status为measured/unavailable/partial，调用方不得把null转成0。Rust Memory结构体提交字段改为Option，新口径和压缩字段可由Default初始化；这是待发布API变化。Mac仅只读，维护能力为空，不从读取成功推断可以整理。
+0.5.0的physical增加available_kind及可选compressed_bytes；Mac的free_and_inactive_estimate表示空闲与非活跃页估算，不等同Windows可用量。commit的used_bytes/limit_bytes允许null，status为measured/unavailable/partial，调用方不得把null转成0。Rust Memory结构体提交字段改为Option，新口径和压缩字段可由Default初始化；这是相对0.4.0的API变化。Mac仅只读，维护能力为空，不从读取成功推断可以整理。
 
 静态目录新增platform_capabilities，不采样即可识别本平台reading与maintenance。只读平台的维护请求在Application及HTTP前置拒绝，不写入维护意图、不读取维护前快照、不派发系统调用；自动规则不能启用。Mac具体构建和真实验证见[产品只读验收](<运行记录 Run Record/2026-11-05 macOS产品只读验收.md>)。
