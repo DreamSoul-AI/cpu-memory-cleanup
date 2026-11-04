@@ -71,6 +71,20 @@ struct State {
     stopping: AtomicBool,
     tasks: Mutex<Vec<thread::JoinHandle<()>>>,
 }
+/// Stops accepting work, cancels later steps, and lets serve() join active work.
+#[derive(Clone)]
+pub struct WorkbenchControl {
+    state: Arc<State>,
+}
+impl WorkbenchControl {
+    pub fn request_stop(&self) {
+        let mut inner = self.state.inner.lock().expect("state lock");
+        inner.policy.armed = false;
+        inner.cancel.store(true, Ordering::Release);
+        self.state.stopping.store(true, Ordering::Release);
+    }
+}
+
 pub struct Workbench {
     server: Arc<Server>,
     state: Arc<State>,
@@ -112,6 +126,11 @@ impl Workbench {
                 tasks: Mutex::new(Vec::new()),
             }),
         })
+    }
+    pub fn control(&self) -> WorkbenchControl {
+        WorkbenchControl {
+            state: self.state.clone(),
+        }
     }
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/", self.state.port)
@@ -542,10 +561,10 @@ fn handle(mut request: Request, state: &Arc<State>) {
                 }
             }
             "/api/shutdown" if value == json!({"confirmed":true}) => {
-                let mut inner = state.inner.lock().expect("state lock");
-                inner.policy.armed = false;
-                inner.cancel.store(true, Ordering::Release);
-                state.stopping.store(true, Ordering::Release);
+                WorkbenchControl {
+                    state: state.clone(),
+                }
+                .request_stop();
                 Ok(json!({"stopping":true}))
             }
             _ => Err("没有该入口或请求字段无效".into()),

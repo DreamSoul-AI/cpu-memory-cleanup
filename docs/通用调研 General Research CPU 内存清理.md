@@ -813,3 +813,15 @@ Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高�
 直接依据：[Linux内核/proc文档](https://www.kernel.org/doc/html/v6.11/filesystems/proc.html)、[process_madvise手册](https://www.man7.org/linux/man-pages/man2/process_madvise.2.html)、[Apple host_statistics64](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[NSIS固定包发布页及摘要](https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download)。Linux跨进程回收建议需核对ptrace和CAP_SYS_NICE等权限，本轮不使用该机制或以root身份默认清理。
 
 独立窗口仍以Tauri/WebView为比较候选，因平台运行时、打包和退出生命周期不同，先完成安装入口与只读跨平台基线再安排原型。MCP仍为条件项，已有CLI已可被Codex直接调用。
+
+## （一）独立窗口选型与实际依赖
+
+固定Wry 0.57.1与Tao 0.37.2，分别负责系统WebView与窗口事件，未引入整套Tauri应用框架。Tauri官方Windows前置依赖为MSVC C++工具及WebView2；本机有后者，但未检出前者。本轮实际证明Wry/Tao可用现有GNU工具链构建，不以这个结果承诺Tauri官方GNU支持。[Tauri前置依赖](https://v2.tauri.app/start/prerequisites/)、[Wry维护方说明](https://github.com/tauri-apps/wry/tree/wry-v0.57.1)、[Tao维护方](https://github.com/tauri-apps/tao)
+
+首次失败是导入库生成工具缺少汇编器，补齐项目临时目录中的MSYS2 binutils及运行依赖后通过；未更改全局PATH或安装Visual Studio。GNU窗口EXE还需WebView2Loader.dll，不能只复制EXE。窗口已有真实WebView只读及关闭证据，视觉品质、前台聚焦和长期资源占用尚未据此验收。WebView2运行时与加载器、Rust库依赖的许可分别核对；新依赖Tao为Apache-2.0，Wry为MIT或Apache-2.0，不改变本项目自有代码MIT。本轮不新增Release，完整传递依赖及加载器再分发通知仍是发布前事项。
+
+## （二）macOS指标合同不能先补零
+
+Apple公开的host_statistics64与XNU vm_statistics64提供空闲、活跃、非活跃、wired及压缩等分页统计；页数还需结合实际页大小。非活跃页不等于当前空闲，也不能把压缩页直接当成Windows工作集。本项目现有Memory要求提交量与上限两个整数，macOS接入前应允许指标不适用，并在界面明确单位与含义，不以0填补不存在的Windows等价量。[Apple接口入口](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[XNU统计字段](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/vm_statistics.h)、[XNU host实现](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c)
+
+以上为API文档与公开源码阅读，不是macOS实测或现有适配实现。已取得用户授权，可新增只读macOS工作流并push当前分支运行，不合并、不发布、不整理共享runner进程。标准托管runner可提供目标架构原生证据，但不替代普通用户桌面与签名体验。[GitHub runner规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)

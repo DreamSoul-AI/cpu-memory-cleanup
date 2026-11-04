@@ -275,3 +275,95 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
     assert!(directory.starts_with(std::env::temp_dir()));
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn window_stop_control_waits_for_dispatched_work_and_seals_its_record() {
+    use std::sync::{Mutex, mpsc};
+    struct InFlight {
+        entered: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+    impl System for InFlight {
+        fn supported(&self) -> bool {
+            true
+        }
+        fn snapshot(&self) -> AppResult<Memory> {
+            Ok(Memory {
+                total_bytes: 100,
+                available_bytes: 50,
+                commit_used_bytes: 20,
+                commit_limit_bytes: 100,
+            })
+        }
+        fn targets(&self) -> AppResult<Vec<Target>> {
+            panic!("must not discover another scope")
+        }
+        fn cleanup(&self, _: Option<&[Target]>, _: &AtomicBool) -> AppResult<Sweep> {
+            self.entered.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            Ok(Sweep {
+                resources_closed: true,
+                ..Sweep::default()
+            })
+        }
+    }
+    let (entered, wait) = mpsc::channel();
+    let (release, pending) = mpsc::channel();
+    let app = Arc::new(Application::new(Arc::new(InFlight {
+        entered,
+        release: Mutex::new(pending),
+    })));
+    let directory = std::env::temp_dir().join(format!(
+        "memory-window-stop-{}",
+        cpu_memory_cleanup::contracts::identifier().unwrap()
+    ));
+    let server = Workbench::bind(app, directory.clone(), 0).unwrap();
+    let address = server
+        .url()
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
+    let stop = server.control();
+    let worker = std::thread::spawn(move || server.serve().unwrap());
+    let response = request(&address, "GET", "/api/session", "", "");
+    let session: serde_json::Value =
+        serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    let headers = format!(
+        "X-Session-Token: {}\r\n",
+        session["token"].as_str().unwrap()
+    );
+    let response = request(
+        &address,
+        "POST",
+        "/api/action",
+        &headers,
+        r#"{"kind":"cleanup","mechanism":"working-set","confirmed":true}"#,
+    );
+    assert!(response.starts_with("HTTP/1.1 200"));
+    wait.recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    stop.request_stop();
+    assert!(
+        !worker.is_finished(),
+        "window close must not abandon dispatched work"
+    );
+    release.send(()).unwrap();
+    worker.join().unwrap();
+    let run = std::fs::read_dir(&directory)
+        .unwrap()
+        .find_map(|p| {
+            let p = p.unwrap().path();
+            p.is_dir().then_some(p)
+        })
+        .unwrap();
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(run.join("report.json")).unwrap()).unwrap();
+    assert_eq!(report["phase"], "finished");
+    assert_eq!(report["action"]["process_sweep"]["resources_closed"], true);
+    assert!(directory.starts_with(std::env::temp_dir()));
+    std::fs::remove_dir_all(directory).unwrap();
+}

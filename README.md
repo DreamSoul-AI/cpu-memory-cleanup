@@ -38,7 +38,7 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 ## 下一轮本地候选
 
-当前开发分支增加Windows当前用户安装器和Linux只读适配，尚未发布。Windows安装器创建开始菜单入口，卸载保留用户数据，仍打开现有网页。`scripts/build-installer.ps1 -Compiler 编译器路径`从两份release EXE构建安装候选，需要另行准备NSIS，不自动安装编译器。
+当前开发分支增加Windows当前用户安装器和Linux只读适配，尚未发布。Windows安装器创建开始菜单入口，卸载保留用户数据。未提供窗口构建时打开浏览器；显式带匹配窗口构建时提供独立WebView2窗口及浏览器备用入口。`scripts/build-installer.ps1 -Compiler 编译器路径`从两份release EXE构建安装候选，需要另行准备NSIS，不自动安装编译器。
 
 Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS尚未接入。已发布v0.4.0的支持范围仍是Windows x64。开发与验收进度见开发计划及[本轮运行记录](<docs/运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。
 
@@ -127,3 +127,11 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 <a id="许可证与版本分发"></a>
 
 本轮未发布候选：Windows默认25项/开发33项Rust、32项网页检查通过；Ubuntu WSL默认26项/开发33项Rust通过。Codex已实际调用CLI对自有128 MiB进程整理一次，内容完整并可回看；不据此宣称全局提速。原始环境、构建与未覆盖项见本轮运行记录。
+
+## 独立小窗口开发候选
+
+可选 `desktop-window` 提供Windows WebView2窗口，复用现有网页、服务和真实清理库，不是另一份清理实现。已安装候选的开始菜单“CPU Memory Cleanup”打开窗口，“Browser workbench”打开浏览器。窗口默认使用14801端口，原浏览器入口仍为14800。窗口关闭会停止自身服务并等待已派发动作收尾。
+
+构建：`./scripts/build-window.ps1`；GNU工具链需可用汇编器，可用 `-AssemblerDirectory 路径` 显式指定，脚本不安装工具或修改全局PATH。需要WebView2运行时及同目录WebView2Loader.dll；默认CLI/库构建不要求窗口依赖。安装器通过 `-WindowBuildDirectory target/release` 显式包含匹配构建窗口。
+
+`memory-cleanup-window.exe --smoke-test 新回执路径` 是隐藏窗口真实只读检查：加载实际页面、观察真实读数后正常停止，不执行整理，不是正常使用入口。原生视觉、前台聚焦和长期资源占用仍待验收；新窗口尚未加入已发布Release。完整结果见[小窗口与双入口验收](<docs/运行记录 Run Record/2026-11-05 小窗口与双入口真实验收.md>)。

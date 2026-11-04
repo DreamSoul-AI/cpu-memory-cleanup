@@ -187,3 +187,7 @@ Agent端到端证据保存具体输入参数、CLI JSON及最终解释，先用�
 system/linux.rs负责/proc/meminfo与进程stat/status解析，mod.rs按target_os装配。System增加cleanup_supported默认方法保持已有实现兼容，Linux覆盖为false，HTTP机制目录及网页维护控件据此禁用。读取与维护能力分离，CLI不能通过通用工具名把只读平台解释成支持整理。
 
 Linux便携候选由 `scripts/package-linux.sh` 在Linux原生构建，归档同一CLI、MIT、静态构建目录和启动入口；运行记录写入用户状态目录。该脚本不进入src硬约束，不隐式执行维护或发布。
+
+# 十五、小窗口原型的源码落位
+
+先在忽略目录证明依赖可构建，再落位正式src模块。目标为可选窗口入口及 `interaction/desktop/` 承载窗口事件、导航和生命周期；系统能力仍只在system，维护流程仍只在application。HTTP服务提供可克隆的停止控制对象，统一网页停止与窗口关闭的收尾语义。默认库/CLI/浏览器构建不强制依赖窗口运行时。

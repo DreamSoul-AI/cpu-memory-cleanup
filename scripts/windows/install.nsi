@@ -33,17 +33,27 @@ Function .onInit
   ${EndIf}
 FunctionEnd
 Section "Install"
+  SectionIn RO
   SetShellVarContext current
   SetOutPath "$INSTDIR"
   File "${BuildDir}\memory-cleanup.exe"
   File "${BuildDir}\cpu-memory-cleanup.exe"
   File "..\..\LICENSE"
+!ifdef WindowBuildDir
+  File "${WindowBuildDir}\memory-cleanup-window.exe"
+  File "${WindowBuildDir}\WebView2Loader.dll"
+!endif
   IfErrors 0 +3
     MessageBox MB_ICONSTOP "Close the running service before upgrading. Installation could not finish."
     Abort
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\CPU Memory Cleanup"
+!ifdef WindowBuildDir
+  CreateShortcut "$SMPROGRAMS\CPU Memory Cleanup\CPU Memory Cleanup.lnk" "$INSTDIR\memory-cleanup-window.exe" '--output-dir "$LOCALAPPDATA\DreamSoul\CPU Memory Cleanup\runs"'
+  CreateShortcut "$SMPROGRAMS\CPU Memory Cleanup\Browser workbench.lnk" "$INSTDIR\memory-cleanup.exe" '--output-dir "$LOCALAPPDATA\DreamSoul\CPU Memory Cleanup\runs"'
+!else
   CreateShortcut "$SMPROGRAMS\CPU Memory Cleanup\CPU Memory Cleanup.lnk" "$INSTDIR\memory-cleanup.exe" '--output-dir "$LOCALAPPDATA\DreamSoul\CPU Memory Cleanup\runs"'
+!endif
   CreateShortcut "$SMPROGRAMS\CPU Memory Cleanup\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DreamSoulCpuMemoryCleanup" "DisplayName" "CPU Memory Cleanup"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DreamSoulCpuMemoryCleanup" "DisplayVersion" "${AppVersion}"
@@ -54,10 +64,18 @@ Section "Install"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DreamSoulCpuMemoryCleanup" "NoRepair" 1
 SectionEnd
 Section /o "Desktop shortcut"
+!ifdef WindowBuildDir
+  CreateShortcut "$DESKTOP\CPU Memory Cleanup.lnk" "$INSTDIR\memory-cleanup-window.exe" '--output-dir "$LOCALAPPDATA\DreamSoul\CPU Memory Cleanup\runs"'
+!else
   CreateShortcut "$DESKTOP\CPU Memory Cleanup.lnk" "$INSTDIR\memory-cleanup.exe" '--output-dir "$LOCALAPPDATA\DreamSoul\CPU Memory Cleanup\runs"'
+!endif
 SectionEnd
 Section "Uninstall"
   SetShellVarContext current
+  IfFileExists "$INSTDIR\memory-cleanup-window.exe" 0 +2
+    Delete "$INSTDIR\memory-cleanup-window.exe"
+  IfFileExists "$INSTDIR\WebView2Loader.dll" 0 +2
+    Delete "$INSTDIR\WebView2Loader.dll"
   Delete "$INSTDIR\memory-cleanup.exe"
   Delete "$INSTDIR\cpu-memory-cleanup.exe"
   IfErrors 0 +3
@@ -67,6 +85,7 @@ Section "Uninstall"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   Delete "$SMPROGRAMS\CPU Memory Cleanup\CPU Memory Cleanup.lnk"
+  Delete "$SMPROGRAMS\CPU Memory Cleanup\Browser workbench.lnk"
   Delete "$SMPROGRAMS\CPU Memory Cleanup\Uninstall.lnk"
   RMDir "$SMPROGRAMS\CPU Memory Cleanup"
   Delete "$DESKTOP\CPU Memory Cleanup.lnk"
