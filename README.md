@@ -136,7 +136,7 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 
 `memory-cleanup-window.exe --smoke-test 新回执路径` 是隐藏窗口真实只读检查：加载实际页面、观察真实读数后正常停止，不执行整理，不是正常使用入口。原生视觉、前台聚焦和长期资源占用仍待验收；新窗口尚未加入已发布Release。完整结果见[小窗口与双入口验收](<docs/运行记录 Run Record/2026-11-05 小窗口与双入口真实验收.md>)。
 
-macOS专项工作流为 `.github/workflows/macos-readonly.yml`：手动入口及限定分支、限定文件、人工提交标记的首次启动门，无定时或普通提交自动运行。仅隔离测试、构建和真实只读探针，不调用维护工具；运行结果与macOS产品接入状态分别判断。
+macOS专项工作流为 `.github/workflows/macos-readonly.yml`，当前只保留workflow_dispatch人工触发。首次登记所用的限定提交启动门已移除，无push、PR或定时触发。仅隔离测试、构建和真实只读探针，不调用维护工具；运行结果与macOS产品接入状态分别判断。
 
 当前未发布候选已接入macOS真实只读：Memory的提交字段改为Option，新增可用量口径及可选压缩驻留。Rust结构体初始化需适配；JSON中Windows/Linux已测值保持数字，Mac不提供的提交值为空。此变化不回签已发布v0.4.0，Mac支持状态须以新的原生验证为准。
 

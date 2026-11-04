@@ -1,14 +1,10 @@
 name: macOS readonly verification
 on:
   workflow_dispatch:
-  push:
-    branches: [codex/install-agent-platform]
-    paths: [.github/workflows/macos-readonly.yml]
 permissions:
   contents: read
 jobs:
   readonly:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run macOS readonly]')
     runs-on: macos-15
     timeout-minutes: 15
     steps:

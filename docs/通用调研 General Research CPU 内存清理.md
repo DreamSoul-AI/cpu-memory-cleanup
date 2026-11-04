@@ -800,7 +800,7 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 一次 [真实网页验收](<运行记录 Run Record/2026-11-03 360式回弹真实验收.md>)中，零位31.61%更新到回弹目标30.26%，显示终点30.26%，随后实际读数仍独立变化。回弹约332毫秒，下降首次帧至零约750.7毫秒。真实运行未自然出现回弹阶段占用回升，该分支由隔离回归覆盖，不冒充实机已遇到。31项网页及默认/开发Rust检查通过，不由此宣称底层提速或永远固定某个占用。
 
 # 二十一、安装封装与跨平台首轮判断
-2026年11月5日当前采用NSIS当前用户安装候选，继续复用网页，不把安装器等同独立原生窗口。固定NSIS3.11便携编译器，官方渠道返回HTML而非ZIP，改从镜像取得文件，核对官方公布SHA256完全一致后使用。工具只在忽略目录，不写入全局PATH。
+当前采用NSIS3.11当前用户安装候选，继续复用网页与可选WebView外壳，安装器本身不等同原生窗口。编译器摘要及安装实测证据见运行记录，工具不加入全局PATH。
 
 | 平台 | 读取与目标发现 | 主动整理 | 当前验证条件 |
 | --- | --- | --- | --- |
@@ -818,7 +818,7 @@ Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高�
 
 固定Wry 0.57.1与Tao 0.37.2，分别负责系统WebView与窗口事件，未引入整套Tauri应用框架。Tauri官方Windows前置依赖为MSVC C++工具及WebView2；本机有后者，但未检出前者。本轮实际证明Wry/Tao可用现有GNU工具链构建，不以这个结果承诺Tauri官方GNU支持。[Tauri前置依赖](https://v2.tauri.app/start/prerequisites/)、[Wry维护方说明](https://github.com/tauri-apps/wry/tree/wry-v0.57.1)、[Tao维护方](https://github.com/tauri-apps/tao)
 
-首次失败是导入库生成工具缺少汇编器，补齐项目临时目录中的MSYS2 binutils及运行依赖后通过；未更改全局PATH或安装Visual Studio。GNU窗口EXE还需WebView2Loader.dll，不能只复制EXE。窗口已有真实WebView只读及关闭证据，视觉品质、前台聚焦和长期资源占用尚未据此验收。WebView2运行时与加载器、Rust库依赖的许可分别核对；新依赖Tao为Apache-2.0，Wry为MIT或Apache-2.0，不改变本项目自有代码MIT。本轮不新增Release，完整传递依赖及加载器再分发通知仍是发布前事项。
+GNU构建需要可用的汇编器及其运行依赖，当前使用项目临时目录中的MSYS2 binutils，不要求全局安装Visual Studio。GNU窗口EXE还需WebView2Loader.dll，不能只复制EXE。窗口已有真实WebView只读及关闭证据，视觉品质、前台聚焦和长期资源占用尚未据此验收。WebView2运行时与加载器、Rust库依赖的许可分别核对；新依赖Tao为Apache-2.0，Wry为MIT或Apache-2.0，不改变本项目自有代码MIT。本轮不新增Release，完整传递依赖及加载器再分发通知仍是发布前事项。
 
 ## （二）macOS指标合同不能先补零
 
@@ -826,7 +826,7 @@ Apple公开的host_statistics64与XNU vm_statistics64提供空闲、活跃、非
 
 以上为API文档与公开源码阅读，不是macOS实测或现有适配实现。已取得用户授权，可新增只读macOS工作流并push当前分支运行，不合并、不发布、不整理共享runner进程。标准托管runner可提供目标架构原生证据，但不替代普通用户桌面与签名体验。[GitHub runner规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 
-macOS已取得[原生只读基线](<运行记录 Run Record/2026-11-05 macOS原生只读基线.md>)，能原生构建并读取系统统计；第一次基线时memory_status返回failed；后续接入已通过真实只读产品旅程，原始差异分别保存于日期记录。后续判定以真实字段、目标身份和接口结果为依据，不以云端工作流整体通过代替产品通过。
+macOS已取得[真实产品只读证据](<运行记录 Run Record/2026-11-05 macOS产品只读验收.md>)，原生容量、进程身份、CLI、HTTP、页面渲染和解压包启动通过。判定以真实字段、目标身份和接口结果为依据，不以云端工作流整体通过代替产品通过。
 
 Mac当前实现通过固定libc定义调用sysctl、host_statistics64及libproc，不每次读取都启动系统命令。可用量明确采用free+inactive页估算，按实际页大小转换；压缩驻留单列，不把压缩前逻辑页数当驻留量。Mach返回的字段数量可能属于较早结构修订，仅读取实际提供的字段，host send right在作用域结束释放。
 

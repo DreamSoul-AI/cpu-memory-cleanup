@@ -89,10 +89,12 @@ Cargo源码包用于库接入及Rust构建，包含当前源码、嵌入资源�
 
 Codex已按明确授权通过CLI完成128 MiB自有进程一次整理、内容校验与memory_result回看，见[真实工具验收](<运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。自定义工具目录不是MCP；当前不安装另一套适配服务。
 
-Linux候选支持memory_status和memory_targets的真实读取，不支持主动整理。HTTP会话按读取与维护能力分别呈现；调用方不能从读取available推导维护可用。macOS尚未接入。
+Linux候选支持memory_status和memory_targets的真实读取，不支持主动整理。HTTP会话按读取与维护能力分别呈现；调用方不能从读取available推导维护可用。macOS arm64候选已接入真实只读；不提供主动整理。
 
 本轮同构建10769c12f88e0dd2的CLI与内置浏览器各完成一次自有128 MiB负载维护、完整内容校验及回看，见[双入口真实验收](<运行记录 Run Record/2026-11-05 小窗口与双入口真实验收.md>)。这不扩大为其他应用或自动规则的授权，也不代替原生窗口可见体验验收。
 
 # 十、跨平台指标候选合同
 
 未发布候选的physical增加available_kind及可选compressed_bytes；Mac的free_and_inactive_estimate表示空闲与非活跃页估算，不等同Windows可用量。commit的used_bytes/limit_bytes允许null，status为measured/unavailable/partial，调用方不得把null转成0。Rust Memory结构体提交字段改为Option，新口径和压缩字段可由Default初始化；这是待发布API变化。Mac仅只读，维护能力为空，不从读取成功推断可以整理。
+
+静态目录新增platform_capabilities，不采样即可识别本平台reading与maintenance。只读平台的维护请求在Application及HTTP前置拒绝，不写入维护意图、不读取维护前快照、不派发系统调用；自动规则不能启用。Mac具体构建和真实验证见[产品只读验收](<运行记录 Run Record/2026-11-05 macOS产品只读验收.md>)。
