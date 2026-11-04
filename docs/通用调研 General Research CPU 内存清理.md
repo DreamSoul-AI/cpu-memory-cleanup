@@ -806,13 +806,13 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 | --- | --- | --- | --- |
 | Windows x64 | 已实现真实读取与身份发现 | 默认工作集串行核验 | 已发布便携版，本轮另验证安装器与自有负载CLI |
 | Linux | /proc/meminfo及/proc进程信息只读接入 | 未采用，不能复用Win32工作集接口 | Ubuntu WSL原生编译及真实读取，非独立桌面验收 |
-| macOS | host_statistics64等为调查入口，尚未接入 | 尚无本项目验证过的跨应用方案 | 无Mac，尚未运行原生编译、图形或维护验证 |
+| macOS | host_statistics64等为调查入口，尚未接入 | 尚无本项目验证过的跨应用方案 | 托管macOS 15.8.2 arm64原生构建与系统只读探针通过，产品尚未接入；未验收图形或维护 |
 
 Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高于CommitLimit，不能因超过就当作无效值或硬性上限。目标工作集取VmRSS，没有该字段时保留未知，不补零。进程身份结合boot_id和starttime，读取前后核对启动tick。读取支持与维护支持分别呈现。
 
 直接依据：[Linux内核/proc文档](https://www.kernel.org/doc/html/v6.11/filesystems/proc.html)、[process_madvise手册](https://www.man7.org/linux/man-pages/man2/process_madvise.2.html)、[Apple host_statistics64](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[NSIS固定包发布页及摘要](https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download)。Linux跨进程回收建议需核对ptrace和CAP_SYS_NICE等权限，本轮不使用该机制或以root身份默认清理。
 
-独立窗口仍以Tauri/WebView为比较候选，因平台运行时、打包和退出生命周期不同，先完成安装入口与只读跨平台基线再安排原型。MCP仍为条件项，已有CLI已可被Codex直接调用。
+独立窗口已采用Wry/Tao可选原型，有真实WebView只读、重复实例及安装证据，原生可见体验仍待验收。MCP仍为条件项，已有CLI已可被Codex直接调用。
 
 ## （一）独立窗口选型与实际依赖
 
@@ -825,3 +825,5 @@ Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高�
 Apple公开的host_statistics64与XNU vm_statistics64提供空闲、活跃、非活跃、wired及压缩等分页统计；页数还需结合实际页大小。非活跃页不等于当前空闲，也不能把压缩页直接当成Windows工作集。本项目现有Memory要求提交量与上限两个整数，macOS接入前应允许指标不适用，并在界面明确单位与含义，不以0填补不存在的Windows等价量。[Apple接口入口](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[XNU统计字段](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/vm_statistics.h)、[XNU host实现](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c)
 
 以上为API文档与公开源码阅读，不是macOS实测或现有适配实现。已取得用户授权，可新增只读macOS工作流并push当前分支运行，不合并、不发布、不整理共享runner进程。标准托管runner可提供目标架构原生证据，但不替代普通用户桌面与签名体验。[GitHub runner规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+
+macOS已取得[原生只读基线](<运行记录 Run Record/2026-11-05 macOS原生只读基线.md>)，能原生构建并读取系统统计；当前产品memory_status实际返回failed，接入尚未完成。后续判定以真实字段、目标身份和接口结果为依据，不以云端工作流整体通过代替产品通过。

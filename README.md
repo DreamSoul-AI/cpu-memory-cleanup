@@ -60,7 +60,7 @@ cargo build --release --locked
 
 ci.ps1 使用独立 target，在 .test-results/local-ci/日期时间/ 保存阶段日志、summary.json、工具目录及 EXE SHA256。失败阻断后续阶段，不自动部署、启动清理或安装依赖。离线包验证需要已准备好的缓存。统一脚本本轮使用 PowerShell 7 验证，需要允许本地脚本执行的环境，不要求改变系统执行策略。
 
-已发布入口适配验证：默认 25 项 Rust、开发配置 33 项 Rust、31 项网页 JS 全部通过，release 与源码包构建验证通过。原仓库运行曾遇 Cargo 文件访问拒绝，成功结果来自逐字节核对的一致副本，详见[入口适配验收](<docs/运行记录 Run Record/2026-11-03 本地入口与包适配验收.md>)。采用本地验证策略，未配置 GitHub Actions。
+已发布入口适配验证：默认 25 项 Rust、开发配置 33 项 Rust、31 项网页 JS 全部通过，release 与源码包构建验证通过。原仓库运行曾遇 Cargo 文件访问拒绝，成功结果来自逐字节核对的一致副本，详见[入口适配验收](<docs/运行记录 Run Record/2026-11-03 本地入口与包适配验收.md>)。日常仍采用本地验证；本轮另已配置获授权的macOS只读专项Actions，不作为已通过的跨平台支持证据。
 
 打包命令：`./scripts/package.ps1`，默认读取 target/release，输出 dist 下的 Windows ZIP 和 SHA256SUMS.txt，已有产物不覆盖。该脚本不清理、不上传。
 
@@ -135,3 +135,5 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 构建：`./scripts/build-window.ps1`；GNU工具链需可用汇编器，可用 `-AssemblerDirectory 路径` 显式指定，脚本不安装工具或修改全局PATH。需要WebView2运行时及同目录WebView2Loader.dll；默认CLI/库构建不要求窗口依赖。安装器通过 `-WindowBuildDirectory target/release` 显式包含匹配构建窗口。
 
 `memory-cleanup-window.exe --smoke-test 新回执路径` 是隐藏窗口真实只读检查：加载实际页面、观察真实读数后正常停止，不执行整理，不是正常使用入口。原生视觉、前台聚焦和长期资源占用仍待验收；新窗口尚未加入已发布Release。完整结果见[小窗口与双入口验收](<docs/运行记录 Run Record/2026-11-05 小窗口与双入口真实验收.md>)。
+
+macOS专项工作流为 `.github/workflows/macos-readonly.yml`：手动入口及限定分支、限定文件、人工提交标记的首次启动门，无定时或普通提交自动运行。仅隔离测试、构建和真实只读探针，不调用维护工具；运行结果与macOS产品接入状态分别判断。
