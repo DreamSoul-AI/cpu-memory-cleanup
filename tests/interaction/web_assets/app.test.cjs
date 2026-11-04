@@ -277,3 +277,13 @@ test('readonly platforms keep all maintenance controls disabled',()=>{
   for(const id of ['global-clean','selected-clean','unprotected-clean','arm-rule'])assert.equal(p.elements[id].disabled,true,id);
   assert.equal(p.elements['read-status'].disabled,false);
 });
+
+
+test('Mac estimate is labelled and unavailable commit is never painted as zero',()=>{
+  const p=page();p.run(`memory({samples:[{metrics:{physical:{total_bytes:100,available_bytes:40,available_kind:"free_and_inactive_estimate",compressed_bytes:10},commit:{used_bytes:null,limit_bytes:null,status:"unavailable"}}}]})`);p.tick(1000);
+  assert.equal(p.elements['actual-percent'].textContent,'60%');
+  assert.match(p.elements['gauge-label'].textContent,/估算/);
+  assert.match(p.elements['capacity-caption'].textContent,/空闲\+非活跃/);
+  assert.equal(p.elements.commit.textContent,'当前平台未提供提交统计');
+  assert.equal(p.elements['compressed-metric'].hidden,false);
+});

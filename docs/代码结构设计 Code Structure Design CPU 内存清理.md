@@ -191,3 +191,9 @@ Linux便携候选由 `scripts/package-linux.sh` 在Linux原生构建，归档同
 # 十五、小窗口原型的源码落位
 
 先在忽略目录证明依赖可构建，再落位正式src模块。目标为可选窗口入口及 `interaction/desktop/` 承载窗口事件、导航和生命周期；系统能力仍只在system，维护流程仍只在application。HTTP服务提供可克隆的停止控制对象，统一网页停止与窗口关闭的收尾语义。默认库/CLI/浏览器构建不强制依赖窗口运行时。
+
+# 十六、macOS只读模块与指标映射
+
+`contracts::Memory`维护可选提交字段、可用量口径和可选压缩驻留量，统一序列化；网页按实际字段显示，不在交互层推算缺失数据。`system/macos/mod.rs`装配只读能力，`memory.rs`封装sysctl/Mach容量及端口生命周期，`processes.rs`封装libproc身份、驻留与路径。通过固定版本libc使用平台定义，不复制内核实现。
+
+sysctl读取总量，Mach按返回的实际字段数量和页大小转换，libproc读取前后微秒启动身份；所有维护请求保持未派发。自动化检查与原生实测分开，工具及HTTP仍进入同一Application。外围Mac打包和runner探针在scripts，不复制业务实现。

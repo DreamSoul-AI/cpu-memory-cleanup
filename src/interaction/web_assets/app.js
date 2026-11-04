@@ -1,6 +1,6 @@
 "use strict";
 const el = (id) => document.getElementById(id);
-let cleaning = false;
+let cleaning = false, memoryLabel = "物理内存占用";
 const occupancy=value=>value?.total>0&&value.available!=null&&value.available>=0&&value.available<=value.total?(value.total-value.available)/value.total*100:null;
 function paintGauge(value,label){
   const text=value==null?"未知":`${Math.round(value)}%`;
@@ -13,7 +13,7 @@ function paintGauge(value,label){
 }
 const decoration=new CleanupFlow((value,phase)=>{
   if(phase!==lastEffectPhase){lastEffectPhase=phase;recordFlow(phase);}
-  paintGauge(value,{working:"正在整理 · 后台持续读取",emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:"物理内存占用"}[phase]);
+  paintGauge(value,{working:"正在整理 · 后台持续读取",emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:memoryLabel}[phase]);
 },refreshForRebound,()=>reducedMotion.matches);
 let latestMemory=null,latestMemoryAt=null;
 let fullReportUrl=null,flowStarted=null,flowEvents=[],flowFrame=null,lastEffectPhase=null;
@@ -36,7 +36,7 @@ function notifyDecoration(kind){
     if(kind==="begin"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.begin();
     else if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start();
     else if(kind==="stop")decoration.stop();
-  }catch(_){paintGauge(occupancy(latestMemory),"物理内存占用");}
+  }catch(_){paintGauge(occupancy(latestMemory),memoryLabel);}
 }
 let liveEnabled = true, displayTimer = null, displayInFlight = false;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -125,7 +125,13 @@ function paintMemory(value,sample=null){
   const pct=occupancy(value);
   el("actual-percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
-  el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
+  const estimate=value.availableKind==="free_and_inactive_estimate";
+  memoryLabel=estimate?"占用估算 · 空闲与非活跃口径":"物理内存占用";
+  el("actual-caption").textContent=estimate?"估算占用 · 持续读取":"实际占用 · 持续读取";
+  el("capacity-caption").textContent=estimate?"空闲+非活跃 / 总量":"可用 / 总量";
+  el("commit").textContent=value.commitStatus==="unavailable"?"当前平台未提供提交统计":`${gib(commitUsed)} / ${gib(commitLimit)}`;
+  el("compressed-metric").hidden=value.compressed==null;
+  el("compressed").textContent=gib(value.compressed);
   decoration.update(pct,sample);
 }
 function memory(report,source="live"){
@@ -134,7 +140,7 @@ function memory(report,source="live"){
   const sampleAt=Date.parse(sample.timestamp);
   if(Number.isFinite(sampleAt)&&latestMemoryAt!=null&&sampleAt<latestMemoryAt)return;
   if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
-  latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
+  latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes,commitStatus:commit?.status,availableKind:physical.available_kind,compressed:physical.compressed_bytes};
   paintMemory(latestMemory,{timestamp:sample.timestamp??null,source,received:performance.now()});
   if(flowStarted!=null&&(busy||decoration.phase))recordFlow("sample");
 }

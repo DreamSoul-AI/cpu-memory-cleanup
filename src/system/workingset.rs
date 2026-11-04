@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum Access {
+    #[cfg(windows)]
     Query,
     VerifiedCleanup,
     #[cfg(any(feature = "experimental-quota", test))]

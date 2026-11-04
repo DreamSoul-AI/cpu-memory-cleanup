@@ -9,3 +9,5 @@ main{max-width:760px}.intro{display:none}.layout{display:block;max-width:460px;m
 
 #target-controls{border:0;padding:0;margin:0;min-width:0}.gauge>span{font-variant-numeric:tabular-nums;min-width:4ch;text-align:center}.gauge.working{animation:none;box-shadow:0 0 0 4px #087f4f0c}
 .gauge small{width:108px;max-width:70%;height:30px;margin-top:3px;font-size:11px;line-height:15px;text-align:center;overflow-wrap:anywhere;display:block;text-wrap:balance;flex-shrink:0}
+
+.metric[hidden]{display:none}

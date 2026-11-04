@@ -104,8 +104,9 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
             Ok(Memory {
                 total_bytes: 1000,
                 available_bytes: 300,
-                commit_used_bytes: 500,
-                commit_limit_bytes: 2000,
+                commit_used_bytes: Some(500),
+                commit_limit_bytes: Some(2000),
+                ..Memory::default()
             })
         }
         fn targets(&self) -> AppResult<Vec<Target>> {
@@ -291,8 +292,9 @@ fn window_stop_control_waits_for_dispatched_work_and_seals_its_record() {
             Ok(Memory {
                 total_bytes: 100,
                 available_bytes: 50,
-                commit_used_bytes: 20,
-                commit_limit_bytes: 100,
+                commit_used_bytes: Some(20),
+                commit_limit_bytes: Some(100),
+                ..Memory::default()
             })
         }
         fn targets(&self) -> AppResult<Vec<Target>> {

@@ -25,9 +25,20 @@ jobs:
           cargo test --lib --test '*' --features experimental-quota --locked > .test-results/macos-readonly/rust-feature-tests.txt 2>&1
           node --test tests/interaction/web_assets/*.test.cjs > .test-results/macos-readonly/web-tests.txt 2>&1
           cargo build --release --locked > .test-results/macos-readonly/build.txt 2>&1
+      - name: Build and extract native portable candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh scripts/package-macos.sh .test-results/macos-readonly/package
+          mkdir -p ".test-results/macos-readonly/Portable check"
+          tar -xzf .test-results/macos-readonly/package/*.tar.gz -C ".test-results/macos-readonly/Portable check"
       - name: Actual native readonly probe
         shell: bash
-        run: python3 scripts/macos-probe.py --binary target/release/cpu-memory-cleanup --output-dir .test-results/macos-readonly/probe
+        run: |
+          set -euo pipefail
+          binary=$(find ".test-results/macos-readonly/Portable check" -type f -name cpu-memory-cleanup)
+          launcher=$(find ".test-results/macos-readonly/Portable check" -type f -name run.command)
+          python3 scripts/macos-probe.py --binary "$binary" --launcher "$launcher" --output-dir .test-results/macos-readonly/probe
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

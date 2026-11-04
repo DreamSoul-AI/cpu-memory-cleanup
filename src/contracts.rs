@@ -34,17 +34,34 @@ pub fn identifier() -> AppResult<String> {
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AvailableKind {
+    #[default]
+    OsAvailable,
+    FreeAndInactiveEstimate,
+}
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
     pub total_bytes: u64,
     pub available_bytes: u64,
-    pub commit_used_bytes: u64,
-    pub commit_limit_bytes: u64,
+    pub commit_used_bytes: Option<u64>,
+    pub commit_limit_bytes: Option<u64>,
+    #[serde(default)]
+    pub available_kind: AvailableKind,
+    #[serde(default)]
+    pub compressed_bytes: Option<u64>,
 }
 impl Memory {
     pub fn metrics(&self) -> Value {
-        json!({"physical":{"total_bytes":self.total_bytes,"available_bytes":self.available_bytes},
-            "commit":{"used_bytes":self.commit_used_bytes,"limit_bytes":self.commit_limit_bytes}})
+        let status = match (self.commit_used_bytes, self.commit_limit_bytes) {
+            (Some(_), Some(_)) => "measured",
+            (None, None) => "unavailable",
+            _ => "partial",
+        };
+        json!({"physical":{"total_bytes":self.total_bytes,"available_bytes":self.available_bytes,
+            "available_kind":self.available_kind,"compressed_bytes":self.compressed_bytes},
+            "commit":{"used_bytes":self.commit_used_bytes,"limit_bytes":self.commit_limit_bytes,"status":status}})
     }
 }
 
@@ -133,5 +150,24 @@ impl Report {
     pub fn error(&mut self, phase: &str, message: impl Into<String>) {
         self.errors
             .push(json!({"phase":phase,"type":"operation_failed","message":message.into()}));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn optional_metrics_keep_null_and_known_commit_keeps_numeric_shape() {
+        let mut value = Memory {
+            total_bytes: 100,
+            available_bytes: 50,
+            ..Memory::default()
+        };
+        assert!(value.metrics()["commit"]["used_bytes"].is_null());
+        assert_eq!(value.metrics()["commit"]["status"], "unavailable");
+        value.commit_used_bytes = Some(0);
+        value.commit_limit_bytes = Some(200);
+        assert_eq!(value.metrics()["commit"]["used_bytes"], 0);
+        assert_eq!(value.metrics()["commit"]["status"], "measured");
     }
 }

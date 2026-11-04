@@ -2,6 +2,8 @@ use crate::contracts::{AppResult, Memory, Sweep, Target};
 use std::sync::{Arc, atomic::AtomicBool};
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod measurement;
 pub mod records;
 #[cfg(windows)]
@@ -60,14 +62,18 @@ pub fn native() -> Arc<dyn System> {
     {
         Arc::new(linux::Linux)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        Arc::new(macos::MacOs)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Arc::new(Unsupported)
     }
 }
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 struct Unsupported;
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 impl System for Unsupported {
     fn supported(&self) -> bool {
         false

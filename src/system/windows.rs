@@ -123,8 +123,9 @@ impl super::System for Windows {
         let result = Memory {
             total_bytes: bytes(value.PhysicalTotal)?,
             available_bytes: bytes(value.PhysicalAvailable)?,
-            commit_used_bytes: bytes(value.CommitTotal)?,
-            commit_limit_bytes: bytes(value.CommitLimit)?,
+            commit_used_bytes: Some(bytes(value.CommitTotal)?),
+            commit_limit_bytes: Some(bytes(value.CommitLimit)?),
+            ..Memory::default()
         };
         if result.total_bytes == 0 || result.available_bytes > result.total_bytes {
             return Err("系统物理内存读数无效".into());

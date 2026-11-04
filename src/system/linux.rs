@@ -25,8 +25,9 @@ fn memory(text: &str) -> AppResult<Memory> {
     let result = Memory {
         total_bytes: kb(text, "MemTotal")?,
         available_bytes: kb(text, "MemAvailable")?,
-        commit_used_bytes: kb(text, "Committed_AS")?,
-        commit_limit_bytes: kb(text, "CommitLimit")?,
+        commit_used_bytes: Some(kb(text, "Committed_AS")?),
+        commit_limit_bytes: Some(kb(text, "CommitLimit")?),
+        ..Memory::default()
     };
     if result.total_bytes == 0 || result.available_bytes > result.total_bytes {
         return Err("Invalid physical capacity".into());

@@ -53,3 +53,6 @@ path = "tests/system/measurement.rs"
 name = "memory-cleanup-window"
 path = "src/window.rs"
 required-features = ["desktop-window"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "=0.2.191"

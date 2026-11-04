@@ -27,8 +27,9 @@ impl System for Isolated {
         Ok(Memory {
             total_bytes: 1000,
             available_bytes: 500,
-            commit_used_bytes: 100,
-            commit_limit_bytes: 2000,
+            commit_used_bytes: Some(100),
+            commit_limit_bytes: Some(2000),
+            ..Memory::default()
         })
     }
     fn targets(&self) -> AppResult<Vec<Target>> {
