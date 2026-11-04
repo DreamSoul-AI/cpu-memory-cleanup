@@ -49,6 +49,9 @@ pub trait System: Send + Sync {
     fn cleanup_supported(&self) -> bool {
         self.supported()
     }
+    fn cleanup_progress(&self) -> Option<crate::contracts::CleanupProgress> {
+        None
+    }
     fn snapshot(&self) -> AppResult<Memory>;
     fn targets(&self) -> AppResult<Vec<Target>>;
     fn cleanup(&self, targets: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep>;
@@ -56,7 +59,7 @@ pub trait System: Send + Sync {
 pub fn native() -> Arc<dyn System> {
     #[cfg(windows)]
     {
-        Arc::new(windows::Windows)
+        Arc::new(windows::Windows::default())
     }
     #[cfg(target_os = "linux")]
     {

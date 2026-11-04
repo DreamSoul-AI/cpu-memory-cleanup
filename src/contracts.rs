@@ -83,6 +83,26 @@ impl Target {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CleanupProgress {
+    pub total_count: usize,
+    pub visited_count: usize,
+    pub successful_count: usize,
+    pub failed_count: usize,
+    pub skipped_count: usize,
+}
+impl From<&Sweep> for CleanupProgress {
+    fn from(value: &Sweep) -> Self {
+        Self {
+            total_count: value.enumerated_count,
+            visited_count: value.visited_count,
+            successful_count: value.successful_count,
+            failed_count: value.failed_count,
+            skipped_count: value.skipped_count,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Sweep {
     pub enumerated_count: usize,

@@ -333,6 +333,12 @@ impl State {
                 .ok_or("报告尚未就绪".into());
         }
         let mut result = json!({"id":id,"kind":kind,"state":state});
+        if state == "running" && matches!(kind.as_str(), "cleanup" | "batch") {
+            if let Some(progress) = self.app.system.cleanup_progress() {
+                result["progress"] = json!(progress);
+            }
+        }
+
         if let Some(error) = error {
             result["error"] = json!(error);
         }

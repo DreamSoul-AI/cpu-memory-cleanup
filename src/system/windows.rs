@@ -16,7 +16,10 @@ use windows_sys::Win32::{
     },
 };
 
-pub struct Windows;
+#[derive(Default)]
+pub struct Windows {
+    progress: std::sync::Mutex<Option<crate::contracts::CleanupProgress>>,
+}
 struct ProcessHandle(HANDLE);
 impl ProcessHandle {
     fn open(pid: u32, access: Access) -> Result<Self, u32> {
@@ -159,8 +162,21 @@ impl super::System for Windows {
         }
         Ok(targets)
     }
+    fn cleanup_progress(&self) -> Option<crate::contracts::CleanupProgress> {
+        self.progress.lock().expect("progress lock").clone()
+    }
     fn cleanup(&self, selected: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep> {
-        workingset::sweep(&Win32Processes, selected, Strategy::Verified, cancel)
+        let result = workingset::sweep_with_progress(
+            &Win32Processes,
+            selected,
+            Strategy::Verified,
+            cancel,
+            &mut |sweep| {
+                *self.progress.lock().expect("progress lock") = Some(sweep.into());
+            },
+        );
+        *self.progress.lock().expect("progress lock") = None;
+        result
     }
 }
 pub fn normalize(path: &str) -> String {
@@ -241,10 +257,10 @@ impl super::System for QuotaOnlyGlobal {
         true
     }
     fn snapshot(&self) -> AppResult<Memory> {
-        super::System::snapshot(&Windows)
+        super::System::snapshot(&Windows::default())
     }
     fn targets(&self) -> AppResult<Vec<Target>> {
-        super::System::targets(&Windows)
+        super::System::targets(&Windows::default())
     }
     fn cleanup(&self, selected: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep> {
         workingset::sweep(&Win32Processes, selected, Strategy::QuotaOnlyGlobal, cancel)
@@ -299,7 +315,7 @@ impl super::System for ComparisonWindows {
         true
     }
     fn snapshot(&self) -> AppResult<Memory> {
-        super::System::snapshot(&Windows)
+        super::System::snapshot(&Windows::default())
     }
     fn targets(&self) -> AppResult<Vec<Target>> {
         comparison_observe(&self.pids)

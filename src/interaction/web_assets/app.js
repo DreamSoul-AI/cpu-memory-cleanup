@@ -239,10 +239,14 @@ async function run(action){
         if(job.state==="error")throw new Error(job.error);
         recordFlow("report_received");present(job);recordFlow("result_presented");
         const completed=job.report.completion==="success" || job.presentation?.limited===true;
-        if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(completed?"start":"stop");
+        if(cleaning)notifyDecoration(completed?"start":"stop");
         el("job-status").textContent=job.presentation?.limited ? "本次整理已结束 · 部分目标未处理" :
           job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;
         break;
+      }
+      if(cleaning&&job.progress){
+        const p=job.progress;
+        el("job-status").textContent=`正在整理 ${p.visited_count} / ${p.total_count} 个目标 · 已处理 ${p.successful_count}，未处理 ${p.failed_count+p.skipped_count}`;
       }
       await new Promise(resolve=>setTimeout(resolve,120));
     }

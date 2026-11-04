@@ -117,6 +117,17 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
         fn supported(&self) -> bool {
             true
         }
+        fn cleanup_progress(&self) -> Option<cpu_memory_cleanup::contracts::CleanupProgress> {
+            (self.calls.load(Ordering::SeqCst) > 0).then_some(
+                cpu_memory_cleanup::contracts::CleanupProgress {
+                    total_count: 1,
+                    visited_count: 0,
+                    successful_count: 0,
+                    failed_count: 0,
+                    skipped_count: 0,
+                },
+            )
+        }
         fn snapshot(&self) -> AppResult<Memory> {
             self.reads.fetch_add(1, Ordering::SeqCst);
             Ok(Memory {
@@ -236,6 +247,15 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
         .wait_timeout_while(entered, std::time::Duration::from_secs(5), |v| !*v)
         .unwrap();
     assert!(!timeout.timed_out());
+    let running = parsed(&request(
+        &address,
+        "GET",
+        &format!("/api/job?id={}", accepted["id"].as_str().unwrap()),
+        &headers,
+        "",
+    ));
+    assert_eq!(running["progress"]["total_count"], 1);
+    assert_eq!(running["progress"]["visited_count"], 0);
     // HTTP reads must not wait for the maintenance worker or redispatch it.
     let live = parsed(&request(&address, "POST", "/api/display", &headers, "{}"));
     assert_eq!(

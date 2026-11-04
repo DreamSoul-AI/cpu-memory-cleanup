@@ -54,11 +54,21 @@ pub(crate) trait Processes {
     fn open(&self, pid: u32, access: Access) -> Result<Self::Handle, u32>;
 }
 
+#[cfg(any(feature = "experimental-quota", test))]
 pub(crate) fn sweep(
     api: &impl Processes,
     selected: Option<&[Target]>,
     strategy: Strategy,
     cancel: &AtomicBool,
+) -> AppResult<Sweep> {
+    sweep_with_progress(api, selected, strategy, cancel, &mut |_| {})
+}
+pub(crate) fn sweep_with_progress(
+    api: &impl Processes,
+    selected: Option<&[Target]>,
+    strategy: Strategy,
+    cancel: &AtomicBool,
+    observe: &mut dyn FnMut(&Sweep),
 ) -> AppResult<Sweep> {
     // A candidate can never weaken the identity contract of explicit targets.
     let strategy = if selected.is_some() {
@@ -77,6 +87,7 @@ pub(crate) fn sweep(
         resources_closed: true,
         ..Default::default()
     };
+    observe(&sweep);
     for pid in ids {
         if cancel.load(Ordering::Acquire) {
             sweep.cancelled = true;
@@ -88,6 +99,7 @@ pub(crate) fn sweep(
             Err(status) => {
                 sweep.skipped_count += 1;
                 sweep.push(json!({"pid":pid,"outcome":"skipped","status":status}));
+                observe(&sweep);
                 continue;
             }
         };
@@ -137,8 +149,10 @@ pub(crate) fn sweep(
             sweep.resources_closed = false;
             sweep.unknown_count += 1;
             sweep.push(json!({"pid":pid,"close_error":error,"outcome":"unknown"}));
+            observe(&sweep);
             break;
         }
+        observe(&sweep);
         if sweep.cancelled {
             break;
         }

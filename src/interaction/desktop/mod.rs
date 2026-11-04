@@ -81,6 +81,10 @@ pub fn run(args: Vec<String>) -> AppResult<()> {
         PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA unavailable")?)
             .join("DreamSoul/CPU Memory Cleanup/runs");
     let mut smoke = None;
+    let mut background = false;
+    let mut profile =
+        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA unavailable")?)
+            .join("DreamSoul/CPU Memory Cleanup/webview-profile");
     let mut options = args.chunks_exact(2);
     for pair in &mut options {
         match pair[0].as_str() {
@@ -91,6 +95,12 @@ pub fn run(args: Vec<String>) -> AppResult<()> {
                 }
             }
             "--output-dir" => output = PathBuf::from(&pair[1]),
+            "--profile-dir" => profile = PathBuf::from(&pair[1]),
+            "--background" => {
+                background = pair[1]
+                    .parse()
+                    .map_err(|_| "--background requires true or false")?
+            }
             "--smoke-test" => smoke = Some(PathBuf::from(&pair[1])),
             _ => return Err(format!("Unknown window option: {}", pair[0])),
         }
@@ -102,7 +112,7 @@ pub fn run(args: Vec<String>) -> AppResult<()> {
         return Err("Smoke receipt already exists".into());
     }
     let title = format!("内存清理 · {}", crate::BUILD_ID);
-    let Some(_instance) = single_instance(port, &title, smoke.is_some())? else {
+    let Some(_instance) = single_instance(port, &title, smoke.is_some() || background)? else {
         return Ok(());
     };
     let server = Workbench::bind(Arc::new(Application::default()), output, port)?;
@@ -119,13 +129,11 @@ pub fn run(args: Vec<String>) -> AppResult<()> {
         .with_title(&title)
         .with_inner_size(tao::dpi::LogicalSize::new(620.0, 840.0))
         .with_min_inner_size(tao::dpi::LogicalSize::new(420.0, 600.0))
+        .with_focused(!background)
         .with_visible(smoke.is_none())
         .build(&events)
         .map_err(|e| e.to_string())?;
     let allowed = base.clone();
-    let profile =
-        PathBuf::from(std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA unavailable")?)
-            .join("DreamSoul/CPU Memory Cleanup/webview-profile");
     let mut context = WebContext::new(Some(profile));
     let mut builder = WebViewBuilder::new_with_web_context(&mut context)
         .with_url(&base)

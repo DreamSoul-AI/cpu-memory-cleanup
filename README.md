@@ -42,7 +42,7 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS arm64只读候选已在托管Mac验证实际容量、原生进程身份、解压包、HTTP、真实页面渲染与停止；不提供主动整理，也未验证普通用户下载、Gatekeeper或原生Mac小窗口。已发布v0.4.0的支持范围仍是Windows x64。开发与验收进度见开发计划及[本轮运行记录](<docs/运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。
 
-安装版从开始菜单“CPU Memory Cleanup”启动，程序位于当前用户LocalAppData的Programs目录，运行记录独立存放在LocalAppData的DreamSoul目录；卸载保留记录。安装器尚未签名，也未上传到Release。Linux原生开发环境可用 `sh scripts/package-linux.sh 新输出目录` 构建只读便携候选，解压后运行 `sh ./run.sh` 并在浏览器打开打印的本地地址；不自动安装依赖，不执行整理。
+安装版从开始菜单“CPU Memory Cleanup”启动，程序位于当前用户LocalAppData的Programs目录，运行记录独立存放在LocalAppData的DreamSoul目录；卸载保留记录。安装器尚未签名，也未上传到Release。 当前窗口候选已通过安装快捷入口、重复打开、自有进程整理、结果回看、动效收尾及停止重开旅程；后台调试验收未覆盖前台聚焦。整理期间显示真实处理目标数，计数不代表释放比例；首次原生等待仍取决于实际负载。见[窗口验收](<docs/运行记录 Run Record/2026-11-05 窗口完整旅程与整理进度.md>)。Linux原生开发环境可用 `sh scripts/package-linux.sh 新输出目录` 构建只读便携候选，解压后运行 `sh ./run.sh` 并在浏览器打开打印的本地地址；不自动安装依赖，不执行整理。
 
 ## 开发构建与检查
 

@@ -287,3 +287,24 @@ test('Mac estimate is labelled and unavailable commit is never painted as zero',
   assert.equal(p.elements.commit.textContent,'当前平台未提供提交统计');
   assert.equal(p.elements['compressed-metric'].hidden,false);
 });
+
+
+test('batch maintenance reports progress and hands the ring back after completion',async()=>{
+ const p=page();p.elements['decoration-enabled'].checked=true;
+ p.run(`token='session';readingSupported=true;supportedMethods=['working-set'];memory(${snapshot(60)});
+  var release, polls=0, actions=0;setTimeout=fn=>{Promise.resolve().then(fn);return 0;};
+  api=async path=>{if(path==='/api/action'){actions++;return{id:'batch'};}if(path==='/api/display')return{completion:'success',...${snapshot(70)}};
+  if(polls++===0)return{kind:'batch',state:'running',progress:{visited_count:1,total_count:3,successful_count:1,failed_count:0,skipped_count:0}};
+  return new Promise(resolve=>release=resolve);};var running=run({kind:'batch',confirmed:true,targets:['owned']});`);
+ for(let i=0;i<8;i++)await p.run('Promise.resolve()');
+ assert.match(p.elements['job-status'].textContent,/1 \/ 3/);
+ assert.equal(p.run('decoration.phase'),'working');
+ p.run(`release({kind:'batch',state:'finished',report:{completion:'success',errors:[],samples:[],action:{call_outcome:'success'}},presentation:{title:'真实批次已完成',note:'一次派发',context:'原记录'}})`);
+ await p.run('running');
+ assert.equal(p.elements['recent-title'].textContent,'真实批次已完成');
+ assert.equal(p.run('decoration.phase'),'emptying');
+ p.tick(750);for(let i=0;i<6;i++)await p.run('Promise.resolve()');
+ for(let time=770;time<=1200;time+=20)p.tick(time);
+ assert.equal(p.run('decoration.phase'),null);
+ assert.equal(p.run('actions'),1);
+});
