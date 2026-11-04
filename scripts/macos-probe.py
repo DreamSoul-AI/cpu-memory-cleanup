@@ -44,6 +44,8 @@ def main():
     def result(name):
         return json.loads((args.output_dir / (name + ".stdout.txt")).read_text(encoding="utf-8"))
     catalog = result("catalog")
+    assert catalog["platform_capabilities"]["reading"] is True
+    assert catalog["platform_capabilities"]["maintenance"] is False
     status = result("product-status")
     physical = status["samples"][0]["metrics"]["physical"]
     assert status["completion"] == "success"

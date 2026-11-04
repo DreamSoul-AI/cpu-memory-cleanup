@@ -40,7 +40,7 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 当前开发分支增加Windows当前用户安装器和Linux只读适配，尚未发布。Windows安装器创建开始菜单入口，卸载保留用户数据。未提供窗口构建时打开浏览器；显式带匹配窗口构建时提供独立WebView2窗口及浏览器备用入口。`scripts/build-installer.ps1 -Compiler 编译器路径`从两份release EXE构建安装候选，需要另行准备NSIS，不自动安装编译器。
 
-Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS尚未接入。已发布v0.4.0的支持范围仍是Windows x64。开发与验收进度见开发计划及[本轮运行记录](<docs/运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。
+Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS arm64只读候选已在托管Mac验证实际容量、原生进程身份、解压包、HTTP、真实页面渲染与停止；不提供主动整理，也未验证普通用户下载、Gatekeeper或原生Mac小窗口。已发布v0.4.0的支持范围仍是Windows x64。开发与验收进度见开发计划及[本轮运行记录](<docs/运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。
 
 安装版从开始菜单“CPU Memory Cleanup”启动，程序位于当前用户LocalAppData的Programs目录，运行记录独立存放在LocalAppData的DreamSoul目录；卸载保留记录。安装器尚未签名，也未上传到Release。Linux原生开发环境可用 `sh scripts/package-linux.sh 新输出目录` 构建只读便携候选，解压后运行 `sh ./run.sh` 并在浏览器打开打印的本地地址；不自动安装依赖，不执行整理。
 
@@ -138,4 +138,6 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 
 macOS专项工作流为 `.github/workflows/macos-readonly.yml`：手动入口及限定分支、限定文件、人工提交标记的首次启动门，无定时或普通提交自动运行。仅隔离测试、构建和真实只读探针，不调用维护工具；运行结果与macOS产品接入状态分别判断。
 
-当前未发布候选正在接入macOS真实只读：Memory的提交字段改为Option，新增可用量口径及可选压缩驻留。Rust结构体初始化需适配；JSON中Windows/Linux已测值保持数字，Mac不提供的提交值为空。此变化不回签已发布v0.4.0，Mac支持状态须以新的原生验证为准。
+当前未发布候选已接入macOS真实只读：Memory的提交字段改为Option，新增可用量口径及可选压缩驻留。Rust结构体初始化需适配；JSON中Windows/Linux已测值保持数字，Mac不提供的提交值为空。此变化不回签已发布v0.4.0，Mac支持状态须以新的原生验证为准。
+
+macOS原生开发环境可用 `sh scripts/package-macos.sh 新目录` 生成arm64等当前主机架构便携候选；完整解压后运行 `./run.command`，手动打开打印的localhost地址。不要求安装Rust/Node/Python运行时，未签名、未公证，普通用户下载和系统提示尚未验收。

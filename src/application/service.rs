@@ -103,6 +103,9 @@ impl Application {
         if !confirmed {
             return Err("工作集整理需要本次明确确认".into());
         }
+        if !self.system.cleanup_supported() {
+            return Err("当前平台不支持主动整理，未派发系统调用".into());
+        }
         for rule in protections {
             rule.validate()?;
         }

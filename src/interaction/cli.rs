@@ -76,6 +76,7 @@ pub fn catalog() -> Value {
     }).collect();
     json!({"tool_schema_version":1,"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,
         "output":"one JSON report on stdout","exit_codes":{"0":"完整成功","1":"partial/failed/unknown/cancelled，原始事实在JSON中","2":"参数或入口错误，原因在stderr"},
+        "platform_capabilities":{"operating_system":std::env::consts::OS,"reading":cfg!(any(windows,target_os="linux",target_os="macos")),"maintenance":cfg!(windows)},
         "maintenance_output_option":["--output-dir","{directory}"],"tools":tools})
 }
 pub fn main(args: Vec<String>) -> i32 {

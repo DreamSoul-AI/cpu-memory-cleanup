@@ -59,6 +59,24 @@ fn server_is_native_readonly_on_start_and_requires_session_for_actions() {
     let token = session["token"].as_str().unwrap();
     assert!(request(&address, "POST", "/api/action", "", "{}").starts_with("HTTP/1.1 403"));
     let headers = format!("X-Session-Token: {token}\r\n");
+    let refused = request(
+        &address,
+        "POST",
+        "/api/action",
+        &headers,
+        r#"{"kind":"cleanup","mechanism":"working-set","confirmed":true}"#,
+    );
+    assert!(refused.starts_with("HTTP/1.1 400"));
+    assert!(refused.contains("未派发"));
+    let rule = request(
+        &address,
+        "POST",
+        "/api/rule",
+        &headers,
+        r#"{"enabled":true}"#,
+    );
+    assert!(rule.starts_with("HTTP/1.1 400"));
+    assert!(rule.contains("不能启用"));
     let state = request(&address, "GET", "/api/state", &headers, "");
     assert!(state.contains("\"armed\":false"));
     let forbidden = request(

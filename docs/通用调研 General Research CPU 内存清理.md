@@ -806,7 +806,7 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 | --- | --- | --- | --- |
 | Windows x64 | 已实现真实读取与身份发现 | 默认工作集串行核验 | 已发布便携版，本轮另验证安装器与自有负载CLI |
 | Linux | /proc/meminfo及/proc进程信息只读接入 | 未采用，不能复用Win32工作集接口 | Ubuntu WSL原生编译及真实读取，非独立桌面验收 |
-| macOS | host_statistics64等为调查入口，尚未接入 | 尚无本项目验证过的跨应用方案 | 托管macOS 15.8.2 arm64原生构建与系统只读探针通过，产品尚未接入；未验收图形或维护 |
+| macOS | 已接入原生sysctl/Mach容量和libproc进程身份，提交指标留空 | 尚无本项目验证过的跨应用方案 | 托管macOS 15.8.2 arm64产品CLI、HTTP、真实页面渲染、解压包与停止通过；未验收普通桌面或维护 |
 
 Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高于CommitLimit，不能因超过就当作无效值或硬性上限。目标工作集取VmRSS，没有该字段时保留未知，不补零。进程身份结合boot_id和starttime，读取前后核对启动tick。读取支持与维护支持分别呈现。
 
@@ -826,4 +826,8 @@ Apple公开的host_statistics64与XNU vm_statistics64提供空闲、活跃、非
 
 以上为API文档与公开源码阅读，不是macOS实测或现有适配实现。已取得用户授权，可新增只读macOS工作流并push当前分支运行，不合并、不发布、不整理共享runner进程。标准托管runner可提供目标架构原生证据，但不替代普通用户桌面与签名体验。[GitHub runner规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 
-macOS已取得[原生只读基线](<运行记录 Run Record/2026-11-05 macOS原生只读基线.md>)，能原生构建并读取系统统计；当前产品memory_status实际返回failed，接入尚未完成。后续判定以真实字段、目标身份和接口结果为依据，不以云端工作流整体通过代替产品通过。
+macOS已取得[原生只读基线](<运行记录 Run Record/2026-11-05 macOS原生只读基线.md>)，能原生构建并读取系统统计；第一次基线时memory_status返回failed；后续接入已通过真实只读产品旅程，原始差异分别保存于日期记录。后续判定以真实字段、目标身份和接口结果为依据，不以云端工作流整体通过代替产品通过。
+
+Mac当前实现通过固定libc定义调用sysctl、host_statistics64及libproc，不每次读取都启动系统命令。可用量明确采用free+inactive页估算，按实际页大小转换；压缩驻留单列，不把压缩前逻辑页数当驻留量。Mach返回的字段数量可能属于较早结构修订，仅读取实际提供的字段，host send right在作用域结束释放。
+
+目标身份使用libproc原生启动秒和微秒，组装RSS及路径前后再次核对身份；只读列表保留不可访问项的限制，不将路径缺失补造为已知。依据为[Apple进程信息头](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h)与固定libc 0.2.191的Apple绑定；使用API定义，没有复制Apple内核实现。产品层维护能力仍关闭。

@@ -178,6 +178,11 @@ impl State {
         if self.stopping.load(Ordering::Acquire) {
             return Err("服务正在停止".into());
         }
+        if matches!(&action, Action::Cleanup { .. } | Action::Batch { .. })
+            && !self.app.system.cleanup_supported()
+        {
+            return Err("当前平台不支持主动整理，未派发系统调用".into());
+        }
         let work = match action {
             Action::Status => Work::Status,
             Action::Targets => Work::Targets,
@@ -358,6 +363,10 @@ impl State {
         Ok(self.state())
     }
     fn rule(&self, value: Value) -> AppResult<Value> {
+        if value["enabled"] == true && !self.app.system.cleanup_supported() {
+            return Err("当前平台不支持主动整理，不能启用自动规则".into());
+        }
+
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Request {
