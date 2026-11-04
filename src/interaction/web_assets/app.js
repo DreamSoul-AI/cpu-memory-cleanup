@@ -1,6 +1,6 @@
 "use strict";
 const el = (id) => document.getElementById(id);
-let cleaning = false;
+let cleaning = false, memoryLabel = "物理内存占用";
 const occupancy=value=>value?.total>0&&value.available!=null&&value.available>=0&&value.available<=value.total?(value.total-value.available)/value.total*100:null;
 function paintGauge(value,label){
   const text=value==null?"未知":`${Math.round(value)}%`;
@@ -13,7 +13,7 @@ function paintGauge(value,label){
 }
 const decoration=new CleanupFlow((value,phase)=>{
   if(phase!==lastEffectPhase){lastEffectPhase=phase;recordFlow(phase);}
-  paintGauge(value,{working:"正在整理 · 后台持续读取",emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:"物理内存占用"}[phase]);
+  paintGauge(value,{working:"正在整理 · 后台持续读取",emptying:"整理已结束 · 归零动效",refreshing:"刷新整理后读数",returning:"回到当前占用",idle:memoryLabel}[phase]);
 },refreshForRebound,()=>reducedMotion.matches);
 let latestMemory=null,latestMemoryAt=null;
 let fullReportUrl=null,flowStarted=null,flowEvents=[],flowFrame=null,lastEffectPhase=null;
@@ -36,7 +36,7 @@ function notifyDecoration(kind){
     if(kind==="begin"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.begin();
     else if(kind==="start"&&el("decoration-enabled").checked&&!reducedMotion.matches&&!document.hidden)decoration.start();
     else if(kind==="stop")decoration.stop();
-  }catch(_){paintGauge(occupancy(latestMemory),"物理内存占用");}
+  }catch(_){paintGauge(occupancy(latestMemory),memoryLabel);}
 }
 let liveEnabled = true, displayTimer = null, displayInFlight = false;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -69,8 +69,8 @@ function controls() {
   el("gauge").classList.toggle("working",busy && cleaning);
   el("read-targets").disabled ||= !readingSupported;
   el("global-clean").disabled ||= !supportedMethods.includes(el("method").value);
-  for(const id of ["selected-clean","protect-selected","arm-rule"]) el(id).disabled = busy || stopped || !selected.size || !token;
-  el("unprotected-clean").disabled = busy || stopped || !rows.length || !token;
+  for(const id of ["selected-clean","protect-selected","arm-rule"]) el(id).disabled = busy || stopped || !selected.size || !token || !supportedMethods.length;
+  el("unprotected-clean").disabled = busy || stopped || !rows.length || !token || !supportedMethods.length;
   el("cancel").disabled = !busy || stopped;
   el("replay").disabled = busy || stopped || !lastSaved;
 }
@@ -125,7 +125,13 @@ function paintMemory(value,sample=null){
   const pct=occupancy(value);
   el("actual-percent").textContent=pct==null?"未知":`${Math.round(pct)}%`;
   el("capacity").textContent=`${gib(available)} / ${gib(total)}`;
-  el("commit").textContent=`${gib(commitUsed)} / ${gib(commitLimit)}`;
+  const estimate=value.availableKind==="free_and_inactive_estimate";
+  memoryLabel=estimate?"占用估算 · 空闲与非活跃口径":"物理内存占用";
+  el("actual-caption").textContent=estimate?"估算占用 · 持续读取":"实际占用 · 持续读取";
+  el("capacity-caption").textContent=estimate?"空闲+非活跃 / 总量":"可用 / 总量";
+  el("commit").textContent=value.commitStatus==="unavailable"?"当前平台未提供提交统计":`${gib(commitUsed)} / ${gib(commitLimit)}`;
+  el("compressed-metric").hidden=value.compressed==null;
+  el("compressed").textContent=gib(value.compressed);
   decoration.update(pct,sample);
 }
 function memory(report,source="live"){
@@ -134,7 +140,7 @@ function memory(report,source="live"){
   const sampleAt=Date.parse(sample.timestamp);
   if(Number.isFinite(sampleAt)&&latestMemoryAt!=null&&sampleAt<latestMemoryAt)return;
   if(Number.isFinite(sampleAt))latestMemoryAt=sampleAt;
-  latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes};
+  latestMemory={total:physical.total_bytes,available:physical.available_bytes,commitUsed:commit?.used_bytes,commitLimit:commit?.limit_bytes,commitStatus:commit?.status,availableKind:physical.available_kind,compressed:physical.compressed_bytes};
   paintMemory(latestMemory,{timestamp:sample.timestamp??null,source,received:performance.now()});
   if(flowStarted!=null&&(busy||decoration.phase))recordFlow("sample");
 }
@@ -233,10 +239,14 @@ async function run(action){
         if(job.state==="error")throw new Error(job.error);
         recordFlow("report_received");present(job);recordFlow("result_presented");
         const completed=job.report.completion==="success" || job.presentation?.limited===true;
-        if(action.kind==="cleanup"&&action.mechanism==="working-set")notifyDecoration(completed?"start":"stop");
+        if(cleaning)notifyDecoration(completed?"start":"stop");
         el("job-status").textContent=job.presentation?.limited ? "本次整理已结束 · 部分目标未处理" :
           job.report.completion==="success" && job.report.metadata?.header?.post_observation_seconds ? "本次调用与短期观察已结束" : `本次${labels[job.report.completion]||job.report.completion}`;
         break;
+      }
+      if(cleaning&&job.progress){
+        const p=job.progress;
+        el("job-status").textContent=`正在整理 ${p.visited_count} / ${p.total_count} 个目标 · 已处理 ${p.successful_count}，未处理 ${p.failed_count+p.skipped_count}`;
       }
       await new Promise(resolve=>setTimeout(resolve,120));
     }
@@ -305,6 +315,11 @@ api("/api/session").then(async session=>{
   el("method").querySelectorAll?.("option").forEach(option=>{if(!supportedMethods.includes(option.value))option.remove();});
   el("capability").textContent=`平台 ${session.operating_system} · 读取 ${session.reading} · 权限需在请求时核验`;
   el("boundary").textContent=session.preview?"隔离假数据模式：当前指标与进程全部为合成数据，不操作设备。":"真实系统模式：页面可见时持续更新内存；绿色按钮点击即整理一次工作集，全局范围不排除应用。";
+  if(!supportedMethods.length){
+    const message=readingSupported?"当前平台支持真实读取，暂不支持内存整理。":"当前平台尚未支持真实读取或内存整理。";
+    el("boundary").textContent=message;el("cleanup-hint").textContent=message;
+    el("job-status").textContent="只读模式";el("recent-note").textContent="可查看真实状态，当前平台不执行整理。";
+  }
   const state=await api("/api/state");applyState(state);
   if(settings.rule){const rule=settings.rule;el("rule-mode").value=rule.mode;el("rule-interval").value=rule.interval_s;el("rule-threshold").value=rule.available_pct;el("rule-sustain").value=rule.sustain_s;el("rule-cooldown").value=rule.cooldown_s;}
   el("sort").textContent=descending?"工作集 ↓":"工作集 ↑";controls();refreshDisplay();

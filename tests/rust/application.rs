@@ -22,8 +22,9 @@ impl System for Isolated {
         Ok(Memory {
             total_bytes: 1000,
             available_bytes: if n == 0 { 200 } else { 500 },
-            commit_used_bytes: 1000,
-            commit_limit_bytes: 2000,
+            commit_used_bytes: Some(1000),
+            commit_limit_bytes: Some(2000),
+            ..Memory::default()
         })
     }
     fn targets(&self) -> AppResult<Vec<Target>> {
@@ -256,4 +257,36 @@ fn unfinished_record_is_not_replayed_or_relabelled_complete() {
     );
     assert!(directory.starts_with(std::env::temp_dir()));
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn readonly_capability_blocks_maintenance_before_reading_or_recording() {
+    struct ReadOnly;
+    impl cpu_memory_cleanup::system::System for ReadOnly {
+        fn supported(&self) -> bool {
+            true
+        }
+        fn cleanup_supported(&self) -> bool {
+            false
+        }
+        fn snapshot(&self) -> AppResult<Memory> {
+            panic!("must not sample a refused action")
+        }
+        fn targets(&self) -> AppResult<Vec<Target>> {
+            panic!("must not enumerate a refused action")
+        }
+        fn cleanup(&self, _: Option<&[Target]>, _: &AtomicBool) -> AppResult<Sweep> {
+            panic!("must not dispatch")
+        }
+    }
+    let app = Application::new(std::sync::Arc::new(ReadOnly));
+    let output = std::env::temp_dir().join(format!(
+        "memory-refused-{}",
+        cpu_memory_cleanup::contracts::identifier().unwrap()
+    ));
+    let error = app
+        .memory_cleanup(&output, true, &AtomicBool::new(false))
+        .unwrap_err();
+    assert!(error.contains("未派发"));
+    assert!(!output.exists());
 }

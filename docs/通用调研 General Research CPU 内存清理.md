@@ -798,3 +798,36 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 当前采用下降750毫秒、本次视觉目标只下调、回弹20毫秒名义步进及目标/15步长，接收更新时重设步长和下一次名义步进，不按剩余时间加速。到达或越过目标钳位结束，恢复实际读数。原生消息调度与浏览器RAF不同，不声称逐帧或全部360分支一致，也不复制其忽略返回或终止应用行为。
 
 一次 [真实网页验收](<运行记录 Run Record/2026-11-03 360式回弹真实验收.md>)中，零位31.61%更新到回弹目标30.26%，显示终点30.26%，随后实际读数仍独立变化。回弹约332毫秒，下降首次帧至零约750.7毫秒。真实运行未自然出现回弹阶段占用回升，该分支由隔离回归覆盖，不冒充实机已遇到。31项网页及默认/开发Rust检查通过，不由此宣称底层提速或永远固定某个占用。
+
+# 二十一、安装封装与跨平台首轮判断
+当前采用NSIS3.11当前用户安装候选，继续复用网页与可选WebView外壳，安装器本身不等同原生窗口。编译器摘要及安装实测证据见运行记录，工具不加入全局PATH。
+
+| 平台 | 读取与目标发现 | 主动整理 | 当前验证条件 |
+| --- | --- | --- | --- |
+| Windows x64 | 已实现真实读取与身份发现 | 默认工作集串行核验 | 已发布便携版，本轮另验证安装器与自有负载CLI |
+| Linux | /proc/meminfo及/proc进程信息只读接入 | 未采用，不能复用Win32工作集接口 | Ubuntu WSL原生编译及真实读取，非独立桌面验收 |
+| macOS | 已接入原生sysctl/Mach容量和libproc进程身份，提交指标留空 | 尚无本项目验证过的跨应用方案 | 托管macOS 15.8.2 arm64产品CLI、HTTP、真实页面渲染、解压包与停止通过；未验收普通桌面或维护 |
+
+Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高于CommitLimit，不能因超过就当作无效值或硬性上限。目标工作集取VmRSS，没有该字段时保留未知，不补零。进程身份结合boot_id和starttime，读取前后核对启动tick。读取支持与维护支持分别呈现。
+
+直接依据：[Linux内核/proc文档](https://www.kernel.org/doc/html/v6.11/filesystems/proc.html)、[process_madvise手册](https://www.man7.org/linux/man-pages/man2/process_madvise.2.html)、[Apple host_statistics64](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[NSIS固定包发布页及摘要](https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download)。Linux跨进程回收建议需核对ptrace和CAP_SYS_NICE等权限，本轮不使用该机制或以root身份默认清理。
+
+独立窗口已采用Wry/Tao可选原型，有真实WebView只读、重复实例及安装证据，窗口可见页面与真实按钮旅程已补齐，前台聚焦和长期占用未验证。MCP仍为条件项，已有CLI已可被Codex直接调用。
+
+## （一）独立窗口选型与实际依赖
+
+固定Wry 0.57.1与Tao 0.37.2，分别负责系统WebView与窗口事件，未引入整套Tauri应用框架。Tauri官方Windows前置依赖为MSVC C++工具及WebView2；本机有后者，但未检出前者。本轮实际证明Wry/Tao可用现有GNU工具链构建，不以这个结果承诺Tauri官方GNU支持。[Tauri前置依赖](https://v2.tauri.app/start/prerequisites/)、[Wry维护方说明](https://github.com/tauri-apps/wry/tree/wry-v0.57.1)、[Tao维护方](https://github.com/tauri-apps/tao)
+
+GNU构建需要可用的汇编器及其运行依赖，当前使用项目临时目录中的MSYS2 binutils，不要求全局安装Visual Studio。GNU窗口EXE还需WebView2Loader.dll，不能只复制EXE。窗口已有真实WebView只读及关闭证据，视觉品质、前台聚焦和长期资源占用尚未据此验收。WebView2运行时与加载器、Rust库依赖的许可分别核对；新依赖Tao为Apache-2.0，Wry为MIT或Apache-2.0，不改变本项目自有代码MIT。本轮不新增Release，完整传递依赖及加载器再分发通知仍是发布前事项。
+
+## （二）macOS指标合同不能先补零
+
+Apple公开的host_statistics64与XNU vm_statistics64提供空闲、活跃、非活跃、wired及压缩等分页统计；页数还需结合实际页大小。非活跃页不等于当前空闲，也不能把压缩页直接当成Windows工作集。本项目现有Memory要求提交量与上限两个整数，macOS接入前应允许指标不适用，并在界面明确单位与含义，不以0填补不存在的Windows等价量。[Apple接口入口](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[XNU统计字段](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/vm_statistics.h)、[XNU host实现](https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c)
+
+以上为API文档与公开源码阅读，不是macOS实测或现有适配实现。已取得用户授权，可新增只读macOS工作流并push当前分支运行，不合并、不发布、不整理共享runner进程。标准托管runner可提供目标架构原生证据，但不替代普通用户桌面与签名体验。[GitHub runner规格](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+
+macOS已取得[真实产品只读证据](<运行记录 Run Record/2026-11-05 macOS产品只读验收.md>)，原生容量、进程身份、CLI、HTTP、页面渲染和解压包启动通过。判定以真实字段、目标身份和接口结果为依据，不以云端工作流整体通过代替产品通过。
+
+Mac当前实现通过固定libc定义调用sysctl、host_statistics64及libproc，不每次读取都启动系统命令。可用量明确采用free+inactive页估算，按实际页大小转换；压缩驻留单列，不把压缩前逻辑页数当驻留量。Mach返回的字段数量可能属于较早结构修订，仅读取实际提供的字段，host send right在作用域结束释放。
+
+目标身份使用libproc原生启动秒和微秒，组装RSS及路径前后再次核对身份；只读列表保留不可访问项的限制，不将路径缺失补造为已知。依据为[Apple进程信息头](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/proc_info.h)与固定libc 0.2.191的Apple绑定；使用API定义，没有复制Apple内核实现。产品层维护能力仍关闭。

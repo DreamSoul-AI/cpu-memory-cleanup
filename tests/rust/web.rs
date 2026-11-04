@@ -11,6 +11,9 @@ use std::{
 };
 struct NoSystem;
 impl System for NoSystem {
+    fn cleanup_supported(&self) -> bool {
+        false
+    }
     fn supported(&self) -> bool {
         true
     }
@@ -50,10 +53,30 @@ fn server_is_native_readonly_on_start_and_requires_session_for_actions() {
         serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     assert_eq!(session["implementation"], "rust");
     assert_eq!(session["preview"], false);
+    assert_eq!(session["reading"], "available");
+    assert_eq!(session["capabilities"]["mechanisms"], serde_json::json!([]));
     assert_eq!(session["build_id"], cpu_memory_cleanup::BUILD_ID);
     let token = session["token"].as_str().unwrap();
     assert!(request(&address, "POST", "/api/action", "", "{}").starts_with("HTTP/1.1 403"));
     let headers = format!("X-Session-Token: {token}\r\n");
+    let refused = request(
+        &address,
+        "POST",
+        "/api/action",
+        &headers,
+        r#"{"kind":"cleanup","mechanism":"working-set","confirmed":true}"#,
+    );
+    assert!(refused.starts_with("HTTP/1.1 400"));
+    assert!(refused.contains("未派发"));
+    let rule = request(
+        &address,
+        "POST",
+        "/api/rule",
+        &headers,
+        r#"{"enabled":true}"#,
+    );
+    assert!(rule.starts_with("HTTP/1.1 400"));
+    assert!(rule.contains("不能启用"));
     let state = request(&address, "GET", "/api/state", &headers, "");
     assert!(state.contains("\"armed\":false"));
     let forbidden = request(
@@ -94,13 +117,25 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
         fn supported(&self) -> bool {
             true
         }
+        fn cleanup_progress(&self) -> Option<cpu_memory_cleanup::contracts::CleanupProgress> {
+            (self.calls.load(Ordering::SeqCst) > 0).then_some(
+                cpu_memory_cleanup::contracts::CleanupProgress {
+                    total_count: 1,
+                    visited_count: 0,
+                    successful_count: 0,
+                    failed_count: 0,
+                    skipped_count: 0,
+                },
+            )
+        }
         fn snapshot(&self) -> AppResult<Memory> {
             self.reads.fetch_add(1, Ordering::SeqCst);
             Ok(Memory {
                 total_bytes: 1000,
                 available_bytes: 300,
-                commit_used_bytes: 500,
-                commit_limit_bytes: 2000,
+                commit_used_bytes: Some(500),
+                commit_limit_bytes: Some(2000),
+                ..Memory::default()
             })
         }
         fn targets(&self) -> AppResult<Vec<Target>> {
@@ -212,6 +247,15 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
         .wait_timeout_while(entered, std::time::Duration::from_secs(5), |v| !*v)
         .unwrap();
     assert!(!timeout.timed_out());
+    let running = parsed(&request(
+        &address,
+        "GET",
+        &format!("/api/job?id={}", accepted["id"].as_str().unwrap()),
+        &headers,
+        "",
+    ));
+    assert_eq!(running["progress"]["total_count"], 1);
+    assert_eq!(running["progress"]["visited_count"], 0);
     // HTTP reads must not wait for the maintenance worker or redispatch it.
     let live = parsed(&request(&address, "POST", "/api/display", &headers, "{}"));
     assert_eq!(
@@ -267,6 +311,99 @@ fn http_job_keeps_live_reads_available_and_returns_full_facts_on_demand() {
         r#"{"confirmed":true}"#,
     ));
     worker.join().unwrap();
+    assert!(directory.starts_with(std::env::temp_dir()));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn window_stop_control_waits_for_dispatched_work_and_seals_its_record() {
+    use std::sync::{Mutex, mpsc};
+    struct InFlight {
+        entered: mpsc::Sender<()>,
+        release: Mutex<mpsc::Receiver<()>>,
+    }
+    impl System for InFlight {
+        fn supported(&self) -> bool {
+            true
+        }
+        fn snapshot(&self) -> AppResult<Memory> {
+            Ok(Memory {
+                total_bytes: 100,
+                available_bytes: 50,
+                commit_used_bytes: Some(20),
+                commit_limit_bytes: Some(100),
+                ..Memory::default()
+            })
+        }
+        fn targets(&self) -> AppResult<Vec<Target>> {
+            panic!("must not discover another scope")
+        }
+        fn cleanup(&self, _: Option<&[Target]>, _: &AtomicBool) -> AppResult<Sweep> {
+            self.entered.send(()).unwrap();
+            self.release
+                .lock()
+                .unwrap()
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            Ok(Sweep {
+                resources_closed: true,
+                ..Sweep::default()
+            })
+        }
+    }
+    let (entered, wait) = mpsc::channel();
+    let (release, pending) = mpsc::channel();
+    let app = Arc::new(Application::new(Arc::new(InFlight {
+        entered,
+        release: Mutex::new(pending),
+    })));
+    let directory = std::env::temp_dir().join(format!(
+        "memory-window-stop-{}",
+        cpu_memory_cleanup::contracts::identifier().unwrap()
+    ));
+    let server = Workbench::bind(app, directory.clone(), 0).unwrap();
+    let address = server
+        .url()
+        .trim_start_matches("http://")
+        .trim_end_matches('/')
+        .to_owned();
+    let stop = server.control();
+    let worker = std::thread::spawn(move || server.serve().unwrap());
+    let response = request(&address, "GET", "/api/session", "", "");
+    let session: serde_json::Value =
+        serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+    let headers = format!(
+        "X-Session-Token: {}\r\n",
+        session["token"].as_str().unwrap()
+    );
+    let response = request(
+        &address,
+        "POST",
+        "/api/action",
+        &headers,
+        r#"{"kind":"cleanup","mechanism":"working-set","confirmed":true}"#,
+    );
+    assert!(response.starts_with("HTTP/1.1 200"));
+    wait.recv_timeout(std::time::Duration::from_secs(5))
+        .unwrap();
+    stop.request_stop();
+    assert!(
+        !worker.is_finished(),
+        "window close must not abandon dispatched work"
+    );
+    release.send(()).unwrap();
+    worker.join().unwrap();
+    let run = std::fs::read_dir(&directory)
+        .unwrap()
+        .find_map(|p| {
+            let p = p.unwrap().path();
+            p.is_dir().then_some(p)
+        })
+        .unwrap();
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(run.join("report.json")).unwrap()).unwrap();
+    assert_eq!(report["phase"], "finished");
+    assert_eq!(report["action"]["process_sweep"]["resources_closed"], true);
     assert!(directory.starts_with(std::env::temp_dir()));
     std::fs::remove_dir_all(directory).unwrap();
 }

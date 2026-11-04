@@ -1,5 +1,9 @@
 use crate::contracts::{AppResult, Memory, Sweep, Target};
 use std::sync::{Arc, atomic::AtomicBool};
+#[cfg(target_os = "linux")]
+pub mod linux;
+#[cfg(target_os = "macos")]
+pub mod macos;
 pub mod measurement;
 pub mod records;
 #[cfg(windows)]
@@ -42,6 +46,12 @@ pub fn random_bytes(bytes: &mut [u8]) -> AppResult<()> {
 
 pub trait System: Send + Sync {
     fn supported(&self) -> bool;
+    fn cleanup_supported(&self) -> bool {
+        self.supported()
+    }
+    fn cleanup_progress(&self) -> Option<crate::contracts::CleanupProgress> {
+        None
+    }
     fn snapshot(&self) -> AppResult<Memory>;
     fn targets(&self) -> AppResult<Vec<Target>>;
     fn cleanup(&self, targets: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep>;
@@ -49,16 +59,24 @@ pub trait System: Send + Sync {
 pub fn native() -> Arc<dyn System> {
     #[cfg(windows)]
     {
-        Arc::new(windows::Windows)
+        Arc::new(windows::Windows::default())
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        Arc::new(linux::Linux)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Arc::new(macos::MacOs)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Arc::new(Unsupported)
     }
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 struct Unsupported;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 impl System for Unsupported {
     fn supported(&self) -> bool {
         false

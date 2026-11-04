@@ -305,3 +305,28 @@ fn unknown_close_stops_before_next_and_keeps_completed_native_fact() {
         ["enumerate", "open_QuotaOnlyCleanup:1", "trim:1", "close:1"]
     );
 }
+
+#[test]
+fn progress_observes_actual_returns_without_adding_native_calls() {
+    let cancel = AtomicBool::new(false);
+    let mut api = Isolated::new(&cancel);
+    api.open_failure = Some(2);
+    let mut observed = Vec::new();
+    let result = sweep_with_progress(&&api, None, Strategy::Verified, &cancel, &mut |sweep| {
+        observed.push(crate::contracts::CleanupProgress::from(sweep))
+    })
+    .unwrap();
+    assert_eq!(observed.first().unwrap().visited_count, 0);
+    let last = observed.last().unwrap();
+    assert_eq!(last.visited_count, result.visited_count);
+    assert_eq!(last.skipped_count, result.skipped_count);
+    assert_eq!(last.successful_count, result.successful_count);
+    assert_eq!(
+        api.trace
+            .borrow()
+            .iter()
+            .filter(|s| s.starts_with("trim:"))
+            .count(),
+        result.attempted_count
+    );
+}

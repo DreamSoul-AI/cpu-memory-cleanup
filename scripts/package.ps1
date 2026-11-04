@@ -1,6 +1,7 @@
 param(
     [string]$BuildDirectory = 'target/release',
-    [string]$OutputDirectory = 'dist'
+    [string]$OutputDirectory = 'dist',
+    [string]$WindowBuildDirectory
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path $PSScriptRoot -Parent
@@ -25,7 +26,15 @@ foreach ($taskFile in @('cpu-memory-cleanup.exe', 'memory-cleanup.exe')) {
     Copy-Item -LiteralPath (Join-Path $taskBuild $taskFile) -Destination (Join-Path $taskStage 'target/release')
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'memory-cleanup.cmd') -Destination (Join-Path $taskStage 'scripts')
-Copy-Item -LiteralPath LICENSE -Destination $taskStage
+Copy-Item -LiteralPath LICENSE, THIRD_PARTY_NOTICES.txt -Destination $taskStage
+if ($WindowBuildDirectory) {
+    $taskWindowBuild = (Resolve-Path -LiteralPath $WindowBuildDirectory).Path
+    $taskWindowInfo = & (Join-Path $taskWindowBuild 'memory-cleanup-window.exe') --tool-info | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $taskWindowInfo.build_id -ne $taskInfo.build_id) { throw 'Window and CLI builds differ.' }
+    foreach ($taskFile in @('memory-cleanup-window.exe', 'WebView2Loader.dll')) {
+        Copy-Item -LiteralPath (Join-Path $taskWindowBuild $taskFile) -Destination (Join-Path $taskStage 'target/release')
+    }
+}
 @"
 CPU 内存清理 $taskVersion · Windows x64
 
@@ -37,7 +46,10 @@ CPU 内存清理 $taskVersion · Windows x64
 
 工作集整理不删除应用数据，后续访问可能重新驻留。容量变化不保证提速。
 若端口被旧版本占用，先在旧网页停止服务，不结束其他程序。
-定向/批次及规则完整实机验收尚未覆盖，Linux/macOS 不支持。
+Windows包提供真实整理。Linux/macOS为另行打包的只读版本，不提供主动整理。
+若包含target/release/memory-cleanup-window.exe，可双击打开独立应用窗口（需WebView2 Runtime），端口14801。
+脚本入口仍打开浏览器网页版，端口14800。三个入口共用同一Rust功能库。
+首次全局整理可能等待数秒，圆环动效不代表内存实际归零。
 源码与MIT：https://github.com/DreamSoul-AI/cpu-memory-cleanup
 构建标识：$($taskInfo.build_id)
 "@ | Set-Content (Join-Path $taskStage '使用说明.txt') -Encoding utf8

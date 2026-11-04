@@ -15,10 +15,11 @@
         <p id="live-status" class="hint" aria-live="off">正在连接实时显示…</p>
         <div class="gauge" id="gauge"><span id="percent">—</span><small id="gauge-label">物理内存占用</small></div>
         <div class="meter" role="progressbar" aria-label="物理内存占用" aria-valuemin="0" aria-valuemax="100" id="meter"><div id="fill"></div></div>
-        <div class="metric"><span>实际占用 · 持续读取</span><strong id="actual-percent">尚未读取</strong></div>
-        <div class="metric"><span>可用 / 总量</span><strong id="capacity">尚未读取</strong></div>
+        <div class="metric"><span id="actual-caption">实际占用 · 持续读取</span><strong id="actual-percent">尚未读取</strong></div>
+        <div class="metric"><span id="capacity-caption">可用 / 总量</span><strong id="capacity">尚未读取</strong></div>
+        <div class="metric" id="compressed-metric" hidden><span>压缩驻留</span><strong id="compressed">未知</strong></div>
         <button id="global-clean" class="primary">✦ 一键整理工作集</button>
-        <p class="hint">整理可访问进程的工作集，重新使用应用时占用可能回升。</p>
+        <p id="cleanup-hint" class="hint">整理可访问进程的工作集，重新使用应用时占用可能回升。</p>
         <div class="connection"><span class="dot"></span><span id="job-status" role="status" aria-live="polite">本地就绪 · 点击才执行</span><button id="cancel" class="quiet" disabled>停止后续动作</button></div>
         <p id="error" class="error" role="alert" hidden></p>
         <section class="recent" aria-label="最近一次整理" aria-live="polite"><span class="eyebrow">最近一次整理</span><h2 id="recent-title">尚未整理</h2><p id="recent-note">轻点绿色按钮整理一次工作集。</p><small id="recent-context">结果与实时读数分别保留</small></section>

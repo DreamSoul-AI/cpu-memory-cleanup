@@ -71,6 +71,20 @@ struct State {
     stopping: AtomicBool,
     tasks: Mutex<Vec<thread::JoinHandle<()>>>,
 }
+/// Stops accepting work, cancels later steps, and lets serve() join active work.
+#[derive(Clone)]
+pub struct WorkbenchControl {
+    state: Arc<State>,
+}
+impl WorkbenchControl {
+    pub fn request_stop(&self) {
+        let mut inner = self.state.inner.lock().expect("state lock");
+        inner.policy.armed = false;
+        inner.cancel.store(true, Ordering::Release);
+        self.state.stopping.store(true, Ordering::Release);
+    }
+}
+
 pub struct Workbench {
     server: Arc<Server>,
     state: Arc<State>,
@@ -112,6 +126,11 @@ impl Workbench {
                 tasks: Mutex::new(Vec::new()),
             }),
         })
+    }
+    pub fn control(&self) -> WorkbenchControl {
+        WorkbenchControl {
+            state: self.state.clone(),
+        }
     }
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/", self.state.port)
@@ -158,6 +177,11 @@ impl State {
         let inner = self.inner.lock().map_err(|_| "任务锁损坏")?;
         if self.stopping.load(Ordering::Acquire) {
             return Err("服务正在停止".into());
+        }
+        if matches!(&action, Action::Cleanup { .. } | Action::Batch { .. })
+            && !self.app.system.cleanup_supported()
+        {
+            return Err("当前平台不支持主动整理，未派发系统调用".into());
         }
         let work = match action {
             Action::Status => Work::Status,
@@ -309,6 +333,12 @@ impl State {
                 .ok_or("报告尚未就绪".into());
         }
         let mut result = json!({"id":id,"kind":kind,"state":state});
+        if state == "running" && matches!(kind.as_str(), "cleanup" | "batch") {
+            if let Some(progress) = self.app.system.cleanup_progress() {
+                result["progress"] = json!(progress);
+            }
+        }
+
         if let Some(error) = error {
             result["error"] = json!(error);
         }
@@ -339,6 +369,10 @@ impl State {
         Ok(self.state())
     }
     fn rule(&self, value: Value) -> AppResult<Value> {
+        if value["enabled"] == true && !self.app.system.cleanup_supported() {
+            return Err("当前平台不支持主动整理，不能启用自动规则".into());
+        }
+
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]
         struct Request {
@@ -486,7 +520,7 @@ fn handle(mut request: Request, state: &Arc<State>) {
             respond(
                 request,
                 200,
-                json!({"token":state.token,"preview":false,"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,"operating_system":std::env::consts::OS,"reading":if supported{"available"}else{"unsupported"},"capabilities":{"mechanisms":if supported{vec!["working-set"]}else{vec![]},"scopes":["system","process"]}}),
+                json!({"token":state.token,"preview":false,"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,"operating_system":std::env::consts::OS,"reading":if supported{"available"}else{"unsupported"},"capabilities":{"mechanisms":if state.app.system.cleanup_supported(){vec!["working-set"]}else{vec![]},"scopes":["system","process"]}}),
             );
             return;
         }
@@ -542,10 +576,10 @@ fn handle(mut request: Request, state: &Arc<State>) {
                 }
             }
             "/api/shutdown" if value == json!({"confirmed":true}) => {
-                let mut inner = state.inner.lock().expect("state lock");
-                inner.policy.armed = false;
-                inner.cancel.store(true, Ordering::Release);
-                state.stopping.store(true, Ordering::Release);
+                WorkbenchControl {
+                    state: state.clone(),
+                }
+                .request_stop();
                 Ok(json!({"stopping":true}))
             }
             _ => Err("没有该入口或请求字段无效".into()),

@@ -1,4 +1,4 @@
-更新日期：2026年11月3日。本文从 [当前架构](<架构设计 Architecture Design CPU 内存清理.md>) 推导Rust源码职责，硬约束集中于 `src/`。外围目录由 [README](../README.md) 导航，允许按实际工具调整。迁移前实现和测试已保留在 `legacy/python/`，不参与正式运行。
+更新日期：2026年11月5日。本文从 [当前架构](<架构设计 Architecture Design CPU 内存清理.md>) 推导Rust源码职责，硬约束集中于 `src/`。外围目录由 [README](../README.md) 导航，允许按实际工具调整。迁移前实现和测试已保留在 `legacy/python/`，不参与正式运行。
 
 # 一、源码结构
 
@@ -7,6 +7,7 @@ src/
 ├── lib.rs                    公共库入口、版本和构建标识
 ├── main.rs                   CLI二进制入口
 ├── launcher.rs               无控制台原生网页入口，复用同一CLI/库
+├── window.rs                 可选系统WebView窗口入口
 ├── contracts.rs              Memory、Target、Sweep、Report和时间/运行标识
 ├── application/
 │   ├── mod.rs
@@ -16,6 +17,11 @@ src/
 ├── system/
 │   ├── mod.rs                System能力合同、平台装配及系统随机源
 │   ├── windows.rs            Win32读取、权限映射及句柄所有权
+│   ├── linux.rs              Linux原生/proc只读
+│   ├── macos/
+│   │   ├── mod.rs            macOS只读能力装配
+│   │   ├── memory.rs         sysctl/Mach容量及资源释放
+│   │   └── processes.rs      libproc身份、驻留及路径
 │   ├── workingset.rs         共用串行工作集调度与默认/候选策略
 │   ├── measurement.rs        阶段时钟与纯调用分布汇总
 │   └── records.rs            原子报告、计时附件与新旧记录回看
@@ -23,6 +29,8 @@ src/
     ├── mod.rs
     ├── cli.rs                参数、六工具目录、JSON和退出码
     ├── web.rs                回环HTTP、会话、后台Job、按需报告
+    ├── desktop/
+    │   └── mod.rs            可选窗口、实例复用、导航与收尾
     └── web_assets/
         ├── index.html        紧凑主区与折叠详情
         ├── styles.css        环形、绿色按钮和响应式布局
@@ -39,7 +47,7 @@ src/
 | --- | --- | --- |
 | AR-01 交互 | interaction/cli.rs、web.rs、web_assets/app.js | 参数和请求校验、目标选择、会话、输出；调用Application |
 | AR-02 流程 | application/service.rs | 确认、实例内维护互斥、前后快照、记录及终态，不直接写界面 |
-| AR-03 只读 | system/mod.rs、windows.rs | System::snapshot/targets，GetPerformanceInfo/EnumProcesses和进程身份 |
+| AR-03 只读 | system/mod.rs、windows.rs、linux.rs、macos/ | 按平台实现snapshot/targets，指标口径与身份来源明确 |
 | AR-04 维护 | system/windows.rs、workingset.rs | 平台调用和串行调度分开，同一句柄核验并整理，逐项关闭；不创建终止/提权分支 |
 | AR-05 记录 | application/service.rs、system/records.rs | 功能决定保存时机，records实际读写；新report.json及旧JSONL只读回看 |
 | AR-06 呈现 | service.rs的presentation/brief、web.rs按需报告 | 摘要保留原终态，完整报告仅按需传递；不修改原始事实 |
@@ -177,3 +185,29 @@ feature 关闭与打开均通过格式、严格 Clippy 和 Cargo 检查，两种
 `build.rs`从排序后的src源码、Cargo.toml、Cargo.lock及自身内容计算稳定构建标识；通过编译环境交给`src/lib.rs`统一导出。无需Git历史、个人路径、时间戳或联网，源码包重建采用相同算法。它是非密码学识别码，不作安全凭据。
 
 `interaction/cli.rs`的版本查询、目录和服务复用核对，以及`interaction/web.rs`的会话响应，引用同一库常量。启动器仍仅装配网页参数，不复制业务或动效。`scripts/ci.ps1`负责串联原有测试、构建与Cargo源码包验证并保存阶段结果，不进入运行时依赖。
+
+# 十三、安装打包与Agent实测映射
+安装源码放在scripts/windows/install.nsi，构建包装放在scripts/build-installer.ps1，读取已构建的两份EXE而不复制业务。安装快捷方式传明确output-dir到用户数据路径，launcher继续只负责正式网页入口。
+
+Agent端到端证据保存具体输入参数、CLI JSON及最终解释，先用现有六工具，不提前增加MCP实现。Linux平台适配进入system，现有Unix随机源已存在，计划中“随机源未实现”的描述需改为核对其目标平台运行证据。
+
+# 十四、Linux只读适配映射
+system/linux.rs负责/proc/meminfo与进程stat/status解析，mod.rs按target_os装配。System增加cleanup_supported默认方法保持已有实现兼容，Linux覆盖为false，HTTP机制目录及网页维护控件据此禁用。读取与维护能力分离，CLI不能通过通用工具名把只读平台解释成支持整理。
+
+Linux便携候选由 `scripts/package-linux.sh` 在Linux原生构建，归档同一CLI、MIT、静态构建目录和启动入口；运行记录写入用户状态目录。该脚本不进入src硬约束，不隐式执行维护或发布。
+
+# 十五、小窗口原型的源码落位
+
+先在忽略目录证明依赖可构建，再落位正式src模块。目标为可选窗口入口及 `interaction/desktop/` 承载窗口事件、导航和生命周期；系统能力仍只在system，维护流程仍只在application。HTTP服务提供可克隆的停止控制对象，统一网页停止与窗口关闭的收尾语义。默认库/CLI/浏览器构建不强制依赖窗口运行时。
+
+# 十六、macOS只读模块与指标映射
+
+`contracts::Memory`维护可选提交字段、可用量口径和可选压缩驻留量，统一序列化；网页按实际字段显示，不在交互层推算缺失数据。`system/macos/mod.rs`装配只读能力，`memory.rs`封装sysctl/Mach容量及端口生命周期，`processes.rs`封装libproc身份、驻留与路径。通过固定版本libc使用平台定义，不复制内核实现。
+
+sysctl读取总量，Mach按返回的实际字段数量和页大小转换，libproc读取前后微秒启动身份；所有维护请求保持未派发。自动化检查与原生实测分开，工具及HTTP仍进入同一Application。外围Mac打包和runner探针在scripts，不复制业务实现。
+
+窗口入口新增显式后台启动与配置目录参数，作为同一窗口实现的启动选项，不另建维护通道。可选原生旅程测试落于tests/interaction/desktop，默认隔离测试脚本不自动运行它；真实执行需明确设置本轮可执行文件、调试驱动路径和自有负载授权。
+
+# 十七、维护进度映射
+
+contracts定义轻量CleanupProgress计数；Windows实例保存当前执行进度，workingset串行循环按实际完成步骤通知观察者，不另开清理循环。System默认返回无进度，HTTP任务只在维护running阶段读取本实例进度。网页复用原任务轮询显示计数，各维护入口共用完成收尾，不增加额外系统维护请求。

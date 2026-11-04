@@ -8,10 +8,11 @@ license = "MIT"
 repository = "https://github.com/DreamSoul-AI/cpu-memory-cleanup"
 readme = "README.md"
 default-run = "cpu-memory-cleanup"
-include = ["/build.rs", "/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/tests/application/*.rs", "/examples/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md"]
+include = ["/build.rs", "/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/tests/application/*.rs", "/examples/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/THIRD_PARTY_NOTICES.txt", "/README.md"]
 
 [features]
 experimental-quota = []
+desktop-window = ["dep:wry", "dep:tao"]
 
 [[example]]
 name = "workingset-compare"
@@ -24,6 +25,8 @@ time = { version = "0.3", features = ["formatting", "parsing"] }
 tiny_http = "0.12"
 
 [target.'cfg(windows)'.dependencies]
+wry = { version = "=0.57.1", optional = true }
+tao = { version = "=0.37.2", optional = true }
 windows-sys = { version = "=0.59.0", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_System_Memory", "Win32_Security_Cryptography", "Win32_UI_WindowsAndMessaging"] }
 
 [[bin]]
@@ -45,3 +48,11 @@ path = "tests/rust/web.rs"
 [[test]]
 name = "measurement"
 path = "tests/system/measurement.rs"
+
+[[bin]]
+name = "memory-cleanup-window"
+path = "src/window.rs"
+required-features = ["desktop-window"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "=0.2.191"
