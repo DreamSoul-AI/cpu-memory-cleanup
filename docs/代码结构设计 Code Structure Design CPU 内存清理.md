@@ -177,3 +177,8 @@ feature 关闭与打开均通过格式、严格 Clippy 和 Cargo 检查，两种
 `build.rs`从排序后的src源码、Cargo.toml、Cargo.lock及自身内容计算稳定构建标识；通过编译环境交给`src/lib.rs`统一导出。无需Git历史、个人路径、时间戳或联网，源码包重建采用相同算法。它是非密码学识别码，不作安全凭据。
 
 `interaction/cli.rs`的版本查询、目录和服务复用核对，以及`interaction/web.rs`的会话响应，引用同一库常量。启动器仍仅装配网页参数，不复制业务或动效。`scripts/ci.ps1`负责串联原有测试、构建与Cargo源码包验证并保存阶段结果，不进入运行时依赖。
+
+# 十三、安装打包与Agent实测映射
+安装源码放在scripts/windows/install.nsi，构建包装放在scripts/build-installer.ps1，读取已构建的两份EXE而不复制业务。安装快捷方式传明确output-dir到用户数据路径，launcher继续只负责正式网页入口。
+
+Agent端到端证据保存具体输入参数、CLI JSON及最终解释，先用现有六工具，不提前增加MCP实现。Linux平台适配进入system，现有Unix随机源已存在，计划中“随机源未实现”的描述需改为核对其目标平台运行证据。

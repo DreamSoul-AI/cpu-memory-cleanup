@@ -1,4 +1,4 @@
-更新日期：2026年11月3日。当前接入为本地Rust 0.4.0候选，尚未发布。库、CLI工具和网页共用Application，不由宿主复制清理脚本，不要求先安装Python。版本、构建和边界见 [README](../README.md)。Knowledge已有固定历史指南本轮未改，不代表它已指向Rust版本。
+更新日期：2026年11月5日。Rust 0.4.0已作为GitHub Windows包发布，未发布包索引。库、CLI工具和网页共用Application，不由宿主复制清理脚本，不要求先安装Python。版本、构建和边界见 [README](../README.md)。Knowledge已有固定历史指南本轮未改，不代表它已指向Rust版本。
 
 # 一、静态发现与调用
 
