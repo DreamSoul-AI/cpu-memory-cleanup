@@ -6,7 +6,7 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 ## 当前状态
 
-当前源码版本 **v0.5.0**。Windows x64提供真实内存读取与工作集整理，并保留网页、独立应用窗口、CMD脚本三个入口，共用Rust Package。安装器、便携包及源码下载见[Release列表](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases)。v0.4.0等旧版和Pages静态演示保留各自范围。
+当前版本 **v0.5.0**，已发布[GitHub Release](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.5.0)。Windows x64提供真实内存读取与工作集整理，并保留网页、独立应用窗口、CMD脚本三个入口，共用Rust Package。安装器、便携包及源码下载见[Release列表](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases)。v0.4.0等旧版和Pages静态演示保留各自范围。
 
 Windows安装包创建开始菜单入口；便携ZIP完整解压后，双击 `scripts/memory-cleanup.cmd` 打开网页版，或双击 `target/release/memory-cleanup-window.exe` 打开应用窗口。运行不需要Rust、Node或Python；独立窗口需要Microsoft WebView2 Runtime，包内附加载器但不捆绑完整Runtime。安装包未签名。
 
@@ -151,3 +151,5 @@ macOS原生开发环境可用 `sh scripts/package-macos.sh 新目录` 生成arm6
 Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和可选压缩驻留字段。直接构造结构体的调用方需适配，可用 `..Memory::default()` 初始化可选项。JSON在Windows/Linux仍保留已测数值，Mac未提供的提交统计为null及unavailable；不要把null当成0。静态目录新增platform_capabilities，读取可用不代表支持维护。
 
 项目自有代码继续采用MIT，分发包附[第三方通知](THIRD_PARTY_NOTICES.txt)，涵盖固定依赖及WebView2加载器的原始通知；未包含完整WebView2 Runtime。
+
+最终交付、附件摘要及只读验收见[0.5.0发布验收](<docs/运行记录 Run Record/2026-11-05 0.5.0发布验收.md>)。
