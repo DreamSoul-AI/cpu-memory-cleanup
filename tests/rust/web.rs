@@ -11,6 +11,9 @@ use std::{
 };
 struct NoSystem;
 impl System for NoSystem {
+    fn cleanup_supported(&self) -> bool {
+        false
+    }
     fn supported(&self) -> bool {
         true
     }
@@ -50,6 +53,8 @@ fn server_is_native_readonly_on_start_and_requires_session_for_actions() {
         serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap();
     assert_eq!(session["implementation"], "rust");
     assert_eq!(session["preview"], false);
+    assert_eq!(session["reading"], "available");
+    assert_eq!(session["capabilities"]["mechanisms"], serde_json::json!([]));
     assert_eq!(session["build_id"], cpu_memory_cleanup::BUILD_ID);
     let token = session["token"].as_str().unwrap();
     assert!(request(&address, "POST", "/api/action", "", "{}").starts_with("HTTP/1.1 403"));

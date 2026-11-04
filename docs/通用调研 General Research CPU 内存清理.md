@@ -798,3 +798,18 @@ P2已作为内部可装配候选接入与P1相同的目标/批次流程，保留
 当前采用下降750毫秒、本次视觉目标只下调、回弹20毫秒名义步进及目标/15步长，接收更新时重设步长和下一次名义步进，不按剩余时间加速。到达或越过目标钳位结束，恢复实际读数。原生消息调度与浏览器RAF不同，不声称逐帧或全部360分支一致，也不复制其忽略返回或终止应用行为。
 
 一次 [真实网页验收](<运行记录 Run Record/2026-11-03 360式回弹真实验收.md>)中，零位31.61%更新到回弹目标30.26%，显示终点30.26%，随后实际读数仍独立变化。回弹约332毫秒，下降首次帧至零约750.7毫秒。真实运行未自然出现回弹阶段占用回升，该分支由隔离回归覆盖，不冒充实机已遇到。31项网页及默认/开发Rust检查通过，不由此宣称底层提速或永远固定某个占用。
+
+# 二十一、安装封装与跨平台首轮判断
+2026年11月5日当前采用NSIS当前用户安装候选，继续复用网页，不把安装器等同独立原生窗口。固定NSIS3.11便携编译器，官方渠道返回HTML而非ZIP，改从镜像取得文件，核对官方公布SHA256完全一致后使用。工具只在忽略目录，不写入全局PATH。
+
+| 平台 | 读取与目标发现 | 主动整理 | 当前验证条件 |
+| --- | --- | --- | --- |
+| Windows x64 | 已实现真实读取与身份发现 | 默认工作集串行核验 | 已发布便携版，本轮另验证安装器与自有负载CLI |
+| Linux | /proc/meminfo及/proc进程信息只读接入 | 未采用，不能复用Win32工作集接口 | Ubuntu WSL原生编译及真实读取，非独立桌面验收 |
+| macOS | host_statistics64等为调查入口，尚未接入 | 尚无本项目验证过的跨应用方案 | 无Mac，尚未运行原生编译、图形或维护验证 |
+
+Linux采用MemAvailable而非MemFree估算可用容量，Committed_AS可能高于CommitLimit，不能因超过就当作无效值或硬性上限。目标工作集取VmRSS，没有该字段时保留未知，不补零。进程身份结合boot_id和starttime，读取前后核对启动tick。读取支持与维护支持分别呈现。
+
+直接依据：[Linux内核/proc文档](https://www.kernel.org/doc/html/v6.11/filesystems/proc.html)、[process_madvise手册](https://www.man7.org/linux/man-pages/man2/process_madvise.2.html)、[Apple host_statistics64](https://developer.apple.com/documentation/kernel/1502863-host_statistics64)、[NSIS固定包发布页及摘要](https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/nsis-3.11.zip/download)。Linux跨进程回收建议需核对ptrace和CAP_SYS_NICE等权限，本轮不使用该机制或以root身份默认清理。
+
+独立窗口仍以Tauri/WebView为比较候选，因平台运行时、打包和退出生命周期不同，先完成安装入口与只读跨平台基线再安排原型。MCP仍为条件项，已有CLI已可被Codex直接调用。

@@ -36,6 +36,14 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 默认与候选对照尚未证明谁更快，也没有与 360 同条件同负载的动态速度证明。360 参考来自固定版本静态分析，不是完整源码复原或逐帧等同。
 
+## 下一轮本地候选
+
+当前开发分支增加Windows当前用户安装器和Linux只读适配，尚未发布。Windows安装器创建开始菜单入口，卸载保留用户数据，仍打开现有网页。`scripts/build-installer.ps1 -Compiler 编译器路径`从两份release EXE构建安装候选，需要另行准备NSIS，不自动安装编译器。
+
+Linux候选已实现真实容量和目标读取，维护按钮禁用，不提供主动整理。Ubuntu WSL已完成原生测试及内置浏览器真实只读、服务停止和解压包验收，不能代表独立Linux桌面已支持。macOS尚未接入。已发布v0.4.0的支持范围仍是Windows x64。开发与验收进度见开发计划及[本轮运行记录](<docs/运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。
+
+安装版从开始菜单“CPU Memory Cleanup”启动，程序位于当前用户LocalAppData的Programs目录，运行记录独立存放在LocalAppData的DreamSoul目录；卸载保留记录。安装器尚未签名，也未上传到Release。Linux原生开发环境可用 `sh scripts/package-linux.sh 新输出目录` 构建只读便携候选，解压后运行 `sh ./run.sh` 并在浏览器打开打印的本地地址；不自动安装依赖，不执行整理。
+
 ## 开发构建与检查
 
 需要 Rust 开发工具，网页测试另需 Node。Cargo 声明最低 Rust 1.85，本轮实测 Rust/Cargo 1.99.1 GNU，其他工具链和最低版本尚未验证。运行构建产物无需这些开发工具。
@@ -52,7 +60,7 @@ cargo build --release --locked
 
 ci.ps1 使用独立 target，在 .test-results/local-ci/日期时间/ 保存阶段日志、summary.json、工具目录及 EXE SHA256。失败阻断后续阶段，不自动部署、启动清理或安装依赖。离线包验证需要已准备好的缓存。统一脚本本轮使用 PowerShell 7 验证，需要允许本地脚本执行的环境，不要求改变系统执行策略。
 
-最近入口适配验证：默认 25 项 Rust、开发配置 33 项 Rust、31 项网页 JS 全部通过，release 与源码包构建验证通过。原仓库运行曾遇 Cargo 文件访问拒绝，成功结果来自逐字节核对的一致副本，详见[入口适配验收](<docs/运行记录 Run Record/2026-11-03 本地入口与包适配验收.md>)。采用本地验证策略，未配置 GitHub Actions。
+已发布入口适配验证：默认 25 项 Rust、开发配置 33 项 Rust、31 项网页 JS 全部通过，release 与源码包构建验证通过。原仓库运行曾遇 Cargo 文件访问拒绝，成功结果来自逐字节核对的一致副本，详见[入口适配验收](<docs/运行记录 Run Record/2026-11-03 本地入口与包适配验收.md>)。采用本地验证策略，未配置 GitHub Actions。
 
 打包命令：`./scripts/package.ps1`，默认读取 target/release，输出 dist 下的 Windows ZIP 和 SHA256SUMS.txt，已有产物不覆盖。该脚本不清理、不上传。
 
@@ -117,3 +125,5 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 <a id="验证与结果"></a>
 <a id="入口维护与研究范围"></a>
 <a id="许可证与版本分发"></a>
+
+本轮未发布候选：Windows默认25项/开发33项Rust、32项网页检查通过；Ubuntu WSL默认26项/开发33项Rust通过。Codex已实际调用CLI对自有128 MiB进程整理一次，内容完整并可回看；不据此宣称全局提速。原始环境、构建与未覆盖项见本轮运行记录。

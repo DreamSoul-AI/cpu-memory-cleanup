@@ -182,3 +182,8 @@ feature 关闭与打开均通过格式、严格 Clippy 和 Cargo 检查，两种
 安装源码放在scripts/windows/install.nsi，构建包装放在scripts/build-installer.ps1，读取已构建的两份EXE而不复制业务。安装快捷方式传明确output-dir到用户数据路径，launcher继续只负责正式网页入口。
 
 Agent端到端证据保存具体输入参数、CLI JSON及最终解释，先用现有六工具，不提前增加MCP实现。Linux平台适配进入system，现有Unix随机源已存在，计划中“随机源未实现”的描述需改为核对其目标平台运行证据。
+
+# 十四、Linux只读适配映射
+system/linux.rs负责/proc/meminfo与进程stat/status解析，mod.rs按target_os装配。System增加cleanup_supported默认方法保持已有实现兼容，Linux覆盖为false，HTTP机制目录及网页维护控件据此禁用。读取与维护能力分离，CLI不能通过通用工具名把只读平台解释成支持整理。
+
+Linux便携候选由 `scripts/package-linux.sh` 在Linux原生构建，归档同一CLI、MIT、静态构建目录和启动入口；运行记录写入用户状态目录。该脚本不进入src硬约束，不隐式执行维护或发布。

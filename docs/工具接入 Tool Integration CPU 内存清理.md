@@ -83,4 +83,10 @@ cargo run --release --locked --features experimental-quota --example workingset-
 
 # 八、源码包与运行交付
 
-Cargo源码包用于库接入及Rust构建，包含当前源码、嵌入资源、Rust测试、例程、README与MIT，不包含scripts、旧Python、运行证据或开发工具链。README中的仓库开发脚本应在完整仓库使用，不能假定解包crate后存在。Windows运行ZIP为另一种交付产物，目前待准备和验收，不能用Cargo包验证代替运行ZIP验收。
+Cargo源码包用于库接入及Rust构建，包含当前源码、嵌入资源、Rust测试、例程、README与MIT，不包含scripts、旧Python、运行证据或开发工具链。README中的仓库开发脚本应在完整仓库使用，不能假定解包crate后存在。Windows运行ZIP为另一种交付产物，v0.4.0已发布并有解压包验收，不能用Cargo包验证代替运行ZIP验收。
+
+# 九、实际Agent调用与平台能力
+
+Codex已按明确授权通过CLI完成128 MiB自有进程一次整理、内容校验与memory_result回看，见[真实工具验收](<运行记录 Run Record/2026-11-05 安装器与Agent跨平台验收.md>)。自定义工具目录不是MCP；当前不安装另一套适配服务。
+
+Linux候选支持memory_status和memory_targets的真实读取，不支持主动整理。HTTP会话按读取与维护能力分别呈现；调用方不能从读取available推导维护可用。macOS尚未接入。

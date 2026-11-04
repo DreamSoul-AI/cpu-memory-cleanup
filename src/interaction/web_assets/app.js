@@ -69,8 +69,8 @@ function controls() {
   el("gauge").classList.toggle("working",busy && cleaning);
   el("read-targets").disabled ||= !readingSupported;
   el("global-clean").disabled ||= !supportedMethods.includes(el("method").value);
-  for(const id of ["selected-clean","protect-selected","arm-rule"]) el(id).disabled = busy || stopped || !selected.size || !token;
-  el("unprotected-clean").disabled = busy || stopped || !rows.length || !token;
+  for(const id of ["selected-clean","protect-selected","arm-rule"]) el(id).disabled = busy || stopped || !selected.size || !token || !supportedMethods.length;
+  el("unprotected-clean").disabled = busy || stopped || !rows.length || !token || !supportedMethods.length;
   el("cancel").disabled = !busy || stopped;
   el("replay").disabled = busy || stopped || !lastSaved;
 }
@@ -305,6 +305,11 @@ api("/api/session").then(async session=>{
   el("method").querySelectorAll?.("option").forEach(option=>{if(!supportedMethods.includes(option.value))option.remove();});
   el("capability").textContent=`平台 ${session.operating_system} · 读取 ${session.reading} · 权限需在请求时核验`;
   el("boundary").textContent=session.preview?"隔离假数据模式：当前指标与进程全部为合成数据，不操作设备。":"真实系统模式：页面可见时持续更新内存；绿色按钮点击即整理一次工作集，全局范围不排除应用。";
+  if(!supportedMethods.length){
+    const message=readingSupported?"当前平台支持真实读取，暂不支持内存整理。":"当前平台尚未支持真实读取或内存整理。";
+    el("boundary").textContent=message;el("cleanup-hint").textContent=message;
+    el("job-status").textContent="只读模式";el("recent-note").textContent="可查看真实状态，当前平台不执行整理。";
+  }
   const state=await api("/api/state");applyState(state);
   if(settings.rule){const rule=settings.rule;el("rule-mode").value=rule.mode;el("rule-interval").value=rule.interval_s;el("rule-threshold").value=rule.available_pct;el("rule-sustain").value=rule.sustain_s;el("rule-cooldown").value=rule.cooldown_s;}
   el("sort").textContent=descending?"工作集 ↓":"工作集 ↑";controls();refreshDisplay();

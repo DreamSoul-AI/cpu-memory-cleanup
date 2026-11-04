@@ -271,3 +271,9 @@ test('main action changes busy controls without rebuilding the process list',asy
  assert.equal(p.elements['target-controls'].disabled,true);await p.run('active');
  assert.equal(p.run('rowRenderCount'),p.run('beforeRows'));assert.equal(p.elements['target-controls'].disabled,false);
 });
+test('readonly platforms keep all maintenance controls disabled',()=>{
+  const p=page();
+  p.run(`token='session';readingSupported=true;supportedMethods=[];selected.add('one');rows=[{pid:12}];controls();`);
+  for(const id of ['global-clean','selected-clean','unprotected-clean','arm-rule'])assert.equal(p.elements[id].disabled,true,id);
+  assert.equal(p.elements['read-status'].disabled,false);
+});

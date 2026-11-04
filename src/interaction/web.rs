@@ -486,7 +486,7 @@ fn handle(mut request: Request, state: &Arc<State>) {
             respond(
                 request,
                 200,
-                json!({"token":state.token,"preview":false,"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,"operating_system":std::env::consts::OS,"reading":if supported{"available"}else{"unsupported"},"capabilities":{"mechanisms":if supported{vec!["working-set"]}else{vec![]},"scopes":["system","process"]}}),
+                json!({"token":state.token,"preview":false,"implementation":"rust","version":crate::VERSION,"build_id":crate::BUILD_ID,"operating_system":std::env::consts::OS,"reading":if supported{"available"}else{"unsupported"},"capabilities":{"mechanisms":if state.app.system.cleanup_supported(){vec!["working-set"]}else{vec![]},"scopes":["system","process"]}}),
             );
             return;
         }

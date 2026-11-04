@@ -1,5 +1,7 @@
 use crate::contracts::{AppResult, Memory, Sweep, Target};
 use std::sync::{Arc, atomic::AtomicBool};
+#[cfg(target_os = "linux")]
+pub mod linux;
 pub mod measurement;
 pub mod records;
 #[cfg(windows)]
@@ -42,6 +44,9 @@ pub fn random_bytes(bytes: &mut [u8]) -> AppResult<()> {
 
 pub trait System: Send + Sync {
     fn supported(&self) -> bool;
+    fn cleanup_supported(&self) -> bool {
+        self.supported()
+    }
     fn snapshot(&self) -> AppResult<Memory>;
     fn targets(&self) -> AppResult<Vec<Target>>;
     fn cleanup(&self, targets: Option<&[Target]>, cancel: &AtomicBool) -> AppResult<Sweep>;
@@ -51,14 +56,18 @@ pub fn native() -> Arc<dyn System> {
     {
         Arc::new(windows::Windows)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        Arc::new(linux::Linux)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Arc::new(Unsupported)
     }
 }
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 struct Unsupported;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 impl System for Unsupported {
     fn supported(&self) -> bool {
         false
