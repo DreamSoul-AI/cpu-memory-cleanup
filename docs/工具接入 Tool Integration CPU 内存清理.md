@@ -1,4 +1,4 @@
-更新日期：2026年11月6日。Rust 0.5.0 已提供 GitHub Windows 包，未发布包索引。库、CLI 工具和网页共用 Application，不由宿主复制清理脚本，不要求安装 Python。Knowledge 本地已增加可安装 Skill 与说明，首次初始化代码由本仓库 scripts/agent-skill 维护，两仓库新增内容均尚未推送；版本、构建和边界见 [README](../README.md)。
+更新日期：2026年11月6日。Rust 0.5.1 更新 Windows 分发，未发布包索引。库、CLI 工具和网页共用 Application，不由宿主复制清理脚本，不要求安装 Python。Knowledge 本地已增加可安装 Skill 与说明，首次初始化代码由本仓库 scripts/agent-skill 维护，两仓库按各自 PR 流程同步；版本、构建和边界见 [README](../README.md)。
 
 # 一、静态发现与调用
 
@@ -107,4 +107,4 @@ Knowledge 的 cpu-memory-cleanup Skill 只保存指令、元数据和安装说�
 
 初始化与更新不采样、不清理、不启用规则。安装 Skill 不等于持续维护授权，同机命令能力也不等于远程控制。test-runtime.ps1 为开发验证入口，会执行真实只读，不在每次使用时运行。实际证据见[初始化验收](<运行记录 Run Record/2026-11-06 Agent Skill初始化验收.md>)。新增接入只在本地，公开首次初始化还需同步产品代码与 Knowledge。
 
-本地新构建的普通调用默认只返回 stdout，不创建 report.json、timing.json 或运行目录。--no-record 明确禁止保存，与 --output-dir 互斥。仅用户主动要求保存时才传目录，此时仍执行动作前保存和失败阻断，既有网页/桌面也继续显式保存。无记录结果 output_dir 为 null，memory_result 仅用于实际保存过的结果；Run ID 不表示已持久化。初始化返回实际 result_persistence，不再提供诱导普通调用写记录的默认目录。旧正式版没有这项能力，Skill 应拒绝普通维护而不是去掉保证参数。
+本地新构建的普通调用默认只返回 stdout，不创建 report.json、timing.json 或运行目录。--no-record 明确禁止保存，与 --output-dir 互斥。仅用户主动要求保存时才传目录，此时仍执行动作前保存和失败阻断，既有网页/桌面也继续显式保存。无记录结果 output_dir 为 null，memory_result 仅用于实际保存过的结果；Run ID 不表示已持久化。初始化返回实际 result_persistence，不再提供诱导普通调用写记录的默认目录。缺少无记录能力的旧版应拒绝普通维护，不能去掉保证参数重试。
