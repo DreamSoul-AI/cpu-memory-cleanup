@@ -150,3 +150,9 @@ Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和
 项目自有代码继续采用MIT，分发包附[第三方通知](THIRD_PARTY_NOTICES.txt)，涵盖固定依赖及WebView2加载器的原始通知；未包含完整WebView2 Runtime。
 
 最终交付、附件摘要及只读验收见[0.5.0发布验收](<docs/运行记录 Run Record/2026-11-05 0.5.0发布验收.md>)。
+
+## Agent Skill本地接入
+
+Knowledge 本地维护 cpu-memory-cleanup Skill、元数据、安装说明和技能 ZIP；所有可执行代码由本仓库维护，初始化与验证脚本位于 [scripts/agent-skill](scripts/agent-skill/)。当前 Codex 技能副本按此分工接入，默认每项任务开始时解析官方最新正式 Release，校验附件 SHA256 并准备轻量 CLI；可用 -Version 指定正式版本复现，不同版本分别保存，任务内不切换程序。初始化或更新不采样或清理。验收见[初始化验收](<docs/运行记录 Run Record/2026-11-06 Agent Skill初始化验收.md>)。新增技能与脚本尚未推送，公开首次初始化需后续同步两个仓库；既有 Release 不含新增接入脚本。现有 Release 和三个使用入口不变。
+
+本地新构建的普通 CLI/Skill 调用默认只返回 stdout JSON，不创建运行历史；可携带 --no-record 明确保证，用户主动保存时才使用 --output-dir DIR，两者互斥。无记录结果 output_dir 为 null，不支持历史回看。安装回执仍用于运行时完整性，和每次运行记录分开。无需源码仓库，不写 docs、README 或测试目录。已有 0.5.0 发布包仍是旧行为，不能把本地源码修改当成已更新官方包。

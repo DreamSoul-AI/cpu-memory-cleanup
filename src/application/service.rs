@@ -62,11 +62,30 @@ impl Application {
         confirmed: bool,
         cancel: &AtomicBool,
     ) -> AppResult<Report> {
+        self.memory_cleanup_with_output(Some(base), confirmed, cancel)
+    }
+    /// Without an output directory, return the result without persisting operation history.
+    pub fn memory_cleanup_with_output(
+        &self,
+        base: Option<&Path>,
+        confirmed: bool,
+        cancel: &AtomicBool,
+    ) -> AppResult<Report> {
         self.cleanup(base, None, &[], confirmed, cancel)
     }
     pub fn memory_batch_cleanup(
         &self,
         base: &Path,
+        targets: &[Target],
+        protections: &[Protection],
+        confirmed: bool,
+        cancel: &AtomicBool,
+    ) -> AppResult<Report> {
+        self.memory_batch_cleanup_with_output(Some(base), targets, protections, confirmed, cancel)
+    }
+    pub fn memory_batch_cleanup_with_output(
+        &self,
+        base: Option<&Path>,
         targets: &[Target],
         protections: &[Protection],
         confirmed: bool,
@@ -94,7 +113,7 @@ impl Application {
     }
     fn cleanup(
         &self,
-        base: &Path,
+        base: Option<&Path>,
         targets: Option<&[Target]>,
         protections: &[Protection],
         confirmed: bool,
@@ -135,13 +154,16 @@ impl Application {
         report.phase = "calling".into();
         report.completion = "unknown".into();
         report.action = json!({"attempted":true,"call_outcome":"unknown","native_method":"SetProcessWorkingSetSize","intent":"one explicitly confirmed sweep"});
-        if let Err(error) = timing.measure("record_intent", || records::save(base, &mut report)) {
-            report.phase = "finished".into();
-            report.completion = "failed".into();
-            report.action = json!({"attempted":false,"call_outcome":"not_started"});
-            report.error("record_before_action", error);
-            report.metadata["timing"] = timing.report("failed_before_action");
-            return Ok(report);
+        if let Some(base) = base {
+            if let Err(error) = timing.measure("record_intent", || records::save(base, &mut report))
+            {
+                report.phase = "finished".into();
+                report.completion = "failed".into();
+                report.action = json!({"attempted":false,"call_outcome":"not_started"});
+                report.error("record_before_action", error);
+                report.metadata["timing"] = timing.report("failed_before_action");
+                return Ok(report);
+            }
         }
         let selected = targets.map(|list| {
             list.iter()
@@ -207,10 +229,13 @@ impl Application {
             }
         }
         report.phase = "after_snapshot".into();
-        if let Err(error) = timing.measure("record_action", || records::save(base, &mut report)) {
-            report.error("record_action", error);
-            if report.completion == "success" {
-                report.completion = "partial".into();
+        if let Some(base) = base {
+            if let Err(error) = timing.measure("record_action", || records::save(base, &mut report))
+            {
+                report.error("record_action", error);
+                if report.completion == "success" {
+                    report.completion = "partial".into();
+                }
             }
         }
         match timing.measure("after_snapshot", || self.system.snapshot()) {
@@ -236,18 +261,24 @@ impl Application {
         });
         report.metadata["timing"] = timing.report("business_before_final_record");
         report.phase = "finished".into();
-        if let Err(error) = timing.measure("record_final", || records::save(base, &mut report)) {
-            report.error("record", error);
-            if report.completion == "success" {
-                report.completion = "partial".into();
+        if let Some(base) = base {
+            if let Err(error) = timing.measure("record_final", || records::save(base, &mut report))
+            {
+                report.error("record", error);
+                if report.completion == "success" {
+                    report.completion = "partial".into();
+                }
             }
-        }
-        let before_final = report.metadata["timing"].clone();
-        report.metadata["timing"] =
-            timing.report("business_through_final_record_excludes_timing_attachment");
-        report.metadata["timing"]["before_final_record_ms"] = before_final["elapsed_ms"].clone();
-        if let Err(error) = records::save_timing(&report) {
-            report.metadata["timing_record_error"] = json!(error);
+            let before_final = report.metadata["timing"].clone();
+            report.metadata["timing"] =
+                timing.report("business_through_final_record_excludes_timing_attachment");
+            report.metadata["timing"]["before_final_record_ms"] =
+                before_final["elapsed_ms"].clone();
+            if let Err(error) = records::save_timing(&report) {
+                report.metadata["timing_record_error"] = json!(error);
+            }
+        } else {
+            report.metadata["timing"] = timing.report("business_stdout_only");
         }
         Ok(report)
     }
