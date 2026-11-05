@@ -1,4 +1,4 @@
-更新日期：2026年11月5日。0.5.0已完成分支审查、PR集成、版本更新、最终包只读验收及GitHub Release。第一至第五章保留v0.4.0历史范围，当前实施结果见第九、十章及[发布验收](<运行记录 Run Record/2026-11-05 0.5.0发布验收.md>)。当前下一轮优先执行第十一章的本地文件整理计划；后续性能、签名和普通桌面验证仍未完成。
+更新日期：2026年11月6日。0.5.1 已发布，Windows 三入口、Skill 正式安装和真实只读无记录检查完成，见第十五章及[发布验收](<运行记录 Run Record/2026-11-06 0.5.1发布验收.md>)。第十一至十四章保留本地整理与 Skill 接入的实施基线；本轮没有新增真实清理，后续性能、签名和未覆盖平台验证仍待另行安排。
 
 # 一、本版范围
 
@@ -462,10 +462,12 @@ FILE-06 复核发现压缩遇 EXE 临时占用时可能留下缺项 ZIP，脚本
 
 # 十五、0.5.1 发布与正式安装收尾
 
-用户已确认 review 并合并产品 PR #17、Knowledge PR #42，随后按 0.5.1 发布。本轮保留 Windows 三个入口，Linux/macOS 沿用 0.5.0 只读附件，不新增平台支持，也不再次执行真实清理。
+状态：已完成。产品 [PR #17](https://github.com/DreamSoul-AI/cpu-memory-cleanup/pull/17) 与版本 [PR #18](https://github.com/DreamSoul-AI/cpu-memory-cleanup/pull/18) 已合并到 master；Knowledge [PR #42](https://github.com/DreamSoul-AI/knowledge/pull/42) 经 dev、[PR #43](https://github.com/DreamSoul-AI/knowledge/pull/43) 进入 main。正式发布为 [v0.5.1](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.5.1)，latest 已指向此版。
 
-1. 产品 PR #17 已审查合并，版本号和自身 Cargo.lock 更新为 0.5.1；说明默认 stdout、不保存与显式保存的区别，Windows 包附两份产品初始化脚本。
-2. 在发布分支运行质量检查、三个入口构建、Cargo 源码包验证，核对版本和构建一致。Windows ZIP 与安装包只在新输出目录生成并核验完整性；审查发布 PR 后合并，再对同一提交打 tag。
-3. 发布 Windows ZIP、安装器、Rust 源码包、构建信息与校验摘要；发布后实际下载核对，不修改旧附件，不发布 PyPI/crates.io。
-4. Knowledge 修订临时状态说明，继续保持版本通用和原生能力核验，技能 ZIP 与 Git 源文件逐字节一致。通过 PR #42 集成到 dev，再由 dev → main 发布 PR 合入正式版。
-5. 从正式云端安装 Skill、产品初始化脚本和 latest 运行时，核对 v0.5.1 与原生无记录能力，执行真实只读和零运行记录检查。最后核对发布、分支及未覆盖项；普通使用不另写运行记录。
+1. 默认工具调用仅返回 stdout，显式 --output-dir 才保存；Windows 网页、应用窗口与 CMD 入口保留，网页与桌面的保存行为不变。
+2. 固定源码提交构建三个 Windows 入口及 Rust 源码包，版本、构建标识和产物一致；默认 35 项 Rust、开发配置 43 项 Rust、34 项网页测试、fmt 与严格 Clippy 通过。
+3. Windows ZIP、安装器、Rust 源码包、builds.json 与 SHA256SUMS.txt 共五份附件已公开，下载逐字节及 GitHub SHA256 复核通过。未发布 PyPI/crates.io。
+4. Knowledge 的 Skill 与 ZIP 逐字节一致，已从正式 main 重新安装。产品初始化依赖从本版正式 ZIP 取得，不固定 Skill 的运行时版本。
+5. 默认 latest 在线安装得到 0.5.1，静态目录声明 stdout_only 与 --no-record。正式安装的真实只读查询通过，运行目录、仓库 Markdown 和空工作目录均未产生运行文件；本轮未再次执行真实整理，也未自动保存普通操作结果。
+
+具体源码、构建、附件、安装核验及未覆盖项见[0.5.1 发布验收](<运行记录 Run Record/2026-11-06 0.5.1发布验收.md>)。Linux/macOS 沿用 0.5.0 只读附件，安装向导、GUI 升级旅程和真实清理没有在 0.5.1 发布轮重跑，不以旧版结果回签。

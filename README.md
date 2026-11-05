@@ -6,7 +6,7 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 ## 当前状态
 
-当前源码版本 **v0.5.1**。Windows x64 提供真实读取与工作集整理，保留网页、独立应用窗口和 CMD 脚本三个入口，共用 Rust Package。CLI/Agent 普通调用默认不保存运行记录，显式指定目录才保存。正式发布状态、安装包和源码下载以 [Release 列表](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases) 为准。
+当前源码版本 **v0.5.1**。Windows x64 提供真实读取与工作集整理，保留网页、独立应用窗口和 CMD 脚本三个入口，共用 Rust Package。CLI/Agent 普通调用默认不保存运行记录，显式指定目录才保存。已发布 [v0.5.1](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.5.1)，安装包和源码可从该页下载；发布与正式安装验证见 [0.5.1 发布验收](<docs/运行记录 Run Record/2026-11-06 0.5.1发布验收.md>)。
 
 Windows安装包创建开始菜单入口；便携ZIP完整解压后，双击 `scripts/memory-cleanup.cmd` 打开网页版，或双击 `target/release/memory-cleanup-window.exe` 打开应用窗口。运行不需要Rust、Node或Python；独立窗口需要Microsoft WebView2 Runtime，包内附加载器但不捆绑完整Runtime。安装包未签名。
 
