@@ -26,6 +26,9 @@ foreach ($taskFile in @('cpu-memory-cleanup.exe', 'memory-cleanup.exe')) {
     Copy-Item -LiteralPath (Join-Path $taskBuild $taskFile) -Destination (Join-Path $taskStage 'target/release')
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'memory-cleanup.cmd') -Destination (Join-Path $taskStage 'scripts')
+$taskAgentSetup = Join-Path $taskStage 'scripts/agent-skill'
+New-Item -ItemType Directory -Path $taskAgentSetup | Out-Null
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'agent-skill/install-runtime.ps1'), (Join-Path $PSScriptRoot 'agent-skill/release.ps1') -Destination $taskAgentSetup
 Copy-Item -LiteralPath LICENSE, THIRD_PARTY_NOTICES.txt -Destination $taskStage
 if ($WindowBuildDirectory) {
     $taskWindowBuild = (Resolve-Path -LiteralPath $WindowBuildDirectory).Path
@@ -42,7 +45,9 @@ CPU 内存清理 $taskVersion · Windows x64
 默认浏览器打开 http://127.0.0.1:14800/，显示真实内存。
 点击绿色按钮才执行一次真实工作集整理。自动规则默认关闭。
 关闭服务请使用网页“停止服务”，仅关闭标签页不会停止服务。
-无需安装 Rust、Node 或 Python。记录保存在解压目录的 .test-results/rust-runs。
+无需安装 Rust、Node 或 Python。网页结果保存在解压目录的 .test-results/rust-runs。
+CLI/Agent 普通工具调用默认只返回 JSON，不生成运行记录；--no-record 明确禁止保存，--output-dir DIR 才显式保存。
+Agent 初始化脚本位于 scripts/agent-skill/，产品代码不放入 Knowledge 技能包。
 
 工作集整理不删除应用数据，后续访问可能重新驻留。容量变化不保证提速。
 若端口被旧版本占用，先在旧网页停止服务，不结束其他程序。

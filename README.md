@@ -6,11 +6,11 @@ Windows 本地内存整理工具，提供 Rust Package、CLI/Agent 工具和 loc
 
 ## 当前状态
 
-当前版本 **v0.5.0**，已发布[GitHub Release](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.5.0)。Windows x64提供真实内存读取与工作集整理，并保留网页、独立应用窗口、CMD脚本三个入口，共用Rust Package。安装器、便携包及源码下载见[Release列表](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases)。v0.4.0等旧版和Pages静态演示保留各自范围。
+当前源码版本 **v0.5.1**。Windows x64 提供真实读取与工作集整理，保留网页、独立应用窗口和 CMD 脚本三个入口，共用 Rust Package。CLI/Agent 普通调用默认不保存运行记录，显式指定目录才保存。正式发布状态、安装包和源码下载以 [Release 列表](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases) 为准。
 
 Windows安装包创建开始菜单入口；便携ZIP完整解压后，双击 `scripts/memory-cleanup.cmd` 打开网页版，或双击 `target/release/memory-cleanup-window.exe` 打开应用窗口。运行不需要Rust、Node或Python；独立窗口需要Microsoft WebView2 Runtime，包内附加载器但不捆绑完整Runtime。安装包未签名。
 
-Linux x86_64和macOS arm64另提供**只读试用包**，能显示真实容量与进程，不提供主动整理。Linux仅Ubuntu WSL、Mac仅托管15.8.2 arm64验证；普通桌面、旧libc、Finder/Gatekeeper、Intel Mac等未验证，Mac未签名或公证。
+Linux x86_64 和 macOS arm64 继续使用 [0.5.0 的只读试用包](https://github.com/DreamSoul-AI/cpu-memory-cleanup/releases/tag/v0.5.0)；本次 0.5.1 仅更新 Windows 分发。这些包能显示真实容量与进程，不提供主动整理。Linux仅Ubuntu WSL、Mac仅托管15.8.2 arm64验证；普通桌面、旧libc、Finder/Gatekeeper、Intel Mac等未验证，Mac未签名或公证。
 
 ## 日常使用
 
@@ -137,7 +137,7 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 
 开发脚本优先使用系统 Cargo；未安装时可使用已准备的 `.local/rust/native` 和 `.local/rust/cargo-home`。工具、NSIS 和窗口测试驱动放在 Git 忽略的 `.local/`，脚本不下载依赖、不全局安装工具、不再依赖测试记录目录中的工具链。新环境按工具官方说明准备，不能假定缓存随源码存在。
 
-`target/` 保留 Cargo 缓存及当前 release 程序，`.test-results/` 保留测试和运行证据，`dist/` 保留已核对的运行包。本机 0.5.0 附件集中于 `dist/v0.5.0/`，包与 GitHub Release 一致。本地整理不改变已发布附件。
+`target/` 保留 Cargo 缓存及当前 release 程序，`.test-results/` 保留测试和运行证据，`dist/` 保留已核对的运行包。发布附件按版本保存在 `dist/`，旧版附件独立保留，不改写已有 Release。
 
 性能实验源码位于 `experiments/`，原命令 `cargo run --features experimental-quota --example workingset-compare -- plan` 继续可用。plan 是静态说明，真实实验不由构建或测试自动执行。`demo/` 是历史 Pages 静态演示，正式网页源码在 `src/interaction/web_assets/`。
 
@@ -151,8 +151,12 @@ Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和
 
 最终交付、附件摘要及只读验收见[0.5.0发布验收](<docs/运行记录 Run Record/2026-11-05 0.5.0发布验收.md>)。
 
-## Agent Skill本地接入
+## Agent Skill 接入
 
-Knowledge 本地维护 cpu-memory-cleanup Skill、元数据、安装说明和技能 ZIP；所有可执行代码由本仓库维护，初始化与验证脚本位于 [scripts/agent-skill](scripts/agent-skill/)。当前 Codex 技能副本按此分工接入，默认每项任务开始时解析官方最新正式 Release，校验附件 SHA256 并准备轻量 CLI；可用 -Version 指定正式版本复现，不同版本分别保存，任务内不切换程序。初始化或更新不采样或清理。验收见[初始化验收](<docs/运行记录 Run Record/2026-11-06 Agent Skill初始化验收.md>)。新增技能与脚本尚未推送，公开首次初始化需后续同步两个仓库；既有 Release 不含新增接入脚本。现有 Release 和三个使用入口不变。
+[Knowledge Skill](https://github.com/DreamSoul-AI/knowledge/tree/main/skills/cpu-memory-cleanup) 维护指令、元数据、安装说明和技能 ZIP，所有可执行代码由本仓库维护。初始化依赖见 [scripts/agent-skill](scripts/agent-skill/)，Windows ZIP 同时提供 install-runtime.ps1 和 release.ps1。普通使用不需要源码仓库、Git、Rust、Node 或 Python。
 
-本地新构建的普通 CLI/Skill 调用默认只返回 stdout JSON，不创建运行历史；可携带 --no-record 明确保证，用户主动保存时才使用 --output-dir DIR，两者互斥。无记录结果 output_dir 为 null，不支持历史回看。安装回执仍用于运行时完整性，和每次运行记录分开。无需源码仓库，不写 docs、README 或测试目录。已有 0.5.0 发布包仍是旧行为，不能把本地源码修改当成已更新官方包。
+每项任务开始时默认解析官方 latest 稳定 Release，校验附件 SHA256 并安装或复用轻量 CLI；支持 -Version 指定正式版本，各版本分别保存，任务内不切换程序。初始化只读静态目录，不采样或清理。Skill 维护前核对实际无记录能力，不凭固定版本号判断。
+
+普通 CLI/Skill 调用只通过 stdout 返回 JSON，不创建 report.json、timing.json、运行目录或 Markdown。--no-record 明确保证不保存，与 --output-dir DIR 互斥；只有用户主动选择保存时才落盘，并支持后续回看。无记录结果 output_dir 为 null；安装完整性回执与每次操作记录分开。网页和桌面继续使用既有保存方式。
+
+0.5.0 及更早发布包没有无记录能力，不应通过删参数重试绕过。项目开发、打包和发布验证依照 AGENTS.md 整理必要证据，普通 Skill 使用不写仓库资料。
