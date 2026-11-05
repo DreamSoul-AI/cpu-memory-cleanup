@@ -55,6 +55,23 @@ Windows包提供真实整理。Linux/macOS为另行打包的只读版本，不�
 "@ | Set-Content (Join-Path $taskStage '使用说明.txt') -Encoding utf8
 [ordered]@{ version = $taskVersion; build_id = $taskInfo.build_id; architecture = 'windows-x64'; files = @(Get-ChildItem (Join-Path $taskStage 'target/release/*.exe') | Get-FileHash -Algorithm SHA256 | Select-Object @{n='name';e={Split-Path $_.Path -Leaf}}, Hash) } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $taskStage 'manifest.json') -Encoding utf8
 Compress-Archive -Path (Join-Path $taskStage '*') -DestinationPath $taskZip
+# Compress-Archive can emit a non-terminating file-lock error and leave a partial ZIP.
+# Verify every staged file before publishing its checksum or reporting success.
+$taskArchive = [IO.Compression.ZipFile]::OpenRead($taskZip)
+try {
+    foreach ($taskStagedFile in Get-ChildItem -LiteralPath $taskStage -Recurse -File) {
+        $taskRelative = [IO.Path]::GetRelativePath($taskStage, $taskStagedFile.FullName).Replace('\', '/')
+        $taskEntry = $taskArchive.GetEntry($taskRelative)
+        if (-not $taskEntry) { throw "ZIP missing staged file: $taskRelative" }
+        $taskStream = $taskEntry.Open()
+        $taskDigest = [Security.Cryptography.SHA256]::Create()
+        try { $taskEntryHash = [Convert]::ToHexString($taskDigest.ComputeHash($taskStream)) }
+        finally { $taskStream.Dispose(); $taskDigest.Dispose() }
+        if ($taskEntryHash -ne (Get-FileHash -LiteralPath $taskStagedFile.FullName -Algorithm SHA256).Hash) {
+            throw "ZIP file differs from staging: $taskRelative"
+        }
+    }
+} finally { $taskArchive.Dispose() }
 $taskHash = (Get-FileHash -LiteralPath $taskZip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$taskHash  $taskName.zip" | Set-Content (Join-Path $taskOut 'SHA256SUMS.txt') -Encoding ascii
 Write-Host $taskZip

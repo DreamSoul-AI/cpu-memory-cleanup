@@ -3,6 +3,9 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/rust-environment.ps1"
 $taskCargo = Get-ProjectCargo
+if (-not $AssemblerDirectory -and (Test-Path -LiteralPath (Join-Path $PWD '.local/mingw64/bin/as.exe'))) {
+    $AssemblerDirectory = '.local/mingw64/bin'
+}
 if ($AssemblerDirectory) {
     $taskAssembler = (Resolve-Path -LiteralPath $AssemblerDirectory).Path
     if (-not (Test-Path -LiteralPath (Join-Path $taskAssembler 'as.exe'))) { throw 'Assembler directory must contain as.exe.' }

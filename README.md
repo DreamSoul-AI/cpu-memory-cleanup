@@ -80,7 +80,7 @@ Windows完整打包命令：`./scripts/package.ps1 -WindowBuildDirectory target/
 
 最新库、CLI、HTTP 会话及新报告共享 build_id，标识源码输入，不是签名。工具输出 JSON，退出码 0 为完整成功、1 为非完整结果、2 为参数或入口错误。参数与库用法见[工具接入](<docs/工具接入 Tool Integration CPU 内存清理.md>)。
 
-Rust 版本不兼容旧 Python 导入 API 及部分旧 CLI 选项，不要使用旧 pip 安装命令。需要历史版本时见[归档说明](legacy/python/README.md)。
+Rust 版本不兼容旧 Python 导入 API 及部分旧 CLI 选项，不要使用旧 pip 安装命令。旧 Python 实现已从当前分支移除，可从[固定历史提交](https://github.com/DreamSoul-AI/cpu-memory-cleanup/tree/41eb28bf8f4c8042bc7a120afce665b7353fd3ed/legacy/python)恢复。
 
 ## 目录与文档
 
@@ -88,10 +88,9 @@ Rust 版本不兼容旧 Python 导入 API 及部分旧 CLI 选项，不要使用
 src/             Rust 库、CLI、HTTP 与嵌入网页
 scripts/         CMD 启动、测试、构建与本地完整检查
 tests/           Rust 合同、HTTP、测量及网页 JS 测试
-examples/        非默认 feature 的性能对照入口
+experiments/     非默认 feature 的性能对照入口
 docs/            当前设计、计划、调研与日期记录
 demo/            历史 GitHub Pages 静态演示
-legacy/python/   历史 Python 版本
 ```
 
 src 内职责以代码结构设计为准，外围目录可调整。target 和 .test-results 为忽略的本地产物及证据。
@@ -130,21 +129,19 @@ src 内职责以代码结构设计为准，外围目录可调整。target 和 .t
 <a id="入口维护与研究范围"></a>
 <a id="许可证与版本分发"></a>
 
-本轮未发布候选：Windows默认25项/开发33项Rust、32项网页检查通过；Ubuntu WSL默认26项/开发33项Rust通过。Codex已实际调用CLI对自有128 MiB进程整理一次，内容完整并可回看；不据此宣称全局提速。原始环境、构建与未覆盖项见本轮运行记录。
+## 独立应用与本地开发环境
 
-## 独立小窗口开发候选
+0.5.0 已发布独立应用窗口。开始菜单“CPU Memory Cleanup”打开应用，“Browser workbench”打开网页版；CMD 脚本仍启动浏览器。窗口默认端口 14801，浏览器默认端口 14800，窗口退出会停止自身服务并等待在途动作收尾。
 
-可选 `desktop-window` 提供Windows WebView2窗口，复用现有网页、服务和真实清理库，不是另一份清理实现。已安装候选的开始菜单“CPU Memory Cleanup”打开窗口，“Browser workbench”打开浏览器。窗口默认使用14801端口，原浏览器入口仍为14800。窗口关闭会停止自身服务并等待已派发动作收尾。
+构建窗口用 `./scripts/build-window.ps1`。GNU 工具链需要汇编器，可通过 `-AssemblerDirectory 路径` 显式指定；本机已准备 `.local/mingw64/bin` 时默认采用。窗口需 WebView2 Runtime 及同目录加载器，默认 CLI/库不要求窗口依赖。`--smoke-test 新回执路径` 仅用于隐藏窗口真实只读检查，不执行整理。
 
-构建：`./scripts/build-window.ps1`；GNU工具链需可用汇编器，可用 `-AssemblerDirectory 路径` 显式指定，脚本不安装工具或修改全局PATH。需要WebView2运行时及同目录WebView2Loader.dll；默认CLI/库构建不要求窗口依赖。安装器通过 `-WindowBuildDirectory target/release` 显式包含匹配构建窗口。
+开发脚本优先使用系统 Cargo；未安装时可使用已准备的 `.local/rust/native` 和 `.local/rust/cargo-home`。工具、NSIS 和窗口测试驱动放在 Git 忽略的 `.local/`，脚本不下载依赖、不全局安装工具、不再依赖测试记录目录中的工具链。新环境按工具官方说明准备，不能假定缓存随源码存在。
 
-`memory-cleanup-window.exe --smoke-test 新回执路径` 是隐藏窗口真实只读检查：加载实际页面、观察真实读数后正常停止，不执行整理，不是正常使用入口。原生视觉、前台聚焦和长期资源占用仍待验收；新窗口尚未加入已发布Release。完整结果见[小窗口与双入口验收](<docs/运行记录 Run Record/2026-11-05 小窗口与双入口真实验收.md>)。
+`target/` 保留 Cargo 缓存及当前 release 程序，`.test-results/` 保留测试和运行证据，`dist/` 保留已核对的运行包。本机 0.5.0 附件集中于 `dist/v0.5.0/`，包与 GitHub Release 一致。本地整理不改变已发布附件。
 
-macOS专项工作流为 `.github/workflows/macos-readonly.yml`，当前只保留workflow_dispatch人工触发。首次登记所用的限定提交启动门已移除，无push、PR或定时触发。仅隔离测试、构建和真实只读探针，不调用维护工具；运行结果与macOS产品接入状态分别判断。
+性能实验源码位于 `experiments/`，原命令 `cargo run --features experimental-quota --example workingset-compare -- plan` 继续可用。plan 是静态说明，真实实验不由构建或测试自动执行。`demo/` 是历史 Pages 静态演示，正式网页源码在 `src/interaction/web_assets/`。
 
-当前未发布候选已接入macOS真实只读：Memory的提交字段改为Option，新增可用量口径及可选压缩驻留。Rust结构体初始化需适配；JSON中Windows/Linux已测值保持数字，Mac不提供的提交值为空。此变化不回签已发布v0.4.0，Mac支持状态须以新的原生验证为准。
-
-macOS原生开发环境可用 `sh scripts/package-macos.sh 新目录` 生成arm64等当前主机架构便携候选；完整解压后运行 `./run.command`，手动打开打印的localhost地址。不要求安装Rust/Node/Python运行时，未签名、未公证，普通用户下载和系统提示尚未验收。
+Linux/macOS 为只读包，命令及已验证环境见本页当前状态。macOS 工作流只保留 `workflow_dispatch` 手动触发，无普通 push、PR 或定时触发；它构建、测试、真实读取，不执行维护。
 
 ## 0.5.0接口兼容变化
 
@@ -153,3 +150,9 @@ Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和
 项目自有代码继续采用MIT，分发包附[第三方通知](THIRD_PARTY_NOTICES.txt)，涵盖固定依赖及WebView2加载器的原始通知；未包含完整WebView2 Runtime。
 
 最终交付、附件摘要及只读验收见[0.5.0发布验收](<docs/运行记录 Run Record/2026-11-05 0.5.0发布验收.md>)。
+
+## Agent Skill本地接入
+
+Knowledge 本地维护 cpu-memory-cleanup Skill、元数据、安装说明和技能 ZIP；所有可执行代码由本仓库维护，初始化与验证脚本位于 [scripts/agent-skill](scripts/agent-skill/)。当前 Codex 技能副本按此分工接入，默认每项任务开始时解析官方最新正式 Release，校验附件 SHA256 并准备轻量 CLI；可用 -Version 指定正式版本复现，不同版本分别保存，任务内不切换程序。初始化或更新不采样或清理。验收见[初始化验收](<docs/运行记录 Run Record/2026-11-06 Agent Skill初始化验收.md>)。新增技能与脚本尚未推送，公开首次初始化需后续同步两个仓库；既有 Release 不含新增接入脚本。现有 Release 和三个使用入口不变。
+
+本地新构建的普通 CLI/Skill 调用默认只返回 stdout JSON，不创建运行历史；可携带 --no-record 明确保证，用户主动保存时才使用 --output-dir DIR，两者互斥。无记录结果 output_dir 为 null，不支持历史回看。安装回执仍用于运行时完整性，和每次运行记录分开。无需源码仓库，不写 docs、README 或测试目录。已有 0.5.0 发布包仍是旧行为，不能把本地源码修改当成已更新官方包。

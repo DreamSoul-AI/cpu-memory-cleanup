@@ -1,4 +1,4 @@
-更新日期：2026年11月5日。Rust 0.4.0已作为GitHub Windows包发布，未发布包索引。库、CLI工具和网页共用Application，不由宿主复制清理脚本，不要求先安装Python。版本、构建和边界见 [README](../README.md)。Knowledge已有固定历史指南本轮未改，不代表它已指向Rust版本。
+更新日期：2026年11月6日。Rust 0.5.0 已提供 GitHub Windows 包，未发布包索引。库、CLI 工具和网页共用 Application，不由宿主复制清理脚本，不要求安装 Python。Knowledge 本地已增加可安装 Skill 与说明，首次初始化代码由本仓库 scripts/agent-skill 维护，两仓库新增内容均尚未推送；版本、构建和边界见 [README](../README.md)。
 
 # 一、静态发现与调用
 
@@ -8,9 +8,9 @@
 | --- | --- | --- |
 | memory_status | 无 | 一份真实容量快照 |
 | memory_targets | 无 | 真实进程枚举、创建身份及可读取工作集 |
-| memory_cleanup | --confirm [--output-dir DIR] | 一轮全局可访问进程工作集整理 |
-| memory_process_cleanup | --pid PID --created-at ID --confirm [--output-dir DIR] | 指定身份的一个目标 |
-| memory_batch_cleanup | --request-file FILE --confirm [--output-dir DIR] | 固定目标列表及可选保护 |
+| memory_cleanup | --confirm [--no-record | --output-dir DIR] | 一轮全局可访问进程工作集整理 |
+| memory_process_cleanup | --pid PID --created-at ID --confirm [--no-record | --output-dir DIR] | 指定身份的一个目标 |
+| memory_batch_cleanup | --request-file FILE --confirm [--no-record | --output-dir DIR] | 固定目标列表及可选保护 |
 | memory_result | --run-dir DIR | 只读回看，不连接当前内存、不重放 |
 
 形式为 `cpu-memory-cleanup.exe --tool 工具名 参数`。没有 `--tool` 时使用 `--web` 启动回环网页，默认端口14800，可显式指定 `--port`。同一宿主不要并发启动维护CLI和网页维护，互斥是应用实例内，未提供跨进程全机锁。
@@ -98,3 +98,13 @@ Linux候选支持memory_status和memory_targets的真实读取，不支持主动
 0.5.0的physical增加available_kind及可选compressed_bytes；Mac的free_and_inactive_estimate表示空闲与非活跃页估算，不等同Windows可用量。commit的used_bytes/limit_bytes允许null，status为measured/unavailable/partial，调用方不得把null转成0。Rust Memory结构体提交字段改为Option，新口径和压缩字段可由Default初始化；这是相对0.4.0的API变化。Mac仅只读，维护能力为空，不从读取成功推断可以整理。
 
 静态目录新增platform_capabilities，不采样即可识别本平台reading与maintenance。只读平台的维护请求在Application及HTTP前置拒绝，不写入维护意图、不读取维护前快照、不派发系统调用；自动规则不能启用。Mac具体构建和真实验证见[产品只读验收](<运行记录 Run Record/2026-11-05 macOS产品只读验收.md>)。
+
+# 十一、Agent Skill 首次准备与更新
+
+Knowledge 的 cpu-memory-cleanup Skill 只保存指令、元数据和安装说明；所有代码在本仓库 [scripts/agent-skill](../scripts/agent-skill/)。普通用户仅需用户目录中安装的 install-runtime.ps1 及 release.ps1，无需 Git 或源码仓库；每项任务开始时调用初始化副本，默认从官方 latest 解析正式版，校验 Windows x64 附件 SHA256，仅部署轻量 CLI 与许可。可用 -Version 指定正式版本；离线参数为 -ReleaseMetadataPath 与 -ArchivePath，前者来自官方 Release API，后者对应同一发布。
+
+版本、构建和摘要不写死。不同 tag/附件摘要的程序分别部署，保存 install-receipt.json 及文件摘要；复用先核对摘要，再静态核对身份和工具目录。任务内固定返回的可执行路径，新任务再检查更新，不终止旧任务或覆盖旧程序。接口与能力按实际 --tool-info 使用，不要求工具永远只有六项。
+
+初始化与更新不采样、不清理、不启用规则。安装 Skill 不等于持续维护授权，同机命令能力也不等于远程控制。test-runtime.ps1 为开发验证入口，会执行真实只读，不在每次使用时运行。实际证据见[初始化验收](<运行记录 Run Record/2026-11-06 Agent Skill初始化验收.md>)。新增接入只在本地，公开首次初始化还需同步产品代码与 Knowledge。
+
+本地新构建的普通调用默认只返回 stdout，不创建 report.json、timing.json 或运行目录。--no-record 明确禁止保存，与 --output-dir 互斥。仅用户主动要求保存时才传目录，此时仍执行动作前保存和失败阻断，既有网页/桌面也继续显式保存。无记录结果 output_dir 为 null，memory_result 仅用于实际保存过的结果；Run ID 不表示已持久化。初始化返回实际 result_persistence，不再提供诱导普通调用写记录的默认目录。旧正式版没有这项能力，Skill 应拒绝普通维护而不是去掉保证参数。
