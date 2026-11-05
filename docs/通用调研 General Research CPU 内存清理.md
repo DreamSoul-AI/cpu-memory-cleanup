@@ -604,7 +604,7 @@ G0/P1已有实现，分段计时与工作集证据核验已完成受控实现，
 
 ## （六）原生调用瓶颈后的优化取舍
 ### 1. 现有命令是否有更快的调用方式
-四款固定版本的全局工作集分支均发送一个 MemoryEmptyWorkingSets 命令。WinMemClean 明确传入32位命令及其长度，本仓库同样发送信息类80、命令2、4字节载荷。在已读调用中没有“清理速度”或“强度”参数，也没有依靠重复派发、逐页延时或并发全局调用加速的证据。[WinMemClean 命令封装](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/nt.rs#L140)、[本仓库原生派发](<../legacy/python/src/cpu_memory_cleanup/system/platforms/windows.py>)
+四款固定版本的全局工作集分支均发送一个 MemoryEmptyWorkingSets 命令。WinMemClean 明确传入32位命令及其长度，本仓库同样发送信息类80、命令2、4字节载荷。在已读调用中没有“清理速度”或“强度”参数，也没有依靠重复派发、逐页延时或并发全局调用加速的证据。[WinMemClean 命令封装](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/nt.rs#L140)、[本仓库原生派发](https://github.com/DreamSoul-AI/cpu-memory-cleanup/blob/41eb28bf8f4c8042bc7a120afce665b7353fd3ed/legacy/python/src/cpu_memory_cleanup/system/platforms/windows.py)
 
 System Informer 将选中的多种命令交给工作线程，但线程内部仍逐项调用回调。这解决界面等待问题，不证明一个全局命令变快。WinMemoryCleaner 与 WinMemClean 在配置排除项时才枚举并逐进程整理，是处理范围变化，不是同一全局算法的加速参数。[System Informer 命令线程](https://github.com/winsiderss/systeminformer/blob/2e1349b065e5cf187db390697062fc95c846de33/SystemInformer/memlists.c#L478)、[WinMemoryCleaner 范围分支](https://github.com/IgorMundstein/WinMemoryCleaner/blob/a19f25719c9b9a58a0acea99cb8adb4737d2d318/src/Service/ComputerService.cs#L710)、[WinMemClean 逐进程循环](https://github.com/nusu-github/WinMemClean/blob/36729828ed032b6fd6dc08b0c0788a125f9bd28d/crates/winmemclean-core/src/process.rs#L61)
 

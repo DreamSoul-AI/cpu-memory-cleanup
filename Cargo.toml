@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/DreamSoul-AI/cpu-memory-cleanup"
 readme = "README.md"
 default-run = "cpu-memory-cleanup"
-include = ["/build.rs", "/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/tests/application/*.rs", "/examples/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/THIRD_PARTY_NOTICES.txt", "/README.md"]
+include = ["/build.rs", "/src/**/*.rs", "/src/interaction/web_assets/*", "/tests/rust/*.rs", "/tests/system/*.rs", "/tests/application/*.rs", "/experiments/*.rs", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/THIRD_PARTY_NOTICES.txt", "/README.md"]
 
 [features]
 experimental-quota = []
@@ -16,6 +16,7 @@ desktop-window = ["dep:wry", "dep:tao"]
 
 [[example]]
 name = "workingset-compare"
+path = "experiments/workingset-compare.rs"
 required-features = ["experimental-quota"]
 
 [dependencies]

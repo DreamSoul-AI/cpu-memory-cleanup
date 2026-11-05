@@ -1,4 +1,4 @@
-更新日期：2026年11月5日。本文从 [当前架构](<架构设计 Architecture Design CPU 内存清理.md>) 推导Rust源码职责，硬约束集中于 `src/`。外围目录由 [README](../README.md) 导航，允许按实际工具调整。迁移前实现和测试已保留在 `legacy/python/`，不参与正式运行。
+更新日期：2026年11月5日。本文从 [当前架构](<架构设计 Architecture Design CPU 内存清理.md>) 推导Rust源码职责，硬约束集中于 `src/`。外围目录由 [README](../README.md) 导航，允许按实际工具调整。迁移前实现和测试从当前分支退出，保留在 Git 提交 41eb28b 的 `legacy/python/` 中，不参与正式运行。
 
 # 一、源码结构
 
@@ -108,7 +108,7 @@ feature 关闭与打开均通过格式、严格 Clippy 和 Cargo 检查，两种
 # 九、性能对照源码映射
 对应架构第九章与 COMPARE-01 至03，设计提交47a9030，实现提交0df3537。隔离验证及构建完成，实机探索已执行但不能决定采用，见[真实对照](<运行记录 Run Record/2026-11-03 真实工作集对照.md>)。非默认 feature 下新增 `application/comparison.rs`，负责会话、单次门控、比较证据与只读汇总。方法枚举和固定清单校验位于 contracts.rs，系统接入不依赖 application。`system/windows.rs` 增加开发用固定 PID 枚举装配，两种方法仍调用 `workingset.rs` 的同一串行循环。它拒绝明确目标接口，避免把只按句柄的候选伪装成定向身份核验。
 
-`examples/workingset-compare.rs` 是独立开发入口，静态计划与离线比较不读系统。仅显式开启会话后分配预算内负载与真实读取，每次原生动作还需单独输入方法确认。该入口不进入网页、六工具目录或规则。`tests/application/comparison.rs` 验证门控、证据、只读比较和受控负载内容，系统接入使用隔离实现。Cargo 包包含例程及对应测试源，构建不运行维护。
+`experiments/workingset-compare.rs` 是独立开发入口，静态计划与离线比较不读系统。仅显式开启会话后分配预算内负载与真实读取，每次原生动作还需单独输入方法确认。该入口不进入网页、六工具目录或规则。`tests/application/comparison.rs` 验证门控、证据、只读比较和受控负载内容，系统接入使用隔离实现。Cargo 包包含例程及对应测试源，构建不运行维护。
 
 # 十、圆环显示流程的重新划分
 状态：按架构第十章实施完成，主体实现94be940、样本时间线及读取回归f7b8aad，已做一次真实网页验收。
