@@ -11,3 +11,5 @@ dist/
 target/
 
 .local/
+
+/USER.md

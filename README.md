@@ -160,3 +160,7 @@ Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和
 普通 CLI/Skill 调用只通过 stdout 返回 JSON，不创建 report.json、timing.json、运行目录或 Markdown。--no-record 明确保证不保存，与 --output-dir DIR 互斥；只有用户主动选择保存时才落盘，并支持后续回看。无记录结果 output_dir 为 null；安装完整性回执与每次操作记录分开。网页和桌面继续使用既有保存方式。
 
 0.5.0 及更早发布包没有无记录能力，不应通过删参数重试绕过。项目开发、打包和发布验证依照 AGENTS.md 整理必要证据，普通 Skill 使用不写仓库资料。
+
+## 研发维护
+
+维护入口见 [仓库约定](REPO.md) 和 [研发文档导航](docs/README.md)。
