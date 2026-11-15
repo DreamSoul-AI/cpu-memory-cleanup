@@ -15,4 +15,6 @@ CPU 内存读取、整理及 CLI、桌面与网页入口。按 README 的平台�
 | 计划与缺陷 | [计划与缺陷](<计划 Plans/README.md>) |
 | 开发与验证 | [开发与验证](<开发 Development/README.md>) |
 
+经验收集与采用流程按 [workspace 维护约定](https://github.com/DreamSoul-AI/workspace/blob/main/REPO.md) 执行。原经验收集草案已由 [workspace issue #4](https://github.com/DreamSoul-AI/workspace/issues/4) 承接，正式入口已落实后从本仓队列清理；项目实际案例继续保留在上述经验记录中。
+
 现行设计与计划从对应入口维护。历史开发、运行证据和研究素材按原有记录定位，保留实际日期、版本及证据来源。
