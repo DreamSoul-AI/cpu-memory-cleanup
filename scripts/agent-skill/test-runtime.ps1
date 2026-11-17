@@ -31,7 +31,7 @@ $taskRejected = $false
 try { Resolve-AgentRelease -Metadata $taskFuture | Out-Null } catch { $taskRejected = $true }
 if (-not $taskRejected) { throw 'Prerelease was accepted.' }
 $taskResults.Add([ordered]@{case='stable-release-only';passed=$true})
-function Invoke-Setup([string]$Name, [string]$Root, [string]$Archive, [bool]$Success, [string]$SelectedVersion = 'latest') {
+function Invoke-Setup([string]$Name, [string]$Root, [string]$Archive, [bool]$Success, [string]$SelectedVersion = 'latest', [switch]$RepairMissing, [string]$ExpectedError) {
     $taskStart = [Diagnostics.ProcessStartInfo]::new()
     $taskStart.FileName = $taskShell
     $taskStart.UseShellExecute = $false
@@ -40,6 +40,7 @@ function Invoke-Setup([string]$Name, [string]$Root, [string]$Archive, [bool]$Suc
     $taskStart.RedirectStandardError = $true
     foreach ($taskArgument in @('-NoProfile', '-NonInteractive', '-File', $taskScript,
         '-RuntimeRoot', $Root, '-ArchivePath', $Archive, '-ReleaseMetadataPath', $taskMetadataFile, '-Version', $SelectedVersion)) { $taskStart.ArgumentList.Add($taskArgument) }
+    if ($RepairMissing) { $taskStart.ArgumentList.Add('-RepairMissing') }
     $taskProcess = [Diagnostics.Process]::Start($taskStart)
     $taskStdout = $taskProcess.StandardOutput.ReadToEnd()
     $taskStderr = $taskProcess.StandardError.ReadToEnd()
@@ -49,6 +50,7 @@ function Invoke-Setup([string]$Name, [string]$Root, [string]$Archive, [bool]$Suc
     $taskCode = $taskProcess.ExitCode
     $taskProcess.Dispose()
     if (($taskCode -eq 0) -ne $Success) { throw "$Name unexpected exit $taskCode : $taskStderr" }
+    if ($ExpectedError -and $taskStderr -notmatch $ExpectedError) { throw "$Name unexpected error: $taskStderr" }
     $taskResults.Add([ordered]@{case=$Name;exit_code=$taskCode;passed=$true})
     if ($Success) { return ($taskStdout | ConvertFrom-Json) }
 }
@@ -63,12 +65,27 @@ $taskBadArchive = Join-Path $taskOut 'corrupt.zip'
 $taskBadRoot = Join-Path $taskOut 'corrupt runtime'
 Invoke-Setup 'corrupt-archive' $taskBadRoot $taskBadArchive $false
 if (@(Get-ChildItem -LiteralPath $taskBadRoot -Directory).Count -ne 0) { throw 'Corrupt archive produced an installation.' }
+# Simulate removal of the EXE only in the installation created by this test.
+$taskReceiptPath = Join-Path (Split-Path $taskFresh.executable -Parent) 'install-receipt.json'
+$taskReceiptHash = (Get-FileHash -LiteralPath $taskReceiptPath).Hash
+[IO.File]::Delete($taskFresh.executable)
+Invoke-Setup 'missing-executable' $taskFreshRoot $taskArchive $false $taskRelease.tag -ExpectedError 'Runtime file missing'
+Invoke-Setup 'repair-rejects-corrupt-archive' $taskFreshRoot $taskBadArchive $false $taskRelease.tag -RepairMissing -ExpectedError 'Release ZIP SHA256 mismatch'
+if (Test-Path -LiteralPath $taskFresh.executable) { throw 'A failed repair restored an executable.' }
+$taskRepair = Invoke-Setup 'repair-missing-executable' $taskFreshRoot $taskArchive $true $taskRelease.tag -RepairMissing
+if (-not $taskRepair.repaired -or $taskRepair.reused -or $taskRepair.executable -ne $taskFresh.executable -or
+    (Get-FileHash -LiteralPath $taskRepair.executable).Hash -ne $taskBefore -or
+    (Get-FileHash -LiteralPath $taskReceiptPath).Hash -ne $taskReceiptHash) {
+    throw 'Repair did not preserve the original runtime and receipt.'
+}
+$taskRepairReuse = Invoke-Setup 'reuse-after-repair' $taskFreshRoot (Join-Path $taskOut 'missing.zip') $true $taskRelease.tag -RepairMissing
+if (-not $taskRepairReuse.reused -or $taskRepairReuse.repaired) { throw 'An intact installation was repaired again.' }
 # Deliberately alter only the test-owned executable; setup must reject it before invocation.
 $taskTampered = [IO.File]::ReadAllBytes($taskFresh.executable)
 $taskTampered[0] = $taskTampered[0] -bxor 1
 [IO.File]::WriteAllBytes($taskFresh.executable, $taskTampered)
 $taskTamperedHash = (Get-FileHash -LiteralPath $taskFresh.executable).Hash
-Invoke-Setup 'tampered-runtime' $taskFreshRoot $taskArchive $false
+Invoke-Setup 'tampered-runtime' $taskFreshRoot $taskArchive $false -RepairMissing -ExpectedError 'Runtime file hash does not match'
 if ((Get-FileHash -LiteralPath $taskFresh.executable).Hash -ne $taskTamperedHash) { throw 'Setup silently replaced a changed installation.' }
 $taskGood = Invoke-Setup 'readonly-install' (Join-Path $taskOut 'readonly runtime') $taskArchive $true
 $taskStatus = & $taskGood.executable --tool memory_status | ConvertFrom-Json

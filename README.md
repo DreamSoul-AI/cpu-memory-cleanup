@@ -155,7 +155,9 @@ Rust `Memory` 的提交量/上限改为 `Option<u64>`，新增可用量口径和
 
 [Knowledge Skill](https://github.com/DreamSoul-AI/knowledge/tree/main/skills/cpu-memory-cleanup) 维护指令、元数据、安装说明和技能 ZIP，所有可执行代码由本仓库维护。初始化依赖见 [scripts/agent-skill](scripts/agent-skill/)，Windows ZIP 同时提供 install-runtime.ps1 和 release.ps1。普通使用不需要源码仓库、Git、Rust、Node 或 Python。
 
-每项任务开始时默认解析官方 latest 稳定 Release，校验附件 SHA256 并安装或复用轻量 CLI；支持 -Version 指定正式版本，各版本分别保存，任务内不切换程序。初始化只读静态目录，不采样或清理。Skill 维护前核对实际无记录能力，不凭固定版本号判断。
+未指定已安装版本目录或可信 EXE 时，初始化默认解析官方 latest 稳定 Release，校验附件 SHA256 后安装或复用 CLI。可以用 -Version 指定正式版本。初始化只读取静态工具目录，同一任务沿用已核对的 EXE。
+
+初始安装回执完整、仅 EXE 缺失时，支持 -RepairMissing 从官方 Release 恢复。-RuntimeRoot 指定版本目录的父目录，-Version 采用回执版本。恢复后核对版本和构建；启动被拒绝、现有文件校验失败或回执不匹配时保留现状并报告错误。
 
 普通 CLI/Skill 调用只通过 stdout 返回 JSON，不创建 report.json、timing.json、运行目录或 Markdown。--no-record 明确保证不保存，与 --output-dir DIR 互斥；只有用户主动选择保存时才落盘，并支持后续回看。无记录结果 output_dir 为 null；安装完整性回执与每次操作记录分开。网页和桌面继续使用既有保存方式。
 
