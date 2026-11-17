@@ -4,7 +4,8 @@ param(
     [string]$RuntimeRoot,
     [string]$Version = 'latest',
     [string]$ArchivePath,
-    [string]$ReleaseMetadataPath
+    [string]$ReleaseMetadataPath,
+    [switch]$RepairMissing
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'release.ps1')
@@ -50,7 +51,19 @@ function Read-Catalog([string]$Directory, [string]$Build = '') {
     $taskStart.RedirectStandardError = $true
     $taskStart.StandardOutputEncoding = New-Object Text.UTF8Encoding($false)
     $taskStart.StandardErrorEncoding = New-Object Text.UTF8Encoding($false)
-    $taskProcess = [Diagnostics.Process]::Start($taskStart)
+    try {
+        $taskProcess = [Diagnostics.Process]::Start($taskStart)
+    } catch {
+        $taskCause = $_.Exception.GetBaseException()
+        if ($taskCause -is [System.ComponentModel.Win32Exception]) {
+            $taskExecutable = $taskStart.FileName
+            switch ($taskCause.NativeErrorCode) {
+                5 { throw "Windows refused to start '$taskExecutable' (error 5): $($taskCause.Message)" }
+                { $_ -in 2, 3 } { throw "Executable or path missing at launch '$taskExecutable' (error $_): $($taskCause.Message)" }
+            }
+        }
+        throw
+    }
     try {
         $taskCatalog = $taskProcess.StandardOutput.ReadToEnd()
         $taskError = $taskProcess.StandardError.ReadToEnd()
@@ -64,21 +77,33 @@ function Read-Catalog([string]$Directory, [string]$Build = '') {
     }
     return $taskInfo
 }
-function Test-Runtime([string]$Directory) {
+function Read-InstalledRuntime([string]$Directory) {
     $taskReceipt = Get-Content -LiteralPath (Join-Path $Directory 'install-receipt.json') -Raw -Encoding UTF8 | ConvertFrom-Json
     if ($taskReceipt.schema -ne 1 -or $taskReceipt.tag -ne $taskRelease.tag -or
         $taskReceipt.archive_sha256 -ne $taskRelease.sha256 -or -not $taskReceipt.build_id) {
         throw 'Installation receipt does not match the selected release; preserving it.'
     }
+    $taskMissingExecutable = $false
     foreach ($taskName in $taskFileNames) {
         $taskFile = Join-Path $Directory $taskName
         $taskHash = [string]$taskReceipt.files.$taskName
-        if ($taskHash -notmatch '^[a-fA-F0-9]{64}$' -or -not (Test-Path -LiteralPath $taskFile -PathType Leaf) -or
-            (Get-FileHash -LiteralPath $taskFile -Algorithm SHA256).Hash -ne $taskHash) {
-            throw "Runtime file is missing or changed: $taskName. Preserving existing files; nothing was executed."
+        if ($taskHash -notmatch '^[a-fA-F0-9]{64}$') {
+            throw "Invalid receipt hash for $taskFile. Existing files were preserved."
+        }
+        try {
+            $taskItem = Get-Item -LiteralPath $taskFile -Force -ErrorAction Stop
+        } catch [System.Management.Automation.ItemNotFoundException] {
+            if ($RepairMissing -and $taskName -eq 'cpu-memory-cleanup.exe') {
+                $taskMissingExecutable = $true
+                continue
+            }
+            throw "Runtime file missing: $taskFile. Existing files were preserved."
+        }
+        if ($taskItem.PSIsContainer -or (Get-FileHash -LiteralPath $taskFile -Algorithm SHA256).Hash -ne $taskHash) {
+            throw "Runtime file hash does not match the receipt: $taskFile. Existing files were preserved."
         }
     }
-    return (Read-Catalog $Directory $taskReceipt.build_id)
+    return [pscustomobject]@{ receipt = $taskReceipt; missingExecutable = $taskMissingExecutable }
 }
 New-Item -ItemType Directory -Path $taskRoot -Force | Out-Null
 $taskLock = [IO.File]::Open((Join-Path $taskRoot '.install.lock'), [IO.FileMode]::OpenOrCreate,
@@ -87,9 +112,19 @@ $taskStage = $null
 # Keep releases and replaced assets separate; never overwrite an existing executable.
 $taskInstalled = Join-Path $taskRoot ($taskRelease.tag + '-' + $taskRelease.sha256.Substring(0,12))
 $taskReused = $false
+$taskRepaired = $false
 try {
-    if (Test-Path -LiteralPath $taskInstalled) {
-        $taskInfo = Test-Runtime $taskInstalled
+    $taskExisting = $null
+    try {
+        $taskDirectory = Get-Item -LiteralPath $taskInstalled -Force -ErrorAction Stop
+    } catch [System.Management.Automation.ItemNotFoundException] {
+        $taskDirectory = $null
+    }
+    if ($taskDirectory) {
+        $taskExisting = Read-InstalledRuntime $taskInstalled
+    }
+    if ($taskExisting -and -not $taskExisting.missingExecutable) {
+        $taskInfo = Read-Catalog $taskInstalled $taskExisting.receipt.build_id
         $taskReused = $true
     } else {
         $taskStage = Join-Path $taskRoot ('stage-' + [Guid]::NewGuid().ToString('N'))
@@ -116,18 +151,32 @@ try {
         foreach ($taskName in $taskFileNames) {
             $taskHashes[$taskName] = (Get-FileHash -LiteralPath (Join-Path $taskCandidate $taskName) -Algorithm SHA256).Hash.ToLowerInvariant()
         }
-        $taskInfo = Read-Catalog $taskCandidate
-        [ordered]@{
-            schema=1; version=$taskRelease.version; tag=$taskRelease.tag; build_id=$taskInfo.build_id
-            release=$taskRelease.release; asset_name=$taskRelease.asset_name; asset_id=$taskRelease.asset_id
-            archive_sha256=$taskRelease.sha256; files=$taskHashes
-        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $taskCandidate 'install-receipt.json') -Encoding UTF8
-        Move-Item -LiteralPath $taskCandidate -Destination $taskInstalled
+        if ($taskExisting) {
+            foreach ($taskName in $taskFileNames) {
+                if ($taskHashes[$taskName] -ne $taskExisting.receipt.files.$taskName) {
+                    throw "Official runtime file does not match the existing receipt: $taskName. Existing files were preserved."
+                }
+            }
+            $taskBuild = $taskExisting.receipt.build_id
+            Read-Catalog $taskCandidate $taskBuild | Out-Null
+            # The move fails if a file has appeared since the missing-file check.
+            [IO.File]::Move((Join-Path $taskCandidate 'cpu-memory-cleanup.exe'), (Join-Path $taskInstalled 'cpu-memory-cleanup.exe'))
+            $taskInfo = Read-Catalog $taskInstalled $taskBuild
+            $taskRepaired = $true
+        } else {
+            $taskInfo = Read-Catalog $taskCandidate
+            [ordered]@{
+                schema=1; version=$taskRelease.version; tag=$taskRelease.tag; build_id=$taskInfo.build_id
+                release=$taskRelease.release; asset_name=$taskRelease.asset_name; asset_id=$taskRelease.asset_id
+                archive_sha256=$taskRelease.sha256; files=$taskHashes
+            } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $taskCandidate 'install-receipt.json') -Encoding UTF8
+            [IO.Directory]::Move($taskCandidate, $taskInstalled)
+        }
     }
     [ordered]@{
         requested_version=$Version; version=$taskRelease.version; tag=$taskRelease.tag; build_id=$taskInfo.build_id
         executable=(Join-Path $taskInstalled 'cpu-memory-cleanup.exe')
-        reused=$taskReused; release=$taskRelease.release; archive_sha256=$taskRelease.sha256
+        reused=$taskReused; repaired=$taskRepaired; release=$taskRelease.release; archive_sha256=$taskRelease.sha256
         tools=@($taskInfo.tools | ForEach-Object { $_.name }); platform_capabilities=$taskInfo.platform_capabilities
         result_persistence=$taskInfo.result_persistence
         sampling_performed=$false; maintenance_dispatched=$false
