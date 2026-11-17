@@ -10,7 +10,7 @@ CPU 内存读取、整理及 CLI、桌面与网页入口。按 README 的平台�
 | 工具接入 | [工具接入 Tool Integration CPU 内存清理.md](<工具接入 Tool Integration CPU 内存清理.md>) |
 | 开发记录 | [README.md](<开发记录 Development Record/README.md>) |
 | 运行记录 | [README.md](<运行记录 Run Record/README.md>) |
-| 经验与待跟进 | [experience.md](<经验 Learnings/experience.md>) |
+| 开发复盘 | [CPU 内存清理开发复盘](<开发记录 Development Record/2026-11-03 CPU 内存清理开发复盘.md>) |
 | 设计与合同 | [设计与合同](<设计 Design/README.md>) |
 | 计划与缺陷 | [计划与缺陷](<计划 Plans/README.md>) |
 | 开发与验证 | [开发与验证](<开发 Development/README.md>) |
