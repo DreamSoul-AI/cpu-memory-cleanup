@@ -13,3 +13,4 @@ target/
 .local/
 
 /USER.md
+/.shared/
